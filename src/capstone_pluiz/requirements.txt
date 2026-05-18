@@ -1,0 +1,6 @@
+open-interpreter
+google-generativeai
+speechrecognition
+pyaudio
+selenium
+webdriver-manager
