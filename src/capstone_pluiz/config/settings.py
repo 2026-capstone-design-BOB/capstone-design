@@ -19,17 +19,10 @@ SUPERVISOR_MODE = "gemini"  # 관리자 에이전트용
 LOCAL_MODEL = "llama3"
 OLLAMA_URL = "http://localhost:11434"
 
-<<<<<<< Updated upstream
-# API 키
-CLAUDE_API_KEY = ""
-OPENAI_API_KEY = ""
-GEMINI_API_KEY = "AIzaSyAi2Zgu5UgGrcGSefp7s-EQRn3D_gyUd80"
-=======
 # API 키 (.env 파일에 저장된 값을 안전하게 불러옵니다)
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
->>>>>>> Stashed changes
 
 # Open Interpreter 설정
 INTERPRETER_AUTO_RUN = False
