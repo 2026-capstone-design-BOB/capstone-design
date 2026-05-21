@@ -39,7 +39,7 @@ class SupervisorAgent:
     def __init__(self):
         if GEMINI_API_KEY:
             self.client = genai.Client(api_key=GEMINI_API_KEY)
-            self.model_id = "gemini-2.5-flash-lite"
+            self.model_id = "gemini/gemini-2.5-flash-lite"
             self.available = True
             print("[Supervisor] Gemini 두뇌 초기화 완료")
         else:
