@@ -18,7 +18,7 @@ OLLAMA_URL = "http://localhost:11434"
 # API 키
 CLAUDE_API_KEY = ""
 OPENAI_API_KEY = ""
-GEMINI_API_KEY = "AIzaSyBqC3UPUtcmA5hRLjkSEPJeoryDzpmVqCs"
+GEMINI_API_KEY = "AIzaSyAi2Zgu5UgGrcGSefp7s-EQRn3D_gyUd80"
 
 # Open Interpreter 설정
 INTERPRETER_AUTO_RUN = False

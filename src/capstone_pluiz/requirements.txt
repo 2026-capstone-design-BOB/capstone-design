@@ -1,6 +1,10 @@
 open-interpreter
 google-generativeai
+google-genai
 speechrecognition
 pyaudio
 selenium
 webdriver-manager
+python-dotenv
+requests
+faster-whisper
