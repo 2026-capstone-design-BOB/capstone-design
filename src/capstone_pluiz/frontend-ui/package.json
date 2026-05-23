@@ -1,0 +1,16 @@
+{
+  "name": "frontend-ui",
+  "version": "1.0.0",
+  "description": "Pluiz Voice Assistant UI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^36.4.0"
+  }
+}

@@ -16,6 +16,8 @@ BRAIN_PROMPT = """
 3. 새로운 라이브러리 설치 시도 금지
 4. 앱 실행은 subprocess.Popen으로 직접 경로 실행
 5. 코드만 출력, 설명 없이
+6. 웹 브라우저 작업 후 driver.quit() 절대 호출 금지 (브라우저 열린 상태 유지)
+7. webdriver_manager 사용 금지, 반드시 Options()만 사용
 
 Windows 환경 정보:
 - 크롬: C:/Program Files/Google/Chrome/Application/chrome.exe

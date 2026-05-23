@@ -1,13 +1,33 @@
 # app/main.py
 import sys
 import os
+import subprocess
+import time
+import requests
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.agents.local_agent import LocalAgent
 from app.router.command_router import CommandRouter
 from app.services.stt import STTService
 
+def start_ollama():
+    try:
+        requests.get("http://localhost:11434/api/tags", timeout=2)
+        print("[Ollama] 이미 실행 중")
+    except:
+        print("[Ollama] 시작 중...")
+        subprocess.Popen(
+            ["ollama", "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        time.sleep(3)
+        print("[Ollama] 시작 완료")
+
 def main():
+    start_ollama()
+    
     agent = LocalAgent()
     router = CommandRouter()
     stt = STTService(mode="google")
