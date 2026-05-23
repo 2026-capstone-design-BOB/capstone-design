@@ -47,17 +47,14 @@ class SupervisorAgent:
         else:
             self.available = False
             print("[Supervisor] API 없음, 로컬 모드로 동작")
-    
+
     def is_complex(self, command: dict) -> bool:
-        complex_types = ["web", "interpreter"]
-        complex_actions = ["map_search", "youtube_search", "web_search",
-                          "create_document", "find_file"]
-        if command.get("type") in complex_types:
-            return True
-        if command.get("action") in complex_actions:
-            return True
-        return False
-    
+        # TODO: 추후 캐싱 시스템 구현 시 단순/복잡 명령 분기에 사용 예정
+        # 단순 명령 (앱 실행 등) → 캐시 히트 시 로컬 LLM (빠름, 무료)
+        # 복잡 명령 (웹 제어, 파일 자동화 등) → Gemini API (정확함)
+        # 현재는 모든 명령을 Gemini로 처리하므로 항상 True 반환
+        return True
+
     def generate_code(self, command: dict, original_input: str) -> str:
         if not self.available:
             return None
@@ -75,7 +72,7 @@ class SupervisorAgent:
         except Exception as e:
             print(f"[Supervisor 오류] {e}")
             return None
-    
+
     def explain_result(self, original_input: str, success: bool) -> str:
         if not self.available:
             return "완료됐습니다." if success else "실행 중 오류가 발생했습니다."

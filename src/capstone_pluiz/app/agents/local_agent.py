@@ -1,6 +1,7 @@
 # app/agents/local_agent.py
-import requests
 from app.agents.base_agent import BaseAgent
+from config.settings import GEMINI_API_KEY
+from google import genai
 
 SYSTEM_PROMPT = """
 너는 사용자의 PC 제어 명령을 분석하는 AI야.
@@ -25,29 +26,30 @@ SYSTEM_PROMPT = """
 """
 
 class LocalAgent(BaseAgent):
-    def __init__(self, model: str = "llama3", ollama_url: str = "http://localhost:11434"):
-        self.model = model
-        self.ollama_url = ollama_url
-    
+    def __init__(self):
+        if GEMINI_API_KEY:
+            self.client = genai.Client(api_key=GEMINI_API_KEY)
+            self.model_id = "gemini-2.5-flash-lite"
+            self.available = True
+            print("[LocalAgent] Gemini 초기화 완료")
+        else:
+            self.available = False
+            print("[LocalAgent] API 키 없음")
+
     def analyze_command(self, user_input: str) -> dict:
+        if not self.available:
+            print("[LocalAgent] API 키 없음 → unknown 반환")
+            return {"type": "unknown", "action": "unknown", "params": {}}
+
         try:
-            response = requests.post(
-                f"{self.ollama_url}/api/chat",
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": user_input}
-                    ],
-                    "stream": False
-                },
-                timeout=30
+            prompt = f"{SYSTEM_PROMPT}\n\n입력: {user_input}"
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=prompt
             )
-            
-            result = response.json()
-            text = result["message"]["content"]
+            text = response.text.strip()
             return self._parse_json(text)
-            
+
         except Exception as e:
             print(f"[LocalAgent 오류] {e}")
             return {"type": "unknown", "action": "unknown", "params": {}}
