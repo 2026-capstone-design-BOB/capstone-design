@@ -13,6 +13,8 @@ from pydantic import BaseModel
 
 from app.agents.local_agent import LocalAgent
 from app.router.command_router import CommandRouter
+from app.cache.command_cache import CommandCache
+from app.executor.interpreter_exec import InterpreterExecutor
 
 def start_ollama():
     try:
@@ -41,6 +43,8 @@ app.add_middleware(
 
 agent = LocalAgent()
 router = CommandRouter()
+cache = CommandCache()
+executor = InterpreterExecutor()
 
 class UserRequest(BaseModel):
     text: str
@@ -52,11 +56,25 @@ def health_check():
 @app.post("/api/execute")
 async def execute_command(request: UserRequest):
     try:
-        print(f"[서버] 수신: {request.text}")
-        command = agent.analyze_command(request.text)
+        start = time.time()
+        user_input = request.text
+        print(f"[서버] 수신: {user_input}")
+
+        # Step 1. 캐시 먼저 조회
+        cached = cache.get(user_input)
+        if cached:
+            print(f"[캐시 히트] API 호출 없이 바로 실행")
+            result = executor.run_from_cache(cached)
+            print(f"[시간] 총 소요: {time.time()-start:.3f}초 ✅ (캐시)")
+            return {"status": "success", "result": result, "from_cache": True}
+
+        # Step 2. 캐시 미스 → 분류 후 실행
+        command = agent.analyze_command(user_input)
         print(f"[서버] 분석: {command}")
-        result = router.route(command, request.text)
+        result = router.route(command, user_input)
+        print(f"[시간] 총 소요: {time.time()-start:.3f}초")
         return {"status": "success", "command": command, "result": result}
+
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

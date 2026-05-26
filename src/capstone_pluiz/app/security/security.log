@@ -1,0 +1,4 @@
+2026-05-25 23:24:23,013 - WARNING - BLOCKED - 위험 메서드 호출 감지: .remove() | 코드: import os os.remove("test.txt")
+2026-05-25 23:24:23,013 - WARNING - BLOCKED - 위험 속성 접근 감지: .remove | 코드: import os os.remove("test.txt")
+2026-05-25 23:24:23,013 - WARNING - BLOCKED - 위험 모듈 import 감지: winreg | 코드: import winreg
+2026-05-25 23:24:23,013 - WARNING - BLOCKED - 위험 함수 호출 감지: eval() | 코드: eval("os.system('format c:')")
