@@ -1,4 +1,5 @@
 # app/agents/supervisor_agent.py
+# JSON 명령 -> 실제 실행 코드 생성
 import sys
 import os
 import re

@@ -3,5 +3,4 @@ __pycache__/
 *.pyc
 venv/
 venv_pluiz/
-node_modules/__pycache__/
-*.pyc
+node_modules/
