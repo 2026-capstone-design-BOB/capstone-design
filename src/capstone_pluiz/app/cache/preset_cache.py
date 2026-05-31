@@ -36,13 +36,13 @@ PRESET_CACHE = {
     }
 }
 
-def init_preset_cache():
-    """앱 시작 시 1회 호출. 없는 항목만 삽입, 버전 다르면 업데이트."""
-    cache = CommandCache()
-    for key, item in PRESET_CACHE.items():
-        existing = cache.get(item["command"])
-        if not existing:
-            cache.save(item["command"], item["code"])
-            print(f"[Preset] 초기 캐시 삽입: {key} v{item['version']}")
-        else:
-            print(f"[Preset] 이미 존재: {key}")
+# def init_preset_cache():
+#     """앱 시작 시 1회 호출. 없는 항목만 삽입, 버전 다르면 업데이트."""
+#     cache = CommandCache()
+#     for key, item in PRESET_CACHE.items():
+#         existing = cache.get(item["command"])
+#         if not existing:
+#             cache.save(item["command"], item["code"])
+#             print(f"[Preset] 초기 캐시 삽입: {key} v{item['version']}")
+#         else:
+#             print(f"[Preset] 이미 존재: {key}")

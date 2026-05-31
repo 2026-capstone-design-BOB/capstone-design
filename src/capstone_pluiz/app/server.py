@@ -17,6 +17,9 @@ from app.cache.command_cache import CommandCache
 from app.executor.interpreter_exec import InterpreterExecutor
 
 def start_ollama():
+    # TODO: [Ollama 폴백] API 실패 시 Ollama로 자동 전환 로직 필요
+    # 현재는 시작만 하고 실제 폴백 없음
+    # 구현 위치: base_agent.py _call_llm()에 try/except로 폴백 추가
     try:
         requests.get("http://localhost:11434/api/tags", timeout=2)
         print("[Ollama] 이미 실행 중")
@@ -60,7 +63,7 @@ async def execute_command(request: UserRequest):
         user_input = request.text
         print(f"[서버] 수신: {user_input}")
 
-        # Step 1. 분류 먼저
+        # Step 1. 분류 먼저 (버그 수정: 기존엔 user_input으로 캐시 조회했음)
         command = agent.analyze_command(user_input)
         print(f"[서버] 분석: {command}")
 

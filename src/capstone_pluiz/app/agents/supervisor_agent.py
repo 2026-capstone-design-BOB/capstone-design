@@ -60,24 +60,17 @@ BRAIN_PROMPT = """
 7. webdriver_manager 사용 금지, 반드시 Options()만 사용
 8. selenium 사용 시 반드시 아래 예시의 options 설정 그대로 사용할 것
 9. 크롬/엣지/메모장/계산기 등 단순 앱 실행은 selenium 절대 금지
-    반드시 subprocess.Popen(["경로/앱.exe"]) 방식만 사용
-    selenium은 웹 검색/유튜브/지도 등 브라우저 조작 시에만 사용
+   반드시 subprocess.Popen(["경로/앱.exe"]) 방식만 사용
+   selenium은 웹 검색/유튜브/지도 등 브라우저 조작 시에만 사용
 10. taskkill 명령 사용 금지 (특히 explorer.exe 절대 금지)
 11. wmic 명령 사용 금지 (Windows 11에서 deprecated)
 12. 파일 생성 시 파일명은 사용자가 요청한 그대로 사용 (확장자 포함)
     내용은 빈 파일로 생성 (사용자가 내용을 별도로 요청한 경우에만 작성)
 13. 경로 백슬래시 처리 시 반드시 아래 방식만 사용:
-    path_fwd = '/'.join(path.split('\\'))
-    절대 사용 금지: path.split('\') 또는 path.replace('\\', '/') 또는 path.replace('\', '/')
+    path_fwd = '/'.join(path.split('\\\\'))
+    절대 사용 금지: path.split('\\') 또는 path.replace('\\\\', '/') 또는 path.replace('\\', '/')
 
-Windows 환경 정보:
-- 크롬: C:/Program Files/Google/Chrome/Application/chrome.exe
-- 메모장: C:/Windows/System32/notepad.exe
-- 계산기: C:/Windows/System32/calc.exe
-- 엣지: C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe
-- 그림판: C:/Windows/System32/mspaint.exe
-- 탐색기(파일탐색기 열기): C:/Windows/explorer.exe
-- 카카오톡: os.path.join(os.environ['LOCALAPPDATA'], 'Kakao', 'KakaoTalk', 'KakaoTalk.exe')
+{APP_PATHS_PLACEHOLDER}
 - 바탕화면: os.path.join(os.environ['USERPROFILE'], 'Desktop')
 - 다운로드: os.path.join(os.environ['USERPROFILE'], 'Downloads')
 - 문서: os.path.join(os.environ['USERPROFILE'], 'Documents')
@@ -85,7 +78,7 @@ Windows 환경 정보:
 
 Windows 창 제어 방법 (반드시 ctypes 사용):
 - 창 제어 시 타겟 미지정이면 Z-order 두 번째 창을 타겟으로 사용
-    (채팅 인터페이스가 포그라운드에 있을 수 있으므로)
+  (채팅 인터페이스가 포그라운드에 있을 수 있으므로)
 - 창 최대화 (타겟 미지정):
     import ctypes
     user32 = ctypes.windll.user32
@@ -118,10 +111,10 @@ Windows 창 제어 방법 (반드시 ctypes 사용):
         next_hwnd = user32.GetWindow(next_hwnd, 2)
 - 앱 지정 창 최대화/최소화/닫기 (반드시 FindWindowW 방식 사용):
     앱별 클래스명:
-        메모장 = "Notepad"
-        파일탐색기 = "CabinetWClass"
-        크롬 = "Chrome_WidgetWin_1"
-        엣지 = "Chrome_WidgetWin_1"
+      메모장 = "Notepad"
+      파일탐색기 = "CabinetWClass"
+      크롬 = "Chrome_WidgetWin_1"
+      엣지 = "Chrome_WidgetWin_1"
     예시 (메모장 최대화):
     import ctypes
     hwnd = ctypes.windll.user32.FindWindowW("Notepad", None)
@@ -157,7 +150,6 @@ Windows 시스템 제어 방법:
     숫자 + "으로 해줘/설정해줘" = 절대값: 현재 볼륨 조회 후 차이만큼 반복
       예) "50으로 해줘" → 현재가 30이면 +20 → 10회 반복
     배수("10배"), 소수점("0.5") 입력 = 비정상 → 기본값 5회로 처리
-
 - 볼륨 올리기 (기본, 10단위):
     import ctypes, time
     for _ in range(5):
@@ -200,43 +192,13 @@ Windows 시스템 제어 방법:
     ctypes.windll.user32.keybd_event(0xAD, 0, 0, 0)
     time.sleep(0.05)
     ctypes.windll.user32.keybd_event(0xAD, 0, 2, 0)
-- 현재 볼륨 조회 (절대값 설정 시 사용):
-    import subprocess
-    result = subprocess.run(["powershell", "-c",
-        "(Get-AudioDevice -Playback).Volume"],
-        capture_output=True, text=True)
-    current_vol = int(float(result.stdout.strip())) if result.stdout.strip() else 50
 - 배터리 잔량:
     import subprocess
     result = subprocess.run(["powershell", "-c",
         "(Get-WmiObject Win32_Battery).EstimatedChargeRemaining"],
         capture_output=True, text=True)
     print(f"배터리 잔량: {result.stdout.strip()}%")
-- 화면 캡처 (전체 화면, DPI 대응, 반드시 이 방식 그대로 사용):
-    import subprocess, os, base64
-    _L = ["Add-Type -TypeDefinition @'",
-          "using System;",
-          "using System.Runtime.InteropServices;",
-          "public class DPIHelper {",
-          '    [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();',
-          '    [DllImport("user32.dll")] public static extern int GetSystemMetrics(int nIndex);',
-          "}",
-          "'@",
-          "Add-Type -AssemblyName System.Drawing",
-          "[DPIHelper]::SetProcessDPIAware()",
-          "$w = [DPIHelper]::GetSystemMetrics(0)",
-          "$h = [DPIHelper]::GetSystemMetrics(1)",
-          "$path = [System.IO.Path]::Combine($env:USERPROFILE, 'Desktop', 'screenshot.png')",
-          "$bmp = New-Object System.Drawing.Bitmap($w, $h)",
-          "$g = [System.Drawing.Graphics]::FromImage($bmp)",
-          "$g.CopyFromScreen(0, 0, 0, 0, $bmp.Size)",
-          "$bmp.Save($path)",
-          "$g.Dispose()",
-          "$bmp.Dispose()"]
-    encoded = base64.b64encode("\n".join(_L).encode('utf-16-le')).decode('ascii')
-    subprocess.run(["powershell", "-EncodedCommand", encoded])
-    path = os.path.join(os.environ['USERPROFILE'], 'Desktop', 'screenshot.png')
-    print(f"스크린샷 저장: {path}")
+- 화면 캡처: Preset 캐시에서 실행됨 (별도 코드 생성 불필요)
 - 현재 시간:
     from datetime import datetime
     print(datetime.now().strftime("%Y년 %m월 %d일 %H시 %M분"))
@@ -269,7 +231,7 @@ Windows 시스템 제어 방법:
     print(f"RAM 사용량: {mem.percent}% ({mem.used // (1024**3)}GB / {mem.total // (1024**3)}GB)")
 - 저장공간 조회:
     import shutil
-    total, used, free = shutil.disk_usage('C:\\')
+    total, used, free = shutil.disk_usage('C:\\\\')
     print(f"C드라이브 - 전체: {total//(1024**3)}GB, 사용: {used//(1024**3)}GB, 남은 공간: {free//(1024**3)}GB")
 
 selenium 사용 예시 (반드시 이 방식으로):
@@ -303,6 +265,15 @@ driver = webdriver.Chrome(options=options)
 class SupervisorAgent(BaseAgent):
     def __init__(self):
         self._init_client(ACTIVE_PROVIDER, ACTIVE_MODEL)
+        try:
+            from app.utils.path_resolver import PathResolver
+            resolver = PathResolver()
+            path_info = resolver.get_prompt_paths()
+            global BRAIN_PROMPT
+            BRAIN_PROMPT = BRAIN_PROMPT.replace("{APP_PATHS_PLACEHOLDER}", path_info)
+            print(f"[SupervisorAgent] 경로 주입 완료")
+        except Exception as e:
+            print(f"[SupervisorAgent] 경로 주입 실패, 기본값 사용: {e}")
 
     def analyze_command(self, user_input: str) -> dict:
         return {}

@@ -90,3 +90,88 @@ class CommandCache:
             conn.execute("DELETE FROM command_cache")
             conn.commit()
         print("[Cache] 전체 초기화 완료")
+
+
+
+    def _init_db(self):
+        with sqlite3.connect(DB_PATH) as conn:
+            # 기존 command_cache 테이블
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS command_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    action TEXT,
+                    params TEXT,
+                    code TEXT NOT NULL,
+                    preset_version TEXT DEFAULT NULL,
+                    success_count INTEGER DEFAULT 1,
+                    last_used_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            # 신규 app_paths 테이블
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS app_paths (
+                    app_name TEXT PRIMARY KEY,
+                    path TEXT NOT NULL,
+                    verified INTEGER DEFAULT 0,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+
+    # ── app_paths 관련 메서드 ──
+
+    def save_app_path(self, app_name: str, path: str, verified: bool = False):
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO app_paths (app_name, path, verified, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            """, (app_name, path, 1 if verified else 0))
+            conn.commit()
+
+    def get_app_path(self, app_name: str) -> str | None:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT path FROM app_paths WHERE app_name = ? AND verified = 1",
+                (app_name,)
+            ).fetchone()
+        return row[0] if row and row[0] else None
+
+    def get_all_app_paths(self) -> dict:
+        with sqlite3.connect(DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT app_name, path, verified FROM app_paths"
+            ).fetchall()
+        return {r[0]: {"path": r[1], "verified": bool(r[2])} for r in rows}
+
+    # ── Preset 관련 메서드 ──
+
+    def save_preset(self, command: dict, code: str, version: str):
+        key = self._make_key(command)
+        action = command.get("action", "")
+        params = command.get("params", {})
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO command_cache
+                (cache_key, action, params, code, preset_version)
+                VALUES (?, ?, ?, ?, ?)
+            """, (key, action, json.dumps(params, ensure_ascii=False), code, version))
+            conn.commit()
+
+    def update_preset(self, command: dict, code: str, version: str):
+        key = self._make_key(command)
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("""
+                UPDATE command_cache
+                SET code = ?, preset_version = ?, last_used_at = CURRENT_TIMESTAMP
+                WHERE cache_key = ?
+            """, (code, version, key))
+            conn.commit()
+
+    def get_preset_version(self, action: str) -> str | None:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT preset_version FROM command_cache WHERE cache_key = ?",
+                (action,)
+            ).fetchone()
+        return row[0] if row else None
