@@ -29,7 +29,7 @@ def _log_block(violations: list, code: str):
 # ──────────────────────────────────────────
 
 BLOCKED_MODULES = {
-    "winreg", "ctypes", "socket", "ftplib", "telnetlib"
+    "winreg", "socket", "ftplib", "telnetlib"  # ctypes 제거
 }
 
 BLOCKED_FUNCTIONS = {
@@ -47,7 +47,8 @@ ALLOWED_SUBPROCESS = {
 
 BLOCKED_SUBPROCESS_COMMANDS = {
     "format", "rd /s", "del /f", "rmdir /s",
-    "reg delete", "netsh", "bcdedit"
+    "reg delete", "netsh", "bcdedit",
+    "taskkill", "shutdown", "passwd"  # 추가
 }
 
 # ──────────────────────────────────────────
@@ -172,7 +173,8 @@ def _check_getattr_patterns(code: str) -> list:
     violations = []
     dangerous_strings = [
         "remove", "unlink", "rmtree", "rmdir",
-        "system", "format", "delete"
+        "system", "format", "delete",
+        "api_key", "password", "secret"  # 추가
     ]
     getattr_pattern = re.compile(r'getattr\s*\(.*?,\s*["\'](\w+)["\']')
     for match in getattr_pattern.finditer(code):

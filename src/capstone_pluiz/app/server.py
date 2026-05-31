@@ -41,9 +41,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-agent = LocalAgent()
-router = CommandRouter()
-cache = CommandCache()
+agent    = LocalAgent()
+router   = CommandRouter()
+cache    = CommandCache()
 executor = InterpreterExecutor()
 
 class UserRequest(BaseModel):
@@ -60,17 +60,19 @@ async def execute_command(request: UserRequest):
         user_input = request.text
         print(f"[서버] 수신: {user_input}")
 
-        # Step 1. 캐시 먼저 조회
-        cached = cache.get(user_input)
+        # Step 1. 분류 먼저
+        command = agent.analyze_command(user_input)
+        print(f"[서버] 분석: {command}")
+
+        # Step 2. 캐시 조회 (command dict 기반)
+        cached = cache.get(command)
         if cached:
             print(f"[캐시 히트] API 호출 없이 바로 실행")
             result = executor.run_from_cache(cached)
             print(f"[시간] 총 소요: {time.time()-start:.3f}초 ✅ (캐시)")
-            return {"status": "success", "result": result, "from_cache": True}
+            return {"status": "success", "command": command, "result": result, "from_cache": True}
 
-        # Step 2. 캐시 미스 → 분류 후 실행
-        command = agent.analyze_command(user_input)
-        print(f"[서버] 분석: {command}")
+        # Step 3. 캐시 미스 → 라우터로
         result = router.route(command, user_input)
         print(f"[시간] 총 소요: {time.time()-start:.3f}초")
         return {"status": "success", "command": command, "result": result}

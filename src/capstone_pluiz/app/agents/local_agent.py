@@ -60,6 +60,22 @@ SYSTEM_PROMPT = """
 입력: "화면 캡처해줘" → {"type": "system", "action": "screenshot", "params": {}}
 입력: "넷플 틀어줘" → {"type": "web", "action": "open_url", "params": {"url": "https://www.netflix.com"}}
 입력: "유튭에서 BTS 검색해" → {"type": "web", "action": "youtube_search", "params": {"query": "BTS"}}
+입력: "메모장 크게 해줘" → {"type": "local", "action": "maximize_window", "params": {"app": "notepad"}}
+입력: "크롬 최대화해줘" → {"type": "local", "action": "maximize_window", "params": {"app": "chrome"}}
+입력: "파일탐색기 작게 해줘" → {"type": "local", "action": "minimize_window", "params": {"app": "explorer"}}
+입력: "메모장 닫아줘" → {"type": "local", "action": "close_app", "params": {"app": "notepad"}}
+입력: "크롬 닫아줘" → {"type": "local", "action": "close_app", "params": {"app": "chrome"}}
+입력: "메모장 크게 해줘" → {"type": "local", "action": "maximize_window", "params": {"app": "notepad"}}
+입력: "크롬 최대화해줘" → {"type": "local", "action": "maximize_window", "params": {"app": "chrome"}}
+입력: "엣지 크게 해줘" → {"type": "local", "action": "maximize_window", "params": {"app": "edge"}}
+입력: "파일탐색기 작게 해줘" → {"type": "local", "action": "minimize_window", "params": {"app": "explorer"}}
+입력: "메모장 닫아줘" → {"type": "local", "action": "close_app", "params": {"app": "notepad"}}
+입력: "볼륨 20 올려줘" → {"type": "system", "action": "volume_up", "params": {"level": 20}}
+입력: "소리 30으로 해줘" → {"type": "system", "action": "set_volume", "params": {"level": 30}}
+입력: "볼륨 10배 키워줘" → {"type": "system", "action": "volume_up", "params": {"level": "invalid"}}
+입력: "소리 0.5 줄여줘" → {"type": "system", "action": "volume_down", "params": {"level": "invalid"}}
+입력: "바탕화면에 보고서.docx 만들어줘" → {"type": "interpreter", "action": "create_file", "params": {"name": "보고서.docx", "location": "desktop"}}
+입력: "바탕화면에 메모.txt 만들어줘" → {"type": "interpreter", "action": "create_file", "params": {"name": "메모.txt", "location": "desktop"}}
 """
 
 class LocalAgent(BaseAgent):

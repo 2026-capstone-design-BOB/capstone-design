@@ -13,6 +13,9 @@ from app.services.stt import STTService
 from app.cache.command_cache import CommandCache
 from app.executor.interpreter_exec import InterpreterExecutor
 
+from app.cache.preset_cache import init_preset_cache
+
+
 def start_ollama():
     try:
         requests.get("http://localhost:11434/api/tags", timeout=2)
@@ -29,7 +32,7 @@ def start_ollama():
 
 def main():
     start_ollama()
-
+    init_preset_cache() 
     agent = LocalAgent()
     router = CommandRouter()
     stt = STTService(mode="google")
