@@ -18,9 +18,18 @@ class CommandCache:
                     action TEXT,
                     params TEXT,
                     code TEXT NOT NULL,
+                    preset_version TEXT DEFAULT NULL,
                     success_count INTEGER DEFAULT 1,
                     last_used_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS app_paths (
+                    app_name TEXT PRIMARY KEY,
+                    path TEXT NOT NULL,
+                    verified INTEGER DEFAULT 0,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             conn.commit()
@@ -90,34 +99,6 @@ class CommandCache:
             conn.execute("DELETE FROM command_cache")
             conn.commit()
         print("[Cache] 전체 초기화 완료")
-
-
-
-    def _init_db(self):
-        with sqlite3.connect(DB_PATH) as conn:
-            # 기존 command_cache 테이블
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS command_cache (
-                    cache_key TEXT PRIMARY KEY,
-                    action TEXT,
-                    params TEXT,
-                    code TEXT NOT NULL,
-                    preset_version TEXT DEFAULT NULL,
-                    success_count INTEGER DEFAULT 1,
-                    last_used_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            # 신규 app_paths 테이블
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS app_paths (
-                    app_name TEXT PRIMARY KEY,
-                    path TEXT NOT NULL,
-                    verified INTEGER DEFAULT 0,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            conn.commit()
 
     # ── app_paths 관련 메서드 ──
 

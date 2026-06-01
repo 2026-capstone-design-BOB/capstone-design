@@ -11,8 +11,6 @@ from app.agents.local_agent import LocalAgent
 from app.router.command_router import CommandRouter
 from app.services.stt import STTService
 from app.cache.command_cache import CommandCache
-from app.executor.interpreter_exec import InterpreterExecutor
-
 
 
 def start_ollama():
@@ -35,7 +33,7 @@ def main():
     router = CommandRouter()
     stt = STTService(mode="google")
     cache = CommandCache()
-    executor = InterpreterExecutor()
+    executor = router.interpreter  # ← InterpreterExecutor 중복 초기화 제거
 
     print("Pluiz V2 시작")
     print("1: 음성 입력 | 2: 텍스트 입력 | quit: 종료")

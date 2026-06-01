@@ -265,14 +265,15 @@ driver = webdriver.Chrome(options=options)
 class SupervisorAgent(BaseAgent):
     def __init__(self):
         self._init_client(ACTIVE_PROVIDER, ACTIVE_MODEL)
+        self.prompt = BRAIN_PROMPT  # 인스턴스 변수로 분리
         try:
             from app.utils.path_resolver import PathResolver
             resolver = PathResolver()
             path_info = resolver.get_prompt_paths()
-            global BRAIN_PROMPT
-            BRAIN_PROMPT = BRAIN_PROMPT.replace("{APP_PATHS_PLACEHOLDER}", path_info)
+            self.prompt = self.prompt.replace("{APP_PATHS_PLACEHOLDER}", path_info)
             print(f"[SupervisorAgent] 경로 주입 완료")
         except Exception as e:
+            self.prompt = self.prompt.replace("{APP_PATHS_PLACEHOLDER}", "")
             print(f"[SupervisorAgent] 경로 주입 실패, 기본값 사용: {e}")
 
     def analyze_command(self, user_input: str) -> dict:
@@ -285,7 +286,7 @@ class SupervisorAgent(BaseAgent):
         if not self.available:
             return None
         try:
-            prompt = f"{BRAIN_PROMPT}\n\n사용자 명령: {original_input}\n\n실행할 파이썬 코드만 작성해줘:"
+            prompt = f"{self.prompt}\n\n사용자 명령: {original_input}\n\n실행할 파이썬 코드만 작성해줘:"
             text = self._call_llm(prompt)
             code_match = re.search(r'```python\n(.*?)\n```', text, re.DOTALL)
             if code_match:

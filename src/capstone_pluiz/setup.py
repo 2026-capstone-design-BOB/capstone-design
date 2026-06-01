@@ -11,6 +11,22 @@ from app.cache.command_cache import CommandCache
 from app.utils.path_resolver import PathResolver
 from app.cache.preset_cache import PRESET_CACHE
 
+
+# ──────────────────────────────────────────────────────────────────
+# TODO: [주기적 재탐색 자동화]
+# 현재: 수동으로 python setup.py 재실행 필요
+# 향후 구현:
+#   - main.py 시작 시 app_paths 테이블 last_updated 확인
+#   - 7일 이상 경과 시 threading.Thread로 백그라운드 재탐색
+#   - 구현 위치: main.py의 def main() 상단
+#   예시:
+#     from datetime import datetime, timedelta
+#     last = cache.get_setup_date()
+#     if not last or datetime.now() - last > timedelta(days=7):
+#         threading.Thread(target=resolver.resolve_all, daemon=True).start()
+# ──────────────────────────────────────────────────────────────────
+
+
 def setup():
     print("=" * 50)
     print("  Pluiz V2 초기 설정")
