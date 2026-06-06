@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pluiz V2 — 진행 현황</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3350;
+    --accent: #5b8dee;
+    --accent2: #4fd1a5;
+    --warn: #f4a94e;
+    --danger: #e05c5c;
+    --text: #e2e6f3;
+    --text2: #8b92b3;
+    --done: #4fd1a5;
+    --wip: #5b8dee;
+    --todo: #8b92b3;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 40px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  /* ── 헤더 ── */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+    margin-bottom: 36px;
+  }
+  .header-left h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .header-left h1 span { color: var(--accent); }
+  .header-left p { color: var(--text2); margin-top: 4px; font-size: 12px; }
+  .header-right { text-align: right; }
+  .header-right .date { color: var(--text2); font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+  .badge-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+  .badge {
+    font-size: 10px; font-family: 'JetBrains Mono', monospace;
+    padding: 2px 8px; border-radius: 3px; font-weight: 600;
+  }
+  .badge.blue { background: rgba(91,141,238,0.15); color: var(--accent); border: 1px solid rgba(91,141,238,0.3); }
+  .badge.green { background: rgba(79,209,165,0.12); color: var(--accent2); border: 1px solid rgba(79,209,165,0.25); }
+
+  /* ── 섹션 타이틀 ── */
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text2);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── 그리드 ── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 28px; }
+
+  /* ── 카드 ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+  }
+  .card-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--text2); margin-bottom: 10px;
+  }
+
+  /* ── 스택 태그 ── */
+  .tag-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    font-size: 10px; font-family: 'JetBrains Mono', monospace;
+    padding: 3px 8px; border-radius: 4px; font-weight: 600;
+  }
+  .tag.blue  { background: rgba(91,141,238,0.12); color: var(--accent);  border: 1px solid rgba(91,141,238,0.2); }
+  .tag.green { background: rgba(79,209,165,0.10); color: var(--accent2); border: 1px solid rgba(79,209,165,0.2); }
+  .tag.gray  { background: rgba(139,146,179,0.10); color: var(--text2); border: 1px solid var(--border); }
+  .tag.warn  { background: rgba(244,169,78,0.10); color: var(--warn);  border: 1px solid rgba(244,169,78,0.2); }
+
+  /* ── 기능 현황 테이블 ── */
+  .feat-table { width: 100%; border-collapse: collapse; margin-bottom: 28px; }
+  .feat-table th {
+    text-align: left; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.8px; text-transform: uppercase;
+    color: var(--text2); padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .feat-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(46,51,80,0.5);
+    font-size: 12px;
+    vertical-align: top;
+  }
+  .feat-table tr:last-child td { border-bottom: none; }
+  .feat-table tr:hover td { background: rgba(91,141,238,0.04); }
+
+  .status {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+    padding: 2px 8px; border-radius: 3px; white-space: nowrap;
+  }
+  .status.done  { background: rgba(79,209,165,0.12); color: var(--done);  border: 1px solid rgba(79,209,165,0.25); }
+  .status.wip   { background: rgba(91,141,238,0.12); color: var(--wip);   border: 1px solid rgba(91,141,238,0.25); }
+  .status.todo  { background: rgba(139,146,179,0.08); color: var(--todo);  border: 1px solid var(--border); }
+  .status.alpha { background: rgba(244,169,78,0.10); color: var(--warn);  border: 1px solid rgba(244,169,78,0.2); }
+  .status::before { content: '●'; font-size: 8px; }
+
+  .priority {
+    font-size: 10px; font-family: 'JetBrains Mono', monospace;
+    color: var(--text2);
+  }
+  .priority.high { color: var(--danger); }
+  .priority.mid  { color: var(--warn); }
+
+  /* ── 경쟁 시스템 ── */
+  .comp-table { width: 100%; border-collapse: collapse; margin-bottom: 28px; }
+  .comp-table th {
+    text-align: center; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.8px; text-transform: uppercase;
+    color: var(--text2); padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .comp-table th:first-child { text-align: left; }
+  .comp-table td {
+    text-align: center; padding: 9px 10px;
+    border-bottom: 1px solid rgba(46,51,80,0.5);
+    font-size: 11px; vertical-align: middle;
+  }
+  .comp-table td:first-child { text-align: left; font-weight: 500; font-size: 12px; }
+  .comp-table tr:last-child td { border-bottom: none; }
+  .comp-table tr.pluiz td { background: rgba(91,141,238,0.06); }
+  .comp-table tr.pluiz td:first-child { color: var(--accent); font-weight: 700; }
+
+  .check { color: var(--done); font-size: 14px; }
+  .cross { color: var(--danger); font-size: 14px; }
+  .partial { color: var(--warn); font-size: 14px; }
+
+  /* ── 진행률 바 ── */
+  .progress-wrap { margin-bottom: 28px; }
+  .progress-item { margin-bottom: 12px; }
+  .progress-label {
+    display: flex; justify-content: space-between;
+    font-size: 11px; margin-bottom: 5px;
+  }
+  .progress-label span:first-child { color: var(--text); font-weight: 500; }
+  .progress-label span:last-child  { color: var(--text2); font-family: 'JetBrains Mono', monospace; }
+  .progress-bar {
+    height: 5px; background: var(--surface2);
+    border-radius: 3px; overflow: hidden;
+  }
+  .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+  .fill-done  { background: var(--done); }
+  .fill-wip   { background: var(--accent); }
+  .fill-alpha { background: var(--warn); }
+
+  /* ── 핵심 수치 ── */
+  .metric-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+  .metric {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px; text-align: center;
+  }
+  .metric-val { font-size: 28px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+  .metric-val.blue  { color: var(--accent); }
+  .metric-val.green { color: var(--done); }
+  .metric-val.warn  { color: var(--warn); }
+  .metric-label { font-size: 10px; color: var(--text2); margin-top: 4px; letter-spacing: 0.5px; }
+
+  /* ── 차별성 포인트 ── */
+  .diff-list { list-style: none; margin-bottom: 28px; }
+  .diff-list li {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 10px 14px; margin-bottom: 6px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; font-size: 12px;
+  }
+  .diff-list li .icon { font-size: 14px; margin-top: 1px; flex-shrink: 0; }
+  .diff-list li strong { color: var(--accent); }
+
+  /* ── 각주 ── */
+  .footnote {
+    color: var(--text2); font-size: 10px;
+    border-top: 1px solid var(--border);
+    padding-top: 14px; margin-top: 8px;
+    line-height: 1.8;
+  }
+
+  /* ── 섹션 간격 ── */
+  .section { margin-bottom: 36px; }
+</style>
+</head>
+<body>
+
+<!-- ── 헤더 ── -->
+<div class="header">
+  <div class="header-left">
+    <h1><span>Pluiz</span> V2 &nbsp;—&nbsp; 진행 현황</h1>
+    <p>지능형 음성/텍스트 기반 AI PC 제어 에이전트 &nbsp;|&nbsp; 캡스톤 디자인</p>
+  </div>
+  <div class="header-right">
+    <div class="date">2025 · 캡스톤 디자인 미팅</div>
+    <div class="badge-row">
+      <span class="badge blue">Python 3.10+</span>
+      <span class="badge blue">Gemini 2.5 Flash Lite</span>
+      <span class="badge green">Windows 10/11</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── 핵심 수치 ── -->
+<div class="section">
+  <div class="section-title">핵심 수치</div>
+  <div class="metric-row">
+    <div class="metric">
+      <div class="metric-val blue">94.3%</div>
+      <div class="metric-label">명령 분류 정확도<br><small style="color:#5a6080">개선 전 56.6%</small></div>
+    </div>
+    <div class="metric">
+      <div class="metric-val green">~1초</div>
+      <div class="metric-label">캐시 히트 응답 시간<br><small style="color:#5a6080">미스 시 3~4초</small></div>
+    </div>
+    <div class="metric">
+      <div class="metric-val blue">9 / 19</div>
+      <div class="metric-label">기능 요구사항 완료<br><small style="color:#5a6080">필수 항목 기준</small></div>
+    </div>
+    <div class="metric">
+      <div class="metric-val warn">3</div>
+      <div class="metric-label">멀티 API 프로바이더<br><small style="color:#5a6080">Gemini / Claude / OpenAI</small></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 기술 스택 ── -->
+<div class="section">
+  <div class="section-title">기술 스택</div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">백엔드 / AI</div>
+      <div class="tag-wrap">
+        <span class="tag blue">Gemini 2.5 Flash Lite</span>
+        <span class="tag blue">Anthropic Claude</span>
+        <span class="tag blue">OpenAI GPT</span>
+        <span class="tag green">Python 3.10+</span>
+        <span class="tag green">FastAPI</span>
+        <span class="tag green">SQLite3</span>
+        <span class="tag green">Python AST</span>
+        <span class="tag gray">Ollama (폴백)</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">시스템 / UI / 기타</div>
+      <div class="tag-wrap">
+        <span class="tag green">Selenium 4.x</span>
+        <span class="tag green">SpeechRecognition</span>
+        <span class="tag green">ctypes / WMI / PowerShell</span>
+        <span class="tag green">psutil / pywin32</span>
+        <span class="tag warn">Electron (팀원 담당)</span>
+        <span class="tag warn">STT / TTS (팀원 담당)</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 기능 현황 ── -->
+<div class="section">
+  <div class="section-title">기능 요구사항 현황</div>
+  <table class="feat-table">
+    <thead>
+      <tr>
+        <th style="width:5%">ID</th>
+        <th style="width:22%">기능</th>
+        <th style="width:38%">구현 내용</th>
+        <th style="width:13%">상태</th>
+        <th style="width:10%">우선순위</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-01~03</td>
+        <td>자연어 명령 입력 + 분류</td>
+        <td>텍스트/음성 입력 → LocalAgent → 5가지 유형 JSON 분류<br><span style="color:var(--text2);font-size:11px">구어체/신조어 처리 포함, 분류 정확도 94.3%</span></td>
+        <td><span class="status done">완료</span></td>
+        <td><span class="priority high">필수</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-04</td>
+        <td>명령 캐싱</td>
+        <td>성공 코드만 SQLite 저장, 동일 명령 재실행 시 API 호출 없이 즉시 실행<br><span style="color:var(--text2);font-size:11px">캐시 히트 응답 ~1초 (미스 대비 3배 이상 빠름)</span></td>
+        <td><span class="status done">완료</span></td>
+        <td><span class="priority high">필수</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-05</td>
+        <td>AST 보안 검사</td>
+        <td>LLM 생성 코드 실행 전 Python AST로 정적 분석<br><span style="color:var(--text2);font-size:11px">파일 삭제·레지스트리 수정·위험 import 등 패턴 탐지 및 차단</span></td>
+        <td><span class="status done">완료</span></td>
+        <td><span class="priority high">필수</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-06</td>
+        <td>로컬 앱 제어</td>
+        <td>앱 실행/종료, 창 최소화/최대화/닫기<br><span style="color:var(--text2);font-size:11px">ctypes Win32 API 기반, subprocess.Popen 직접 경로 실행</span></td>
+        <td><span class="status done">완료</span></td>
+        <td><span class="priority high">필수</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-07</td>
+        <td>시스템 제어</td>
+        <td>볼륨 조절(상대값/절대값), 밝기 조절, 음소거, 스크린샷<br><span style="color:var(--text2);font-size:11px">keybd_event·WMI·PowerShell 방식 조합</span></td>
+        <td><span class="status done">완료</span></td>
+        <td><span class="priority high">필수</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-08</td>
+        <td>파일/폴더 관리</td>
+        <td>파일 생성, 폴더 생성, 파일 탐색<br><span style="color:var(--text2);font-size:11px">os 모듈, 경로 환경변수 기반</span></td>
+        <td><span class="status done">완료</span></td>
+        <td><span class="priority high">필수</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-09</td>
+        <td>웹 브라우저 제어</td>
+        <td>구글/네이버/유튜브 검색, URL 접속, 지도 경로 검색<br><span style="color:var(--text2);font-size:11px">Selenium 4.x, Chrome options 기반</span></td>
+        <td><span class="status done">완료</span></td>
+        <td><span class="priority high">필수</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-10</td>
+        <td>시스템 정보 조회</td>
+        <td>배터리, CPU/RAM 사용률, 저장공간, 시간/날짜<br><span style="color:var(--text2);font-size:11px">psutil, PowerShell WMI 쿼리</span></td>
+        <td><span class="status done">완료</span></td>
+        <td><span class="priority high">필수</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-14</td>
+        <td>다중 API 프로바이더</td>
+        <td>Gemini / Claude / OpenAI 전환 가능<br><span style="color:var(--text2);font-size:11px">BaseAgent 추상 클래스로 provider 무관 통일 인터페이스</span></td>
+        <td><span class="status done">완료</span></td>
+        <td><span class="priority mid">중간</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-15</td>
+        <td>앱 경로 자동 감지</td>
+        <td>레지스트리 → fallback → where → 시작메뉴 4단계 탐색<br><span style="color:var(--text2);font-size:11px">setup.py 실행으로 DB 초기화 + 경로 주입</span></td>
+        <td><span class="status done">완료</span></td>
+        <td><span class="priority mid">중간</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-11, 12</td>
+        <td>대화 맥락 메모리 + 멀티스텝</td>
+        <td>"그거 열어줘", "다시 해줘" 등 히스토리 기반 맥락 처리<br><span style="color:var(--text2);font-size:11px">context_memory.py — SQLite 기반 설계 완료, 구현 진행 중</span></td>
+        <td><span class="status wip">진행 중</span></td>
+        <td><span class="priority high">높음</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-13</td>
+        <td>실행 결과 검증</td>
+        <td>코드 실행 후 실제 동작 성공 여부 확인<br><span style="color:var(--text2);font-size:11px">psutil 앱 실행 확인, os.path 파일 생성 확인 등</span></td>
+        <td><span class="status todo">예정</span></td>
+        <td><span class="priority high">높음</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-16</td>
+        <td>에러 핸들링 + 사용자 피드백</td>
+        <td>실패 시 원인과 해결 방법 안내</td>
+        <td><span class="status todo">예정</span></td>
+        <td><span class="priority mid">중간</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">FR-17~19</td>
+        <td>화면 인식 / 백그라운드 자동화 / 개인화 메모리</td>
+        <td>Gemini Vision 화면 분석, 조건 트리거 자동화, 사용자 루틴 저장</td>
+        <td><span class="status alpha">Alpha</span></td>
+        <td><span class="priority">낮음</span></td>
+      </tr>
+      <tr>
+        <td style="font-family:monospace;color:var(--text2);font-size:11px">UI</td>
+        <td>Electron UI (팀원 담당)</td>
+        <td>메인 채팅, 설정, 히스토리, 코드 확인 모달, 위험 경고 모달 등</td>
+        <td><span class="status wip">진행 중</span></td>
+        <td><span class="priority high">필수</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── 진행률 ── -->
+<div class="section">
+  <div class="section-title">에픽별 진행률</div>
+  <div class="progress-wrap">
+    <div class="progress-item">
+      <div class="progress-label"><span>명령 입력 + 분류 (EP-01)</span><span>100%</span></div>
+      <div class="progress-bar"><div class="progress-fill fill-done" style="width:100%"></div></div>
+    </div>
+    <div class="progress-item">
+      <div class="progress-label"><span>코드 생성 + 실행 (EP-02)</span><span>60%</span></div>
+      <div class="progress-bar"><div class="progress-fill fill-done" style="width:60%"></div></div>
+    </div>
+    <div class="progress-item">
+      <div class="progress-label"><span>보안 / 안전 (EP-03)</span><span>50%</span></div>
+      <div class="progress-bar"><div class="progress-fill fill-done" style="width:50%"></div></div>
+    </div>
+    <div class="progress-item">
+      <div class="progress-label"><span>성능 최적화 — 캐싱 (EP-04)</span><span>100%</span></div>
+      <div class="progress-bar"><div class="progress-fill fill-done" style="width:100%"></div></div>
+    </div>
+    <div class="progress-item">
+      <div class="progress-label"><span>대화 맥락 메모리 (EP-05)</span><span>15%</span></div>
+      <div class="progress-bar"><div class="progress-fill fill-wip" style="width:15%"></div></div>
+    </div>
+    <div class="progress-item">
+      <div class="progress-label"><span>멀티스텝 명령 (EP-06)</span><span>0%</span></div>
+      <div class="progress-bar"><div class="progress-fill fill-wip" style="width:0%"></div></div>
+    </div>
+    <div class="progress-item">
+      <div class="progress-label"><span>다중 API 프로바이더 (EP-07)</span><span>70%</span></div>
+      <div class="progress-bar"><div class="progress-fill fill-done" style="width:70%"></div></div>
+    </div>
+    <div class="progress-item">
+      <div class="progress-label"><span>화면 인식 / 백그라운드 / 개인화 (EP-08~10, Alpha)</span><span>0%</span></div>
+      <div class="progress-bar"><div class="progress-fill fill-alpha" style="width:0%"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 경쟁 시스템 비교 ── -->
+<div class="section">
+  <div class="section-title">경쟁 시스템 비교</div>
+  <table class="comp-table">
+    <thead>
+      <tr>
+        <th>시스템</th>
+        <th>로컬 앱 직접 제어</th>
+        <th>시스템 설정 제어</th>
+        <th>한국어 자연어</th>
+        <th>오프라인 동작</th>
+        <th>오픈 커스텀 가능</th>
+        <th>월 비용</th>
+        <th>Windows 특화</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="pluiz">
+        <td>✦ Pluiz V2</td>
+        <td><span class="check">✓</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="partial">△</span></td>
+        <td><span class="check">✓</span></td>
+        <td style="font-family:monospace;font-size:11px;color:var(--done)">API비용만</td>
+        <td><span class="check">✓</span></td>
+      </tr>
+      <tr>
+        <td>MS Copilot Actions</td>
+        <td><span class="partial">△</span></td>
+        <td><span class="partial">△</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+        <td style="font-family:monospace;font-size:11px">Win11 내장</td>
+        <td><span class="check">✓</span></td>
+      </tr>
+      <tr>
+        <td>Claude Computer Use</td>
+        <td><span class="check">✓</span></td>
+        <td><span class="partial">△</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+        <td style="font-family:monospace;font-size:11px">$20/월~</td>
+        <td><span class="cross">✗</span></td>
+      </tr>
+      <tr>
+        <td>OpenAI Operator (ChatGPT Agent)</td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="partial">△</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+        <td style="font-family:monospace;font-size:11px">$200/월</td>
+        <td><span class="cross">✗</span></td>
+      </tr>
+      <tr>
+        <td>Braina</td>
+        <td><span class="check">✓</span></td>
+        <td><span class="partial">△</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="cross">✗</span></td>
+        <td style="font-family:monospace;font-size:11px">$29/년~</td>
+        <td><span class="check">✓</span></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="footnote">
+    △ = 부분 지원 또는 실험적 기능 &nbsp;|&nbsp;
+    Claude Computer Use: macOS 중심, Windows는 제한적 &nbsp;|&nbsp;
+    Copilot Actions: 현재 Windows Insider 실험 단계 &nbsp;|&nbsp;
+    OpenAI Operator: 웹 브라우저 내부 작업만 가능, 로컬 앱 제어 불가
+  </div>
+</div>
+
+<!-- ── 핵심 차별성 ── -->
+<div class="section">
+  <div class="section-title">핵심 차별성</div>
+  <ul class="diff-list">
+    <li>
+      <span class="icon">⚡</span>
+      <div><strong>코드 생성 + 직접 실행 방식</strong> — 스크린샷 분석 + 마우스 클릭 방식(Claude Computer Use)이 아닌, LLM이 생성한 Python 코드를 로컬에서 직접 실행. 속도가 빠르고 실패율이 낮음</div>
+    </li>
+    <li>
+      <span class="icon">🔒</span>
+      <div><strong>AST 기반 보안 레이어</strong> — LLM이 생성한 코드를 실행 전 Python 추상 구문 트리(AST)로 정적 분석. 위험 패턴 자동 차단. 경쟁 시스템 대부분 미구현</div>
+    </li>
+    <li>
+      <span class="icon">🇰🇷</span>
+      <div><strong>한국어 구어체 최적화</strong> — "야 크롬 좀 켜봐 ㅋㅋ", "조용히 해줘" 등 구어체/신조어 처리를 Few-shot 프롬프트로 해결. 영어 중심 경쟁 시스템 대비 한국 사용자 UX 우위</div>
+    </li>
+    <li>
+      <span class="icon">💾</span>
+      <div><strong>명령 캐싱으로 API 비용 절감</strong> — 성공 코드를 SQLite에 저장, 재실행 시 API 호출 없이 즉시 실행 (~1초). 구독 기반 경쟁 서비스($20~$200/월) 대비 실사용 비용 최소화</div>
+    </li>
+    <li>
+      <span class="icon">🔧</span>
+      <div><strong>Windows 시스템 완전 통합</strong> — ctypes Win32 API, PowerShell, WMI, 레지스트리까지 활용. 브라우저/웹 작업만 가능한 Operator와 달리 OS 레벨 제어 가능</div>
+    </li>
+  </ul>
+</div>
+
+<!-- ── 앞으로 계획 ── -->
+<div class="section">
+  <div class="section-title">앞으로 개발 계획</div>
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-title" style="color:var(--wip)">▶ 진행 중 / 단기</div>
+      <div style="font-size:12px;line-height:2;color:var(--text)">
+        context_memory.py<br>
+        <span style="color:var(--text2);font-size:11px">히스토리 저장, 맥락 지시어 해석</span><br>
+        멀티스텝 명령 처리<br>
+        <span style="color:var(--text2);font-size:11px">복합 명령 분리 + 순차 실행</span><br>
+        실행 결과 검증 모듈<br>
+        <span style="color:var(--text2);font-size:11px">psutil / os.path 기반</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="color:var(--accent)">◎ 중기</div>
+      <div style="font-size:12px;line-height:2;color:var(--text)">
+        FastAPI 서버 완성<br>
+        <span style="color:var(--text2);font-size:11px">/command, /history, /settings 엔드포인트</span><br>
+        Electron UI 연동<br>
+        <span style="color:var(--text2);font-size:11px">팀원 UI ↔ 백엔드 통합</span><br>
+        에러 핸들링 + 사용자 피드백<br>
+        <span style="color:var(--text2);font-size:11px">위험 경고 모달, 재시도 안내</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="color:var(--warn)">◇ Alpha (장기)</div>
+      <div style="font-size:12px;line-height:2;color:var(--text)">
+        화면 인식<br>
+        <span style="color:var(--text2);font-size:11px">Gemini Vision API + PIL</span><br>
+        백그라운드 자동화<br>
+        <span style="color:var(--text2);font-size:11px">배터리/앱 조건 트리거</span><br>
+        개인화 메모리<br>
+        <span style="color:var(--text2);font-size:11px">사용자 루틴/경로 저장</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
