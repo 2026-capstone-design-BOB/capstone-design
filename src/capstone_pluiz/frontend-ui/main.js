@@ -1,31 +1,40 @@
-// main.js
-const { app, BrowserWindow } = require('electron')
-const path = require('path')
+// frontend-ui/main.js
+const { app, BrowserWindow, session } = require('electron');
+const path = require('path');
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 800,
-    height: 600,
-    minWidth: 600,
+    width: 520,
+    height: 720,
+    minWidth: 400,
     minHeight: 500,
+    frame: false,           // 커스텀 타이틀바 사용
+    transparent: false,
+    backgroundColor: '#0a0a0f',
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      nodeIntegration: false,
+      contextIsolation: true,
     },
-    title: 'Pluiz - AI 음성 비서',
-    backgroundColor: '#1a1a2e'
-  })
+  });
 
-  win.loadFile('index.html')
+  // 마이크 권한 자동 허용
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'media') {
+      callback(true);       // 마이크/카메라 허용
+    } else {
+      callback(false);
+    }
+  });
+
+  win.loadFile(path.join(__dirname, 'index.html'));
 }
 
-app.whenReady().then(() => {
-  createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
-})
+app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
