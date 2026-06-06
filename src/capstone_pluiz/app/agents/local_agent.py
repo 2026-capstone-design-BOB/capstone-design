@@ -24,7 +24,13 @@ SYSTEM_PROMPT = """
 5. unknown: 위 4가지로 분류 불가한 경우
 
 응답 형식:
-{"type": "유형", "action": "구체적동작", "params": {파라미터}}
+단일 명령: {"type": "유형", "action": "구체적동작", "params": {파라미터}}
+복합 명령: [{"type": "유형", "action": "동작1", "params": {...}}, {"type": "유형", "action": "동작2", "params": {...}}]
+
+복합 명령 판단 기준:
+- "~하고 ~해줘", "~랑 ~", "~도 ~", "~한 다음에 ~" 처럼 두 개 이상의 독립적인 동작이 포함된 경우
+- 각 동작이 서로 독립적으로 실행 가능한 경우에만 배열로 반환
+- 앞 동작의 결과가 다음 동작에 필요한 경우 (예: "파일 찾아서 열어줘") → 단일 unknown으로 반환
 
 구어체/모호한 표현 처리 규칙:
 - "좀", "봐봐", "ㅋㅋ", "야" 같은 불필요한 표현 무시하고 핵심만 추출
@@ -32,6 +38,20 @@ SYSTEM_PROMPT = """
 - "조용히 해줘" → 음소거로 해석
 - "켜줘/열어줘/실행해줘/띄워줘" → open_app
 - "꺼줘/닫아줘/종료해줘" → close_app
+- "그거/이거/그것/이것" 단독 지시어 (앱/파일 명시 없음) → unknown으로 분류  ← 추가
+
+앱 이름 정규화 규칙 (반드시 아래 매핑 사용):
+- "카카오톡", "카톡", "kakao", "카카오" → "kakaotalk"
+- "크롬", "구글 크롬" → "chrome"
+- "엣지", "마이크로소프트 엣지" → "edge"
+- "메모장" → "notepad"
+- "계산기" → "calculator"
+- "탐색기", "파일탐색기", "파일 탐색기" → "explorer"
+- "워드", "word", "ms word" → "word"
+- "엑셀", "excel", "ms excel" → "excel"
+- "파워포인트", "powerpoint", "ppt" → "powerpoint"
+- "브이에스코드", "vscode", "비주얼스튜디오코드" → "vscode"
+
 
 예시:
 입력: "메모장 열어줘" → {"type": "local", "action": "open_app", "params": {"app": "notepad"}}
@@ -76,13 +96,33 @@ SYSTEM_PROMPT = """
 입력: "소리 0.5 줄여줘" → {"type": "system", "action": "volume_down", "params": {"level": "invalid"}}
 입력: "바탕화면에 보고서.docx 만들어줘" → {"type": "interpreter", "action": "create_file", "params": {"name": "보고서.docx", "location": "desktop"}}
 입력: "바탕화면에 메모.txt 만들어줘" → {"type": "interpreter", "action": "create_file", "params": {"name": "메모.txt", "location": "desktop"}}
+입력: "그거 열어줘" → {"type": "unknown", "action": "unknown", "params": {}}
+입력: "이거 닫아줘" → {"type": "unknown", "action": "unknown", "params": {}}
+입력: "그거 최대화해줘" → {"type": "unknown", "action": "unknown", "params": {}}
+입력: "다시 해줘" → {"type": "unknown", "action": "unknown", "params": {}}
+입력: "또 해줘" → {"type": "unknown", "action": "unknown", "params": {}}
+
+복합 명령 예시:
+입력: "크롬 열고 유튜브에서 아이유 검색해줘" → [{"type": "local", "action": "open_app", "params": {"app": "chrome"}}, {"type": "web", "action": "youtube_search", "params": {"query": "아이유"}}]
+입력: "메모장이랑 계산기 둘 다 열어줘" → [{"type": "local", "action": "open_app", "params": {"app": "notepad"}}, {"type": "local", "action": "open_app", "params": {"app": "calculator"}}]
+입력: "볼륨 올리고 화면 캡처해줘" → [{"type": "system", "action": "volume_up", "params": {}}, {"type": "system", "action": "screenshot", "params": {}}]
+입력: "크롬이랑 메모장 닫아줘" → [{"type": "local", "action": "close_app", "params": {"app": "chrome"}}, {"type": "local", "action": "close_app", "params": {"app": "notepad"}}]
+입력: "바탕화면에 test.txt 만들고 탐색기 열어줘" → [{"type": "interpreter", "action": "create_file", "params": {"name": "test.txt", "location": "desktop"}}, {"type": "local", "action": "open_app", "params": {"app": "explorer"}}]
+입력: "카카오톡 열어줘" → {"type": "local", "action": "open_app", "params": {"app": "kakaotalk"}}
+입력: "카톡 켜줘" → {"type": "local", "action": "open_app", "params": {"app": "kakaotalk"}}
+입력: "파일 찾아서 열어줘" → {"type": "unknown", "action": "unknown", "params": {}}
 """
 
 class LocalAgent(BaseAgent):
     def __init__(self):
         self._init_client(ACTIVE_PROVIDER, ACTIVE_MODEL)
 
-    def analyze_command(self, user_input: str, max_retries: int = 3) -> dict:
+    def analyze_command(self, user_input: str, max_retries: int = 3) -> dict | list:
+        """
+        반환값:
+        - 단일 명령: dict  {"type": ..., "action": ..., "params": ...}
+        - 복합 명령: list  [{"type": ..., ...}, {"type": ..., ...}]
+        """
         if not self.available:
             return {"type": "unknown", "action": "unknown", "params": {}}
 

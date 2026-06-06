@@ -72,15 +72,43 @@ class BaseAgent(ABC):
             )
             return response.choices[0].message.content.strip()
 
-    def _parse_json(self, text: str) -> dict:
-        json_match = re.search(r'\{.*\}', text, re.DOTALL)
-        if json_match:
+    def _parse_json(self, text: str) -> dict | list:
+        # 1. 배열 먼저 시도 ([...])
+        list_match = re.search(r'\[.*\]', text, re.DOTALL)
+        if list_match:
             try:
-                return json.loads(json_match.group())
+                parsed = json.loads(list_match.group())
+                if isinstance(parsed, list) and parsed:
+                    return parsed
             except:
                 pass
+
+        # 2. 단일 객체 ({...})
+        dict_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if dict_match:
+            try:
+                return json.loads(dict_match.group())
+            except:
+                pass
+
+        # 3. 배열 괄호 없이 쉼표로 구분된 JSON 오브젝트들
+        # 예: {"type":...}, {"type":...} 형태
+        objects = re.findall(r'\{[^{}]+\}', text, re.DOTALL)
+        if len(objects) > 1:
+            try:
+                parsed = [json.loads(o) for o in objects]
+                if all(isinstance(p, dict) for p in parsed):
+                    return parsed
+            except:
+                pass
+        elif len(objects) == 1:
+            try:
+                return json.loads(objects[0])
+            except:
+                pass
+
         return {"type": "unknown", "action": "unknown", "params": {}, "raw": text}
 
     @abstractmethod
-    def analyze_command(self, user_input: str) -> dict:
+    def analyze_command(self, user_input: str) -> dict | list:
         pass

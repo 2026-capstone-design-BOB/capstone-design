@@ -30,10 +30,11 @@ from app.cache.command_cache import CommandCache
 
 # 고정 경로 (Windows 기본 앱 - 탐색 불필요)
 FIXED_PATHS = {
-    "notepad":  "C:/Windows/System32/notepad.exe",
-    "calc":     "C:/Windows/System32/calc.exe",
-    "mspaint":  "C:/Windows/System32/mspaint.exe",
-    "explorer": "C:/Windows/explorer.exe",
+    "notepad":    "C:/Windows/System32/notepad.exe",
+    "calc":       "C:/Windows/System32/calc.exe",
+    "calculator": "C:/Windows/System32/calc.exe",   # UWP 런처 → calc.exe가 calculatorapp 실행
+    "mspaint":    "C:/Windows/System32/mspaint.exe",
+    "explorer":   "C:/Windows/explorer.exe",
 }
 
 # 탐색 필요 앱
@@ -187,6 +188,7 @@ class PathResolver:
                             continue
         except ImportError:
             # win32com 없으면 건너뜀
+            print("[PathResolver] 경고: pywin32 미설치 → 시작메뉴 탐색 스킵 (pip install pywin32)")
             pass
         except Exception:
             pass
@@ -303,7 +305,7 @@ class PathResolver:
             "excel":       "엑셀",
             "powerpoint":  "파워포인트",
             "notepad":     "메모장",
-            "calc":        "계산기",
+            "calculator":  "계산기",
             "mspaint":     "그림판",
             "explorer":    "파일탐색기",
         }

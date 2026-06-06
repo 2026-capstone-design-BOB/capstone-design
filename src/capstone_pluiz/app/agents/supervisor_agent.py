@@ -69,6 +69,20 @@ BRAIN_PROMPT = """
 13. 경로 백슬래시 처리 시 반드시 아래 방식만 사용:
     path_fwd = '/'.join(path.split('\\\\'))
     절대 사용 금지: path.split('\\') 또는 path.replace('\\\\', '/') 또는 path.replace('\\', '/')
+14. 모든 코드는 반드시 try/except로 감싸서 작성할 것
+15. PostMessageW, SendMessageW를 while 루프로 여러 창에 반복 적용 절대 금지
+    반드시 특정 앱 하나만 타겟으로 FindWindowW 방식 사용
+16. "모두 닫아줘", "전부 닫아줘", "다 닫아줘" 등 전체 종료 명령 절대 금지
+    반드시 특정 앱 하나만 닫을 것
+17. shutdown, restart, logoff 등 시스템 종료/재시작 명령 절대 금지
+15. except 블록에서 반드시 print(f"실행 실패: {e}") 출력할 것
+    예시:
+    try:
+        import subprocess
+        subprocess.Popen(["C:/Windows/System32/notepad.exe"])
+    except Exception as e:
+        print(f"실행 실패: {e}")
+    
 
 {APP_PATHS_PLACEHOLDER}
 - 바탕화면: os.path.join(os.environ['USERPROFILE'], 'Desktop')
@@ -100,14 +114,27 @@ Windows 창 제어 방법 (반드시 ctypes 사용):
             break
         next_hwnd = user32.GetWindow(next_hwnd, 2)
 - 창 닫기 (타겟 미지정):
-    import ctypes
+    import ctypes, psutil
+    # 시스템/Pluiz 프로세스는 절대 건드리지 말 것
+    IGNORE = {"pluiz","electron","python","cmd","powershell","windowsterminal",
+               "conhost","explorer","searchhost","textinputhost","applicationframehost",
+               "shellexperiencehost","startmenuexperiencehost","dwm","csrss","winlogon",
+               "services","svchost","taskmgr","code","cursor"}
     user32 = ctypes.windll.user32
     hwnd = user32.GetForegroundWindow()
     next_hwnd = user32.GetWindow(hwnd, 2)
     while next_hwnd:
         if user32.IsWindowVisible(next_hwnd) and user32.GetWindowTextLengthW(next_hwnd) > 0:
-            user32.PostMessageW(next_hwnd, 0x0010, 0, 0)
-            break
+            try:
+                import ctypes.wintypes
+                pid = ctypes.wintypes.DWORD()
+                user32.GetWindowThreadProcessId(next_hwnd, ctypes.byref(pid))
+                proc = psutil.Process(pid.value)
+                if proc.name().lower().replace(".exe","") not in IGNORE:
+                    user32.PostMessageW(next_hwnd, 0x0010, 0, 0)
+                    break
+            except:
+                pass
         next_hwnd = user32.GetWindow(next_hwnd, 2)
 - 앱 지정 창 최대화/최소화/닫기 (반드시 FindWindowW 방식 사용):
     앱별 클래스명:
@@ -166,27 +193,56 @@ Windows 시스템 제어 방법:
         time.sleep(0.05)
 - 볼륨 상대값 올리기 예시 ("20 올려줘" → 10회):
     import ctypes, time
-    steps = round(20 / 2)
+    level = 20  # 반드시 사용자가 요청한 실제 숫자로 교체할 것
+    steps = round(level / 2)
     for _ in range(steps):
         ctypes.windll.user32.keybd_event(0xAF, 0, 0, 0)
         time.sleep(0.05)
         ctypes.windll.user32.keybd_event(0xAF, 0, 2, 0)
         time.sleep(0.05)
-- 볼륨 절대값 설정 예시 ("50으로 해줘"):
-    import ctypes, time, subprocess
-    result = subprocess.run(["powershell", "-c",
-        "(Get-AudioDevice -Playback).Volume"],
-        capture_output=True, text=True)
-    current_vol = int(float(result.stdout.strip())) if result.stdout.strip() else 50
-    target_vol = 50
-    diff = target_vol - current_vol
-    key = 0xAF if diff > 0 else 0xAE
-    steps = abs(round(diff / 2))
+- 볼륨 상대값 내리기 예시 ("30 줄여줘" → 15회):
+    import ctypes, time
+    level = 30  # 반드시 사용자가 요청한 실제 숫자로 교체할 것
+    steps = round(level / 2)
     for _ in range(steps):
-        ctypes.windll.user32.keybd_event(key, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(0xAE, 0, 0, 0)
         time.sleep(0.05)
-        ctypes.windll.user32.keybd_event(key, 0, 2, 0)
+        ctypes.windll.user32.keybd_event(0xAE, 0, 2, 0)
         time.sleep(0.05)
+- 볼륨 절대값 설정 예시 ("50으로 해줘"):
+    # 현재 볼륨 조회 → 차이만큼 상대 조절
+    import ctypes, time, subprocess
+    try:
+        result = subprocess.run(
+            ["powershell", "-c",
+             "Add-Type -TypeDefinition '"
+             "using System.Runtime.InteropServices;"
+             "[Guid(\"5CDF2C82-841E-4546-9722-0CF74078229A\")]"
+             "[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]"
+             "interface IAudioEndpointVolume { int f1(); int f2(); int f3(); int f4();"
+             "int GetMasterVolumeLevelScalar(out float fLevel); }'"
+             "; $vol = 50"],
+            capture_output=True, text=True, timeout=5
+        )
+    except:
+        pass
+    # 외부 모듈 없이 안정적으로: 현재 볼륨을 0으로 내린 뒤 목표값만큼 올리기
+    # 먼저 음소거 후 목표 볼륨까지 올리는 방식
+    import ctypes, time
+    # 1. 볼륨 0으로
+    for _ in range(50):
+        ctypes.windll.user32.keybd_event(0xAE, 0, 0, 0)
+        time.sleep(0.02)
+        ctypes.windll.user32.keybd_event(0xAE, 0, 2, 0)
+        time.sleep(0.02)
+    # 2. 목표값(예: 50)만큼 올리기 — keybd_event 1회 = 2단위
+    target_vol = 50
+    steps = round(target_vol / 2)
+    for _ in range(steps):
+        ctypes.windll.user32.keybd_event(0xAF, 0, 0, 0)
+        time.sleep(0.02)
+        ctypes.windll.user32.keybd_event(0xAF, 0, 2, 0)
+        time.sleep(0.02)
 - 음소거 토글:
     import ctypes, time
     ctypes.windll.user32.keybd_event(0xAD, 0, 0, 0)
@@ -282,11 +338,42 @@ class SupervisorAgent(BaseAgent):
     def is_complex(self, command: dict) -> bool:
         return True
 
-    def generate_code(self, command: dict, original_input: str) -> str:
+    def generate_code(self, command: dict, original_input: str, error_context: dict = None) -> str:
         if not self.available:
             return None
         try:
-            prompt = f"{self.prompt}\n\n사용자 명령: {original_input}\n\n실행할 파이썬 코드만 작성해줘:"
+            if error_context:
+                error_type    = error_context.get("type", "unknown")
+                error_reason  = error_context.get("reason", "")
+                previous_code = error_context.get("code", "")
+
+                type_guide = {
+                    "syntax_error": "이전 코드에 문법 오류가 있었음. 올바른 Python 문법으로 다시 작성할 것.",
+                    "error": "이전 코드 실행 중 런타임 오류 발생. 오류 원인을 분석하고 다른 방식으로 작성할 것.",
+                    "verification_failed": (
+                        "이전 코드가 실행은 됐지만 의도한 결과가 확인되지 않음. "
+                        "완전히 다른 접근 방식을 사용할 것. "
+                        "이전과 동일한 경로나 방식 사용 금지."
+                    ),
+                }.get(error_type, "이전 시도가 실패함. 다른 방식으로 작성할 것.")
+
+                feedback = (
+                    f"\n\n[이전 시도 실패 — 반드시 다른 방식으로 작성할 것]\n"
+                    f"실패 유형: {error_type}\n"
+                    f"실패 원인: {error_reason}\n"
+                    f"대응 방법: {type_guide}\n"
+                    f"실패한 코드:\n```python\n{previous_code}\n```\n"
+                    f"위 코드와 동일한 경로, 동일한 방식 절대 사용 금지."
+                )
+            else:
+                feedback = ""
+
+            prompt = (
+                f"{self.prompt}\n\n"
+                f"사용자 명령: {original_input}"
+                f"{feedback}\n\n"
+                f"실행할 파이썬 코드만 작성해줘:"
+            )
             text = self._call_llm(prompt)
             code_match = re.search(r'```python\n(.*?)\n```', text, re.DOTALL)
             if code_match:

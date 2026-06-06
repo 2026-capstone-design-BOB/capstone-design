@@ -1,18 +1,42 @@
 # app/router/command_router.py
 from app.executor.interpreter_exec import InterpreterExecutor
 
+
 class CommandRouter:
     def __init__(self):
         self.interpreter = InterpreterExecutor()
         self.routes = {
-            "local": self._handle_local,
-            "web": self._handle_web,
+            "local":       self._handle_local,
+            "web":         self._handle_web,
             "interpreter": self._handle_interpreter,
-            "system": self._handle_system,  # 추가
-            "unknown": self._handle_unknown
+            "system":      self._handle_system,
+            "unknown":     self._handle_unknown,
         }
 
-    def route(self, command: dict, original_input: str = "") -> dict:
+    def route(self, command: dict | list, original_input: str = "") -> dict | list:
+        """
+        단일 명령(dict) 또는 복합 명령(list) 모두 처리.
+        - list → 각 스텝을 순서대로 실행, 결과 리스트 반환
+        - dict → 기존 단일 라우팅
+        """
+        if isinstance(command, list):
+            return self._route_multistep(command, original_input)
+        return self._route_single(command, original_input)
+
+    # ── 멀티스텝 ─────────────────────────────────────────────────
+
+    def _route_multistep(self, steps: list[dict], original_input: str) -> list[dict]:
+        print(f"[라우터] 복합 명령 {len(steps)}개 스텝 처리")
+        results = []
+        for i, step in enumerate(steps):
+            print(f"[라우터] 스텝 {i+1}/{len(steps)}: {step.get('action')}")
+            result = self._route_single(step, original_input)
+            results.append(result)
+        return results
+
+    # ── 단일 명령 ─────────────────────────────────────────────────
+
+    def _route_single(self, command: dict, original_input: str) -> dict:
         cmd_type = command.get("type", "unknown")
         handler = self.routes.get(cmd_type, self._handle_unknown)
         return handler(command, original_input)

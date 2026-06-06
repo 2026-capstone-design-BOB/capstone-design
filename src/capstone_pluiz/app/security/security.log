@@ -4,3 +4,10 @@
 2026-05-25 23:24:23,013 - WARNING - BLOCKED - 위험 함수 호출 감지: eval() | 코드: eval("os.system('format c:')")
 2026-05-29 17:56:44,464 - WARNING - BLOCKED - 위험 시스템 명령어 감지: 'shutdown' | 코드: import subprocess import os  try:     # Windows 종료 명령어     subprocess.run(["shutdown", "/s", "/t", "
 2026-05-29 18:05:05,257 - WARNING - BLOCKED - 위험 시스템 명령어 감지: 'shutdown' | 코드: import subprocess subprocess.run(["shutdown", "/s", "/t", "0"])
+2026-06-06 16:16:05,983 - WARNING - BLOCKED - 위험 시스템 명령어 감지: 'taskkill' | 코드: import subprocess import time  try:     subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], che
+2026-06-06 16:16:05,984 - WARNING - BLOCKED - 위험 시스템 명령어 감지: 'taskkill' | 코드: import subprocess import time  try:     subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], che
+2026-06-06 16:16:05,984 - WARNING - BLOCKED - 위험 시스템 명령어 감지: 'taskkill' | 코드: import subprocess import time  try:     subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], che
+2026-06-06 16:16:05,984 - WARNING - BLOCKED - 위험 시스템 명령어 감지: 'taskkill' | 코드: import subprocess import time  try:     subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], che
+2026-06-06 16:16:05,984 - WARNING - BLOCKED - 위험 시스템 명령어 감지: 'taskkill' | 코드: import subprocess import time  try:     subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], che
+2026-06-06 16:16:05,984 - WARNING - BLOCKED - 위험 시스템 명령어 감지: 'taskkill' | 코드: import subprocess import time  try:     subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], che
+2026-06-06 16:16:05,984 - WARNING - BLOCKED - 위험 시스템 명령어 감지: 'taskkill' | 코드: import subprocess import time  try:     subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], che

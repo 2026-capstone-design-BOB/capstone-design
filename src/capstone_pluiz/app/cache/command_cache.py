@@ -94,6 +94,14 @@ class CommandCache:
         return [{"key": r[0], "action": r[1], "params": r[2],
                  "count": r[3], "last_used": r[4]} for r in rows]
 
+    def invalidate(self, command: dict):
+        """검증 실패한 캐시 레코드 삭제."""
+        key = self._make_key(command)
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("DELETE FROM command_cache WHERE cache_key = ?", (key,))
+            conn.commit()
+        print(f"[Cache] 무효화: {key}")
+
     def clear(self):
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("DELETE FROM command_cache")
