@@ -9,3 +9,4 @@ python-dotenv
 requests
 faster-whisper
 openai
+pydub

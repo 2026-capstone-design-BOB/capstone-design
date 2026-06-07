@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Pluiz Mini</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+KR:wght@400;600&display=swap');
+
+    :root {
+      --bg:      rgba(12, 12, 20, 0.92);
+      --border:  rgba(124, 106, 255, 0.25);
+      --accent:  #7c6aff;
+      --accent2: #a78bfa;
+      --red:     #ff4d6d;
+      --green:   #34d399;
+      --text:    #e2e2f0;
+      --muted:   #6b6b8a;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 280px;
+      height: 80px;
+      overflow: hidden;
+      background: transparent;
+      font-family: 'Noto Sans KR', sans-serif;
+      -webkit-app-region: no-drag;
+      user-select: none;
+    }
+
+    /* ── 메인 컨테이너 ── */
+    #mini {
+      width: 280px;
+      height: 80px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 12px;
+      cursor: grab;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(124,106,255,0.1);
+      transition: box-shadow 0.2s, border-color 0.3s;
+      position: relative;
+    }
+    #mini:hover {
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(124,106,255,0.3);
+      border-color: rgba(124,106,255,0.4);
+    }
+    #mini.active {
+      border-color: rgba(124,106,255,0.7);
+      box-shadow: 0 0 20px rgba(124,106,255,0.3), 0 8px 32px rgba(0,0,0,0.4);
+    }
+    #mini:active { cursor: grabbing; }
+
+    /* ── 마이크 아이콘 영역 ── */
+    #micArea {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: rgba(124,106,255,0.15);
+      border: 1.5px solid rgba(124,106,255,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 18px;
+      transition: background 0.3s, border-color 0.3s, transform 0.2s;
+      position: relative;
+    }
+
+    /* 감지 중 링 애니메이션 */
+    #micArea::before {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    #micArea.listening::before {
+      opacity: 1;
+      animation: ripple 1.5s ease-in-out infinite;
+    }
+    @keyframes ripple {
+      0%   { transform: scale(1);   opacity: 0.8; }
+      100% { transform: scale(1.5); opacity: 0; }
+    }
+
+    /* wake word 감지됐을 때 */
+    #micArea.wake {
+      background: rgba(124,106,255,0.3);
+      border-color: var(--accent);
+      animation: micPulse 0.6s ease;
+    }
+    @keyframes micPulse {
+      0%,100% { transform: scale(1); }
+      50%     { transform: scale(1.15); }
+    }
+
+    /* 명령 듣는 중 */
+    #micArea.recording {
+      background: rgba(255,77,109,0.2);
+      border-color: var(--red);
+    }
+
+    /* ── 텍스트 영역 ── */
+    #textArea {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    #stateLabel {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      letter-spacing: 0.5px;
+      transition: color 0.3s;
+    }
+    #stateLabel.active-text { color: var(--accent2); }
+
+    #lastText {
+      font-size: 13px;
+      color: var(--text);
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0.9;
+    }
+
+    /* ── 파형 (녹음 중일 때) ── */
+    #waveform {
+      display: none;
+      gap: 2px;
+      align-items: center;
+      height: 18px;
+    }
+    #waveform.show { display: flex; }
+    #waveform span {
+      display: block;
+      width: 3px;
+      background: var(--red);
+      border-radius: 2px;
+      animation: waveBar 0.8s ease-in-out infinite;
+    }
+    #waveform span:nth-child(1){height:6px; animation-delay:0s}
+    #waveform span:nth-child(2){height:14px;animation-delay:.1s}
+    #waveform span:nth-child(3){height:9px; animation-delay:.2s}
+    #waveform span:nth-child(4){height:16px;animation-delay:.3s}
+    #waveform span:nth-child(5){height:7px; animation-delay:.4s}
+    @keyframes waveBar {
+      0%,100% { transform: scaleY(1); }
+      50%     { transform: scaleY(1.6); }
+    }
+
+    /* ── 상태 도트 ── */
+    #dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    #dot.busy  { background: var(--accent2); animation: blink 0.8s infinite; }
+    #dot.rec   { background: var(--red); animation: blink 0.5s infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* ── 닫기 버튼 ── */
+    #closeBtn {
+      position: absolute;
+      top: 6px; right: 10px;
+      width: 18px; height: 18px;
+      background: rgba(255,255,255,0.07);
+      border: none;
+      border-radius: 50%;
+      color: var(--muted);
+      font-size: 9px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0;
+      transition: opacity 0.2s, background 0.2s;
+    }
+    #mini:hover #closeBtn { opacity: 1; }
+    #closeBtn:hover { background: rgba(255,77,109,0.3); color: var(--red); }
+
+    /* ── 더블클릭 힌트 ── */
+    #hint {
+      position: absolute;
+      bottom: 6px; right: 12px;
+      font-size: 9px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    #mini:hover #hint { opacity: 0.6; }
+  </style>
+</head>
+<body>
+
+<div id="mini">
+  <div id="micArea">🎤</div>
+
+  <div id="textArea">
+    <span id="stateLabel">대기 중 — "플루이즈"라고 말해보세요</span>
+    <div id="waveform">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <span id="lastText" style="display:none"></span>
+  </div>
+
+  <div id="dot"></div>
+  <button id="closeBtn" title="종료">✕</button>
+  <span id="hint">더블클릭 시 전체화면</span>
+</div>
+
+<script>
+  const mini      = document.getElementById('mini');
+  const micArea   = document.getElementById('micArea');
+  const stateLabel= document.getElementById('stateLabel');
+  const waveform  = document.getElementById('waveform');
+  const lastText  = document.getElementById('lastText');
+  const dot       = document.getElementById('dot');
+  const closeBtn  = document.getElementById('closeBtn');
+
+  // ── 상태 메시지 맵 ────────────────────────────────────────
+  const STATE = {
+    idle:             { label: '대기 중 — "플루이즈"라고 말해보세요', mic: '',          dot: '',     wave: false },
+    wake_detected:    { label: 'Wake word 감지!',                      mic: 'wake',      dot: 'busy', wave: false },
+    listening_command:{ label: '명령을 말씀하세요...',                   mic: 'recording', dot: 'rec',  wave: true  },
+    processing:       { label: '처리 중...',                            mic: '',          dot: 'busy', wave: false },
+  };
+
+  function applyState(s) {
+    const cfg = STATE[s] || STATE.idle;
+    stateLabel.textContent = cfg.label;
+    stateLabel.className   = (s !== 'idle') ? 'active-text' : '';
+
+    micArea.className = cfg.mic ? `${cfg.mic}` : '';
+    dot.className     = cfg.dot;
+    mini.className    = (s !== 'idle') ? 'active' : '';
+
+    // 파형
+    waveform.className = cfg.wave ? 'show' : '';
+    lastText.style.display = cfg.wave ? 'none' : '';
+  }
+
+  // ── IPC: wake state 수신 ─────────────────────────────────
+  if (window.electronAPI) {
+    window.electronAPI.onWakeState((state) => applyState(state));
+  }
+
+  // ── 더블클릭 → 메인 창 열기 ──────────────────────────────
+  mini.addEventListener('dblclick', () => {
+    if (window.electronAPI) window.electronAPI.openMain();
+  });
+
+  // ── 닫기 버튼 ────────────────────────────────────────────
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (window.electronAPI) window.electronAPI.quitApp();
+  });
+
+  // ── 드래그로 창 이동 ──────────────────────────────────────
+  let dragging = false;
+  let startX, startY;
+
+  mini.addEventListener('mousedown', (e) => {
+    if (e.target === closeBtn) return;
+    dragging = true;
+    startX = e.screenX;
+    startY = e.screenY;
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('mouseup', onDragEnd);
+  });
+
+  function onDrag(e) {
+    if (!dragging) return;
+    const dx = e.screenX - startX;
+    const dy = e.screenY - startY;
+    startX = e.screenX;
+    startY = e.screenY;
+    if (window.electronAPI) window.electronAPI.moveMini(dx, dy);
+  }
+
+  function onDragEnd() {
+    dragging = false;
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('mouseup', onDragEnd);
+  }
+
+  // ── 초기 상태 ────────────────────────────────────────────
+  applyState('idle');
+</script>
+</body>
+</html>

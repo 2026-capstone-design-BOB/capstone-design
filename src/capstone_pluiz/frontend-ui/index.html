@@ -1,23 +1,29 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Pluiz V2</title>
+
+  <!-- highlight.js (UTK-03) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+KR:wght@300;400;600&display=swap');
 
     :root {
-      --bg:       #0a0a0f;
-      --surface:  #12121a;
-      --border:   #1e1e2e;
-      --accent:   #7c6aff;
-      --accent2:  #a78bfa;
-      --red:      #ff4d6d;
-      --text:     #e2e2f0;
-      --muted:    #6b6b8a;
-      --success:  #34d399;
-      --radius:   12px;
+      --bg:      #0a0a0f;
+      --surface: #12121a;
+      --border:  #1e1e2e;
+      --accent:  #7c6aff;
+      --accent2: #a78bfa;
+      --red:     #ff4d6d;
+      --green:   #34d399;
+      --yellow:  #fbbf24;
+      --text:    #e2e2f0;
+      --muted:   #6b6b8a;
+      --radius:  12px;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -33,7 +39,7 @@
       -webkit-app-region: drag;
     }
 
-    /* ── 타이틀바 ── */
+    /* ══ 타이틀바 ══════════════════════════════════════════ */
     #titlebar {
       height: 38px;
       background: var(--surface);
@@ -45,11 +51,11 @@
       flex-shrink: 0;
       -webkit-app-region: drag;
     }
-    #titlebar .dot { width: 10px; height: 10px; border-radius: 50%; }
-    #titlebar .dot.red  { background: #ff5f57; }
-    #titlebar .dot.yel  { background: #febc2e; }
-    #titlebar .dot.grn  { background: #28c840; }
-    #titlebar .title {
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot.red { background: #ff5f57; }
+    .dot.yel { background: #febc2e; }
+    .dot.grn { background: #28c840; }
+    .title {
       margin-left: 8px;
       font-family: 'Space Mono', monospace;
       font-size: 11px;
@@ -57,17 +63,13 @@
       letter-spacing: 2px;
       text-transform: uppercase;
     }
-
-    /* 우측 버튼 그룹을 묶어주기 위한 스타일 추가 */
-    #titlebar .window-controls {
+    .window-controls {
       margin-left: auto;
       display: flex;
       align-items: center;
       gap: 4px;
     }
-    
-    /* 인라인 스타일로 길게 늘어져 있던 버튼 스타일들을 클래스로 깔끔하게 통합 */
-    #titlebar .nav-btn {
+    .nav-btn {
       background: none;
       border: none;
       color: var(--muted);
@@ -75,15 +77,12 @@
       font-size: 14px;
       padding: 4px 8px;
       border-radius: 6px;
-      transition: background 0.2s;
+      transition: background .2s;
       -webkit-app-region: no-drag;
     }
-    #titlebar .nav-btn:hover {
-      background: var(--border);
-      color: var(--text);
-    }
+    .nav-btn:hover { background: var(--border); color: var(--text); }
 
-    /* ── 로그 영역 ── */
+    /* ══ 로그 영역 ══════════════════════════════════════════ */
     #log {
       flex: 1;
       overflow-y: auto;
@@ -92,18 +91,21 @@
       flex-direction: column;
       gap: 12px;
       -webkit-app-region: no-drag;
+      scroll-behavior: smooth;
     }
     #log::-webkit-scrollbar { width: 4px; }
     #log::-webkit-scrollbar-track { background: transparent; }
     #log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
+    /* ── 메시지 버블 (UTK-01) ── */
     .msg {
-      max-width: 72%;
+      max-width: 75%;
       padding: 12px 16px;
       border-radius: var(--radius);
       font-size: 14px;
       line-height: 1.6;
       animation: fadeUp .25s ease;
+      word-break: break-word;
     }
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(8px); }
@@ -128,11 +130,82 @@
       color: var(--muted);
       font-size: 12px;
       font-family: 'Space Mono', monospace;
+      max-width: 90%;
     }
 
-    /* ── 입력 영역 ── */
+    /* ── 코드 블록 하이라이트 (UTK-03) ── */
+    .msg.agent pre {
+      margin: 8px 0 0;
+      border-radius: 8px;
+      overflow: auto;
+      font-size: 12px;
+      max-height: 300px;
+    }
+    .msg.agent code:not(pre code) {
+      background: rgba(255,255,255,0.08);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+    }
+
+    /* ── 파형 (UTK-04) ── */
+    .wave-icon { display: flex; gap: 2px; align-items: center; height: 16px; }
+    .wave-icon span {
+      display: block; width: 3px; background: currentColor;
+      border-radius: 2px; animation: wave 1s ease-in-out infinite;
+    }
+    .wave-icon span:nth-child(1){height:6px; animation-delay:0s}
+    .wave-icon span:nth-child(2){height:12px;animation-delay:.15s}
+    .wave-icon span:nth-child(3){height:8px; animation-delay:.3s}
+    .wave-icon span:nth-child(4){height:14px;animation-delay:.45s}
+    .wave-icon span:nth-child(5){height:6px; animation-delay:.6s}
+    @keyframes wave {
+      0%,100% { transform: scaleY(1); }
+      50%     { transform: scaleY(1.8); }
+    }
+
+    /* ══ 실행 상태 표시 (UTK-06, 07) ══════════════════════ */
+    #stageBar {
+      padding: 6px 24px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: none;   /* 처리 중일 때만 보임 */
+      gap: 6px;
+      align-items: center;
+      flex-shrink: 0;
+      -webkit-app-region: no-drag;
+    }
+    #stageBar.show { display: flex; }
+
+    .stage-step {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-family: 'Space Mono', monospace;
+      color: var(--muted);
+      transition: color .3s;
+    }
+    .stage-step .s-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--border);
+      transition: background .3s;
+      flex-shrink: 0;
+    }
+    .stage-step.active { color: var(--accent2); }
+    .stage-step.active .s-dot { background: var(--accent2); animation: blink .8s infinite; }
+    .stage-step.done   { color: var(--green); }
+    .stage-step.done   .s-dot { background: var(--green); animation: none; }
+    .stage-step.warn   { color: var(--yellow); }
+    .stage-step.warn   .s-dot { background: var(--yellow); animation: none; }
+
+    .stage-sep { color: var(--border); font-size: 10px; margin: 0 2px; }
+
+    /* ══ 입력 영역 ══════════════════════════════════════════ */
     #controls {
-      padding: 16px 24px 20px;
+      padding: 14px 20px 18px;
       border-top: 1px solid var(--border);
       background: var(--surface);
       display: flex;
@@ -140,6 +213,43 @@
       align-items: center;
       flex-shrink: 0;
       -webkit-app-region: no-drag;
+    }
+
+    /* ── 마이크 버튼 (UTK-04) ── */
+    #micBtn {
+      width: 46px; height: 46px;
+      border: none;
+      border-radius: 50%;
+      background: var(--border);
+      color: var(--text);
+      font-size: 18px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background .2s, box-shadow .2s;
+      position: relative;
+      -webkit-app-region: no-drag;
+    }
+    /* 대기 상태 */
+    #micBtn.stt-idle { background: var(--border); }
+    /* 녹음 중 */
+    #micBtn.stt-recording {
+      background: var(--red);
+      animation: micPulse 1s infinite;
+    }
+    /* STT 처리 중 */
+    #micBtn.stt-processing {
+      background: var(--accent);
+      animation: micSpin 1s linear infinite;
+    }
+    @keyframes micPulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(255,77,109,.4); }
+      50%     { box-shadow: 0 0 0 10px rgba(255,77,109,0); }
+    }
+    @keyframes micSpin {
+      0%   { box-shadow: 0 0 0 0 rgba(124,106,255,.5); }
+      50%  { box-shadow: 0 0 0 8px rgba(124,106,255,0); }
+      100% { box-shadow: 0 0 0 0 rgba(124,106,255,0); }
     }
 
     #textInput {
@@ -156,52 +266,29 @@
     }
     #textInput:focus { border-color: var(--accent); }
     #textInput::placeholder { color: var(--muted); }
-
-    .btn {
-      border: none;
-      border-radius: var(--radius);
-      padding: 12px 18px;
-      cursor: pointer;
-      font-size: 13px;
-      font-family: 'Noto Sans KR', sans-serif;
-      font-weight: 600;
-      transition: opacity .15s, transform .1s;
-      -webkit-app-region: no-drag;
-    }
-    .btn:hover { opacity: .85; }
-    .btn:active { transform: scale(.97); }
+    #textInput:disabled { opacity: .5; }
 
     #sendBtn {
+      border: none;
+      border-radius: var(--radius);
+      padding: 12px 20px;
       background: var(--accent);
       color: #fff;
+      font-family: 'Noto Sans KR', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+      -webkit-app-region: no-drag;
       min-width: 64px;
     }
+    #sendBtn:hover  { opacity: .85; }
+    #sendBtn:active { transform: scale(.97); }
+    #sendBtn:disabled { opacity: .4; cursor: not-allowed; }
 
-    #micBtn {
-      background: var(--border);
-      color: var(--text);
-      width: 46px;
-      height: 46px;
-      padding: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 50%;
-      position: relative;
-      font-size: 18px;
-    }
-    #micBtn.recording {
-      background: var(--red);
-      animation: pulse 1s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(255,77,109,.4); }
-      50%       { box-shadow: 0 0 0 10px rgba(255,77,109,0); }
-    }
-
-    /* ── 상태 표시 ── */
+    /* ══ 상태바 ══════════════════════════════════════════════ */
     #statusBar {
-      padding: 6px 24px;
+      padding: 5px 24px;
       background: var(--bg);
       border-top: 1px solid var(--border);
       font-size: 11px;
@@ -215,99 +302,215 @@
     #statusDot {
       width: 6px; height: 6px;
       border-radius: 50%;
-      background: var(--success);
+      background: var(--green);
+      transition: background .3s;
     }
-    #statusDot.busy { background: var(--accent2); animation: blink .8s infinite; }
+    #statusDot.busy  { background: var(--accent2); animation: blink .8s infinite; }
     #statusDot.error { background: var(--red); }
+    #statusDot.warn  { background: var(--yellow); }
     @keyframes blink { 50% { opacity: 0; } }
 
-    /* ── 음성 파형 미니 애니메이션 ── */
-    .wave-icon {
-      display: flex; gap: 2px; align-items: center; height: 16px;
+    /* ══ 위험 경고 모달 (UTK-11, 12) ════════════════════════ */
+    #warningModal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.65);
+      backdrop-filter: blur(4px);
+      z-index: 999;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn .2s ease;
     }
-    .wave-icon span {
-      display: block; width: 3px; background: currentColor; border-radius: 2px;
-      animation: wave 1s ease-in-out infinite;
+    #warningModal.show { display: flex; }
+    @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+
+    .modal-box {
+      background: var(--surface);
+      border: 1px solid rgba(255,77,109,.4);
+      border-radius: 18px;
+      padding: 32px 36px;
+      width: 380px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      animation: slideUp .25s ease;
+      -webkit-app-region: no-drag;
     }
-    .wave-icon span:nth-child(1) { height: 6px;  animation-delay: 0s; }
-    .wave-icon span:nth-child(2) { height: 12px; animation-delay: .15s; }
-    .wave-icon span:nth-child(3) { height: 8px;  animation-delay: .3s; }
-    .wave-icon span:nth-child(4) { height: 14px; animation-delay: .45s; }
-    .wave-icon span:nth-child(5) { height: 6px;  animation-delay: .6s; }
-    @keyframes wave {
-      0%, 100% { transform: scaleY(1); }
-      50%       { transform: scaleY(1.8); }
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
     }
+    .modal-icon { font-size: 36px; text-align: center; }
+    .modal-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--red);
+      text-align: center;
+    }
+    .modal-desc {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.7;
+      text-align: center;
+    }
+    .modal-cmd {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      color: var(--accent2);
+      word-break: break-all;
+    }
+    .modal-btns {
+      display: flex;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .modal-btns button {
+      flex: 1;
+      padding: 11px;
+      border: none;
+      border-radius: 10px;
+      font-family: 'Noto Sans KR', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .modal-btns button:hover { opacity: .85; }
+    #modalCancel { background: var(--border); color: var(--text); }
+    #modalConfirm { background: var(--red);    color: #fff; }
   </style>
 </head>
 <body>
 
-  <div id="titlebar">
-    <div class="dot red"></div>
-    <div class="dot yel"></div>
-    <div class="dot grn"></div>
-    <span class="title">Pluiz V2</span>
-    
-    <div class="window-controls">
-      <button id="settingsToggle" class="nav-btn" title="설정">⚙️</button>
-      <button onclick="window.close()" class="nav-btn" title="닫기">✕</button>
+<!-- 타이틀바 -->
+<div id="titlebar">
+  <div class="dot red"></div>
+  <div class="dot yel"></div>
+  <div class="dot grn"></div>
+  <span class="title">Pluiz V2</span>
+  <div class="window-controls">
+    <button class="nav-btn" title="미니창으로" onclick="goMini()">⊟</button>
+    <button class="nav-btn" title="닫기" onclick="goMini()">✕</button>
+  </div>
+</div>
+
+<!-- 대화 로그 -->
+<div id="log">
+  <div class="msg system">Pluiz가 준비됐어요. 텍스트 또는 🎤 음성으로 명령하세요.</div>
+</div>
+
+<!-- 실행 단계 표시 (UTK-06) -->
+<div id="stageBar">
+  <div class="stage-step" id="s-analyze">
+    <div class="s-dot"></div>분석 중
+  </div>
+  <span class="stage-sep">›</span>
+  <div class="stage-step" id="s-generate">
+    <div class="s-dot"></div>생성 중
+  </div>
+  <span class="stage-sep">›</span>
+  <div class="stage-step" id="s-execute">
+    <div class="s-dot"></div>실행 중
+  </div>
+  <span class="stage-sep">›</span>
+  <div class="stage-step" id="s-done">
+    <div class="s-dot"></div>완료
+  </div>
+</div>
+
+<!-- 입력 영역 -->
+<div id="controls">
+  <button id="micBtn" class="stt-idle" title="음성 입력">🎤</button>
+  <input id="textInput" type="text" placeholder="명령어를 입력하세요..."/>
+  <button id="sendBtn">전송</button>
+</div>
+
+<!-- 상태바 -->
+<div id="statusBar">
+  <div id="statusDot"></div>
+  <span id="statusText">ready</span>
+</div>
+
+<!-- 위험 경고 모달 (UTK-11) -->
+<div id="warningModal">
+  <div class="modal-box">
+    <div class="modal-icon">⚠️</div>
+    <div class="modal-title">위험한 명령이 감지됐어요</div>
+    <div class="modal-desc">아래 작업은 시스템에 영향을 줄 수 있어요.<br>정말 실행할까요?</div>
+    <div class="modal-cmd" id="modalCmd"></div>
+    <div class="modal-btns">
+      <button id="modalCancel">취소</button>
+      <button id="modalConfirm">그래도 실행</button>
     </div>
   </div>
-
-  <div id="log">
-    <div class="msg system">Pluiz가 준비됐어요. 텍스트 또는 🎤 음성으로 명령하세요.</div>
-  </div>
-
-  <div id="controls">
-    <button id="micBtn" title="음성 입력">🎤</button>
-    <input id="textInput" type="text" placeholder="명령어를 입력하세요..." />
-    <button id="sendBtn" class="btn">전송</button>
-  </div>
-
-  <div id="statusBar">
-    <div id="statusDot"></div>
-    <span id="statusText">ready</span>
-  </div>
+</div>
 
 <script>
   const API = 'http://localhost:8000';
 
-  // ── DOM ──────────────────────────────────────────────────
-  const log        = document.getElementById('log');
+  // ── DOM ──────────────────────────────────────────────
+  const logEl      = document.getElementById('log');
   const textInput  = document.getElementById('textInput');
   const sendBtn    = document.getElementById('sendBtn');
   const micBtn     = document.getElementById('micBtn');
   const statusDot  = document.getElementById('statusDot');
   const statusText = document.getElementById('statusText');
+  const stageBar   = document.getElementById('stageBar');
+  const modal      = document.getElementById('warningModal');
+  const modalCmd   = document.getElementById('modalCmd');
 
-  // ── 상태 ─────────────────────────────────────────────────
-  let mediaRecorder = null;
-  let audioChunks   = [];
-  let isRecording   = false;
-  let isBusy        = false;
+  // ── 상태 ─────────────────────────────────────────────
+  let mediaRecorder    = null;
+  let audioChunks      = [];
+  let isRecording      = false;
+  let isBusy           = false;
+  let pendingDangerCmd = null;   // 위험 명령 대기
 
-  // ── 유틸 ─────────────────────────────────────────────────
+  // ══ IPC 연동 (UTK-05) ════════════════════════════════
+  function goMini() {
+    if (window.electronAPI) window.electronAPI.minimizeToMini();
+    else window.close();
+  }
+
+  // ══ 상태 유틸 ════════════════════════════════════════
+
   function setStatus(msg, state = 'ok') {
     statusText.textContent = msg;
-    statusDot.className = state === 'busy' ? 'busy' : state === 'error' ? 'error' : '';
+    statusDot.className = state;
   }
 
-  function addMessage(text, type) {
-    const div = document.createElement('div');
-    div.className = `msg ${type}`;
-    div.textContent = text;
-    log.appendChild(div);
-    log.scrollTop = log.scrollHeight;
-    return div;
-  }
+  // 단계별 실행 상태 표시 (UTK-06)
+  // stage: 'analyze' | 'generate' | 'execute' | 'done' | 'warn' | 'hide'
+  function setStage(stage) {
+    const steps = ['analyze', 'generate', 'execute', 'done'];
 
-  function addWaveMessage() {
-    const div = document.createElement('div');
-    div.className = 'msg agent';
-    div.innerHTML = '<div class="wave-icon"><span></span><span></span><span></span><span></span><span></span></div>';
-    log.appendChild(div);
-    log.scrollTop = log.scrollHeight;
-    return div;
+    if (stage === 'hide') {
+      stageBar.classList.remove('show');
+      steps.forEach(s => {
+        document.getElementById(`s-${s}`).className = 'stage-step';
+      });
+      return;
+    }
+
+    stageBar.classList.add('show');
+    const idx = steps.indexOf(stage === 'warn' ? 'execute' : stage);
+
+    steps.forEach((s, i) => {
+      const el = document.getElementById(`s-${s}`);
+      if (i < idx)       el.className = 'stage-step done';
+      else if (i === idx) el.className = `stage-step ${stage === 'warn' ? 'warn' : 'active'}`;
+      else               el.className = 'stage-step';
+    });
+
+    if (stage === 'done') {
+      // 완료 후 1.5초 뒤 숨기기
+      setTimeout(() => setStage('hide'), 1500);
+    }
   }
 
   function setInputEnabled(v) {
@@ -317,42 +520,147 @@
     micBtn.disabled    = !v;
   }
 
-  // ── 텍스트 전송 ───────────────────────────────────────────
+  // ══ 메시지 추가 ══════════════════════════════════════
+
+  function addMessage(text, type) {
+    const div = document.createElement('div');
+    div.className = `msg ${type}`;
+
+    // 코드 블록 파싱 (UTK-03)
+    if (type === 'agent') {
+      div.innerHTML = parseMarkdown(text);
+      div.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+    } else {
+      div.textContent = text;
+    }
+
+    logEl.appendChild(div);
+    scrollToBottom();
+    return div;
+  }
+
+  function addWave() {
+    const div = document.createElement('div');
+    div.className = 'msg agent';
+    div.innerHTML = '<div class="wave-icon"><span></span><span></span><span></span><span></span><span></span></div>';
+    logEl.appendChild(div);
+    scrollToBottom();
+    return div;
+  }
+
+  // 자동 스크롤 (UTK-02)
+  function scrollToBottom() {
+    logEl.scrollTo({ top: logEl.scrollHeight, behavior: 'smooth' });
+  }
+
+  // 간단한 마크다운 → HTML 변환 (코드 블록 + 인라인 코드)
+  function parseMarkdown(text) {
+    return text
+      .replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) =>
+        `<pre><code class="${lang || ''}">${escHtml(code.trim())}</code></pre>`)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\n/g, '<br>');
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ══ 위험 명령 모달 (UTK-11, 12) ═════════════════════
+
+  // 위험 키워드 목록
+  const DANGER_KEYWORDS = ['삭제', '포맷', '제거', 'delete', 'format', 'remove', 'rm -rf'];
+
+  function isDangerous(text) {
+    return DANGER_KEYWORDS.some(k => text.toLowerCase().includes(k));
+  }
+
+  function showWarningModal(cmdText, onConfirm) {
+    modalCmd.textContent = cmdText;
+    modal.classList.add('show');
+    pendingDangerCmd = onConfirm;
+  }
+
+  document.getElementById('modalCancel').addEventListener('click', () => {
+    modal.classList.remove('show');
+    pendingDangerCmd = null;
+    addMessage('명령이 취소됐습니다.', 'system');
+    setStage('hide');
+    setInputEnabled(true);
+    setStatus('ready');
+  });
+
+  document.getElementById('modalConfirm').addEventListener('click', () => {
+    modal.classList.remove('show');
+    if (pendingDangerCmd) pendingDangerCmd();
+    pendingDangerCmd = null;
+  });
+
+  // ══ 텍스트 전송 ══════════════════════════════════════
+
   async function sendText(text) {
     if (!text.trim() || isBusy) return;
     textInput.value = '';
     addMessage(text, 'user');
     setInputEnabled(false);
-    setStatus('명령 처리 중...', 'busy');
 
-    const thinkingMsg = addWaveMessage();
+    // 위험 명령 체크 (UTK-11)
+    if (isDangerous(text)) {
+      showWarningModal(text, () => executeCommand(text));
+      return;
+    }
+    await executeCommand(text);
+  }
+
+  async function executeCommand(text) {
+    const thinking = addWave();
 
     try {
-      // 명령 실행
+      // 단계 1: 분석 중
+      setStage('analyze');
+      setStatus('분석 중...', 'busy');
+
       const res  = await fetch(`${API}/api/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
       });
-      const data = await res.json();
+
+      // 단계 2: 생성 중
+      setStage('generate');
+      setStatus('생성 중...', 'busy');
+
+      const data  = await res.json();
       const reply = data.result ?? data.message ?? '완료됐습니다.';
 
-      thinkingMsg.remove();
+      // 단계 3: 실행 중
+      setStage('execute');
+      setStatus('실행 중...', 'busy');
+
+      // 결과 표시
+      thinking.remove();
       addMessage(reply, 'agent');
 
-      // TTS 재생
+      // 단계 4: 완료
+      setStage('done');
+      setStatus('완료', 'ok');
+
+      // TTS
       await speakText(reply);
+
     } catch (e) {
-      thinkingMsg.remove();
+      thinking.remove();
+      setStage('warn');
+      setStatus('오류 발생', 'error');
       addMessage('서버 연결 오류가 발생했습니다.', 'system');
-      setStatus('error', 'error');
     } finally {
       setInputEnabled(true);
       setStatus('ready');
     }
   }
 
-  // ── TTS 재생 ──────────────────────────────────────────────
+  // ══ TTS 재생 ═════════════════════════════════════════
+
   async function speakText(text) {
     try {
       setStatus('음성 출력 중...', 'busy');
@@ -362,44 +670,42 @@
         body: JSON.stringify({ text }),
       });
       if (!res.ok) return;
-
-      const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
+      const blob  = await res.blob();
+      const url   = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      await new Promise((resolve) => {
-        audio.onended = resolve;
-        audio.onerror = resolve;
-        audio.play();
-      });
+      await new Promise(r => { audio.onended = r; audio.onerror = r; audio.play(); });
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error('[TTS]', e);
+    } finally {
+      setStatus('ready');
     }
   }
 
-  // ── 음성 녹음 ─────────────────────────────────────────────
+  // ══ 음성 녹음 (UTK-04) ═══════════════════════════════
+
+  function setMicState(s) {
+    // s: 'idle' | 'recording' | 'processing'
+    micBtn.className = `stt-${s}`;
+    const icons = { idle: '🎤', recording: '⏹', processing: '⏳' };
+    micBtn.textContent = icons[s] || '🎤';
+  }
+
   async function startRecording() {
     if (isBusy) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunks  = [];
       mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunks.push(e.data);
-      };
-
+      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(audioChunks, { type: 'audio/webm' });
-        await handleVoiceInput(blob);
+        await handleVoiceInput(new Blob(audioChunks, { type: 'audio/webm' }));
       };
-
       mediaRecorder.start();
       isRecording = true;
-      micBtn.classList.add('recording');
-      micBtn.textContent = '⏹';
-      setStatus('녹음 중... (다시 누르면 전송)', 'busy');
+      setMicState('recording');
+      setStatus('녹음 중... 다시 누르면 전송', 'busy');
     } catch (e) {
       addMessage('마이크 접근 권한이 필요합니다.', 'system');
       setStatus('마이크 오류', 'error');
@@ -410,75 +716,67 @@
     if (mediaRecorder && isRecording) {
       mediaRecorder.stop();
       isRecording = false;
-      micBtn.classList.remove('recording');
-      micBtn.textContent = '🎤';
+      setMicState('processing');
       setStatus('음성 처리 중...', 'busy');
     }
   }
 
   async function handleVoiceInput(blob) {
     setInputEnabled(false);
-    const thinkingMsg = addWaveMessage();
+    const thinking = addWave();
 
     try {
-      // 1) STT
-      const formData = new FormData();
-      formData.append('audio', blob, 'audio.webm');
+      const fd = new FormData();
+      fd.append('audio', blob, 'audio.webm');
 
-      const sttRes  = await fetch(`${API}/api/stt`, { method: 'POST', body: formData });
+      const sttRes  = await fetch(`${API}/api/stt`, { method: 'POST', body: fd });
       const sttData = await sttRes.json();
 
       if (sttData.status !== 'success' || !sttData.text) {
-        thinkingMsg.remove();
+        thinking.remove();
         addMessage('음성을 인식하지 못했습니다. 다시 시도해주세요.', 'system');
+        setMicState('idle');
+        setInputEnabled(true);
+        setStatus('ready');
         return;
       }
 
+      thinking.remove();
       const userText = sttData.text;
-      thinkingMsg.remove();
-      addMessage(userText, 'user');          // 인식된 텍스트 표시
+      addMessage(userText, 'user');
+      setMicState('idle');
 
-      // 2) 명령 실행
-      setStatus('명령 처리 중...', 'busy');
-      const thinkingMsg2 = addWaveMessage();
-
-      const execRes  = await fetch(`${API}/api/execute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: userText }),
-      });
-      const execData = await execRes.json();
-      const reply    = execData.result ?? execData.message ?? '완료됐습니다.';
-
-      thinkingMsg2.remove();
-      addMessage(reply, 'agent');
-
-      // 3) TTS
-      await speakText(reply);
+      // 위험 명령 체크
+      if (isDangerous(userText)) {
+        showWarningModal(userText, () => executeCommand(userText));
+        return;
+      }
+      await executeCommand(userText);
 
     } catch (e) {
-      thinkingMsg.remove();
-      addMessage('오류가 발생했습니다: ' + e.message, 'system');
-      setStatus('error', 'error');
+      thinking.remove();
+      addMessage('오류: ' + e.message, 'system');
+      setMicState('idle');
     } finally {
       setInputEnabled(true);
       setStatus('ready');
     }
   }
 
-  // ── 이벤트 ───────────────────────────────────────────────
+  // ══ 이벤트 바인딩 ════════════════════════════════════
+
   micBtn.addEventListener('click', () => {
     isRecording ? stopRecording() : startRecording();
   });
 
   sendBtn.addEventListener('click', () => sendText(textInput.value));
 
-  textInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendText(textInput.value);
-    }
+  textInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(e.target.value); }
   });
+
+  // highlight.js 초기화
+  hljs.configure({ ignoreUnescapedHTML: true });
 </script>
 </body>
 </html>
