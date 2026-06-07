@@ -4,13 +4,14 @@ import os
 import subprocess
 import time
 import requests
+import threading
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -45,11 +46,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-agent  = LocalAgent()
+agent = LocalAgent()
 router = CommandRouter()
-stt    = STTService(mode="google")  # OpenAI 키 없이 동작하는 기본 모드
+stt   = STTService(mode="google")   # Python 직접 마이크 접근
+# tts = TTSService(voice="nova")    # OpenAI API 키 필요 — 추후 활성화
 
-# tts = TTSService(voice="nova")  # OpenAI API 키 필요 — 추후 활성화
+# STT 녹음 상태 관리
+_stt_lock   = threading.Lock()
+_stt_active = False   # 현재 녹음 중인지
 
 class UserRequest(BaseModel):
     text: str
@@ -73,18 +77,36 @@ async def execute_command(request: UserRequest):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-@app.post("/api/stt")
-async def speech_to_text(audio: UploadFile = File(...)):
+# ── 신규: Python 직접 마이크 STT ──────────────────────────────
+@app.post("/api/stt/listen")
+async def stt_listen():
+    """
+    UI 마이크 버튼 클릭 시 호출.
+    Python이 직접 마이크를 잡아서 Google STT로 변환 후 반환.
+    (브라우저/Electron STT 우회 — 팀원 원본 방식 유지)
+    """
+    global _stt_active
+
+    with _stt_lock:
+        if _stt_active:
+            return {"status": "error", "message": "이미 녹음 중입니다."}
+        _stt_active = True
+
     try:
-        audio_bytes = await audio.read()
-        filename    = audio.filename or "audio.webm"
-        text        = stt.transcribe_audio_bytes(audio_bytes, filename)
+        # listen_and_transcribe는 블로킹 함수 → 별도 스레드에서 실행
+        import asyncio
+        loop = asyncio.get_event_loop()
+        text = await loop.run_in_executor(None, stt.listen_and_transcribe)
+
         if not text:
             return {"status": "error", "message": "음성 인식 실패"}
         return {"status": "success", "text": text}
     except Exception as e:
         print(f"[STT 오류] {e}")
         return {"status": "error", "message": str(e)}
+    finally:
+        with _stt_lock:
+            _stt_active = False
 
 @app.post("/api/tts")
 async def text_to_speech(request: UserRequest):
@@ -96,24 +118,4 @@ async def text_to_speech(request: UserRequest):
     #     return Response(content=audio_bytes, media_type="audio/mpeg")
     # except Exception as e:
     #     return Response(status_code=500)
-    return Response(status_code=204)  # No Content — TTS 비활성화 상태
-
-@app.post("/api/voice-execute")
-async def voice_execute(audio: UploadFile = File(...)):
-    try:
-        audio_bytes = await audio.read()
-        filename    = audio.filename or "audio.webm"
-        user_text   = stt.transcribe_audio_bytes(audio_bytes, filename)
-        if not user_text:
-            return {"status": "error", "message": "음성 인식 실패"}
-
-        print(f"[Voice] STT 결과: {user_text}")
-        command    = agent.analyze_command(user_text)
-        result     = router.route(command, user_text)
-        speak_text = result if isinstance(result, str) else "명령을 실행했습니다."
-
-        # TTS 비활성화 상태 — 텍스트로만 반환
-        return {"status": "success", "text": user_text, "result": speak_text}
-    except Exception as e:
-        print(f"[Voice 오류] {e}")
-        return {"status": "error", "message": str(e)}
+    return Response(status_code=204)  # TTS 비활성화 상태

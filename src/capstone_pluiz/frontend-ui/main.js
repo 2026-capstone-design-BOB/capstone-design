@@ -1,10 +1,12 @@
 // frontend-ui/main.js
-// 두 개의 창을 관리:
-//   mainWin  — 메인 채팅 창 (index.html)
-//   miniWin  — 플로팅 미니 창 (mini.html), 항상 위에 표시
-
 const { app, BrowserWindow, ipcMain, session, screen } = require('electron');
 const path = require('path');
+
+// Web Speech API 네트워크 허용
+app.commandLine.appendSwitch('enable-speech-dispatcher');
+app.commandLine.appendSwitch('allow-failed-policy-fetch-for-test');
+app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', 'http://localhost:8000');
+app.commandLine.appendSwitch('enable-features', 'WebSpeechAPI');
 
 let mainWin = null;
 let miniWin = null;
@@ -18,7 +20,7 @@ function createMainWindow() {
     minHeight: 560,
     frame: false,
     backgroundColor: '#0a0a0f',
-    show: false,   // 처음엔 숨김 — 미니창이 기본
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -28,7 +30,6 @@ function createMainWindow() {
 
   mainWin.loadFile(path.join(__dirname, 'index.html'));
 
-  // 닫기 버튼 → 숨기고 미니창으로 복귀
   mainWin.on('close', (e) => {
     if (!app.isQuiting) {
       e.preventDefault();
@@ -45,13 +46,13 @@ function createMiniWindow() {
   miniWin = new BrowserWindow({
     width: 280,
     height: 80,
-    x: width - 300,   // 우하단 배치
+    x: width - 300,
     y: height - 100,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
     resizable: false,
-    skipTaskbar: true,   // 작업표시줄에 안 나타남
+    skipTaskbar: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -61,7 +62,6 @@ function createMiniWindow() {
 
   miniWin.loadFile(path.join(__dirname, 'mini.html'));
 
-  // 더블클릭 이벤트는 mini.html 내 JS에서 IPC로 전달
   miniWin.on('close', (e) => {
     if (!app.isQuiting) {
       e.preventDefault();
@@ -72,7 +72,6 @@ function createMiniWindow() {
 
 // ── IPC 이벤트 ────────────────────────────────────────────
 
-// 미니창 → 메인창 열기 (더블클릭)
 ipcMain.on('open-main', () => {
   if (mainWin) {
     mainWin.show();
@@ -81,26 +80,22 @@ ipcMain.on('open-main', () => {
   }
 });
 
-// 메인창 → 미니창으로 최소화
 ipcMain.on('minimize-to-mini', () => {
   if (mainWin) mainWin.hide();
   if (miniWin) miniWin.show();
 });
 
-// 완전 종료
 ipcMain.on('quit-app', () => {
   app.isQuiting = true;
   app.quit();
 });
 
-// wake word 상태 → 미니창 UI 업데이트
 ipcMain.on('wake-state', (event, state) => {
   if (miniWin && !miniWin.isDestroyed()) {
     miniWin.webContents.send('wake-state', state);
   }
 });
 
-// 미니창 드래그 이동
 ipcMain.on('move-mini', (event, { dx, dy }) => {
   if (miniWin) {
     const [x, y] = miniWin.getPosition();
@@ -108,11 +103,26 @@ ipcMain.on('move-mini', (event, { dx, dy }) => {
   }
 });
 
+// 미니창에서 음성 인식 결과 → 메인창으로 전달 (창은 열지 않음)
+ipcMain.on('mini-voice-command', (event, text) => {
+  if (mainWin) {
+    // 메인창은 숨긴 상태로 유지, 명령만 전달해서 백그라운드에서 실행
+    mainWin.webContents.send('execute-command', text);
+  }
+});
+
 // ── 앱 초기화 ─────────────────────────────────────────────
 app.whenReady().then(() => {
-  // 마이크 권한 자동 허용
+  // ── 권한 허용 (마이크 + Web Speech API) ──
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    callback(permission === 'media');
+    const allowed = ['media', 'microphone', 'speech-recognition'];
+    callback(allowed.includes(permission));
+  });
+
+  // Web Speech API 허용을 위한 체크 핸들러
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    const allowed = ['media', 'microphone', 'speech-recognition'];
+    return allowed.includes(permission);
   });
 
   createMainWindow();

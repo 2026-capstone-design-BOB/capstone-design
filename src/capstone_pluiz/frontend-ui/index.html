@@ -465,9 +465,8 @@
   const modalCmd   = document.getElementById('modalCmd');
 
   // ── 상태 ─────────────────────────────────────────────
-  let mediaRecorder    = null;
-  let audioChunks      = [];
-  let isRecording      = false;
+  let mediaRecorder    = null;  // 미사용 (Web Speech API로 대체)
+  let audioChunks      = [];    // 미사용
   let isBusy           = false;
   let pendingDangerCmd = null;   // 위험 명령 대기
 
@@ -631,8 +630,9 @@
       setStatus('생성 중...', 'busy');
 
       const data  = await res.json();
-      const reply = data.result ?? data.message ?? '완료됐습니다.';
-
+      const reply = typeof data.result === 'string' 
+  ? data.result 
+  : (data.message ?? '완료됐습니다.');
       // 단계 3: 실행 중
       setStage('execute');
       setStatus('실행 중...', 'busy');
@@ -648,12 +648,13 @@
       // TTS
       await speakText(reply);
 
-    } catch (e) {
-      thinking.remove();
-      setStage('warn');
-      setStatus('오류 발생', 'error');
-      addMessage('서버 연결 오류가 발생했습니다.', 'system');
-    } finally {
+} catch (e) {
+  thinking.remove();
+  setStage('warn');
+  setStatus('오류 발생', 'error');
+  addMessage('오류: ' + e.message, 'system');
+  console.error(e);
+} finally {
       setInputEnabled(true);
       setStatus('ready');
     }
@@ -682,7 +683,10 @@
     }
   }
 
-  // ══ 음성 녹음 (UTK-04) ═══════════════════════════════
+  // ══ 음성 인식 - Python 서버 마이크 방식 (UTK-04) ══════════
+  // 브라우저 STT 대신 Python이 직접 마이크를 잡아 Google STT 처리
+
+  let isRecording = false;
 
   function setMicState(s) {
     // s: 'idle' | 'recording' | 'processing'
@@ -692,48 +696,19 @@
   }
 
   async function startRecording() {
-    if (isBusy) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioChunks  = [];
-      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-      mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        await handleVoiceInput(new Blob(audioChunks, { type: 'audio/webm' }));
-      };
-      mediaRecorder.start();
-      isRecording = true;
-      setMicState('recording');
-      setStatus('녹음 중... 다시 누르면 전송', 'busy');
-    } catch (e) {
-      addMessage('마이크 접근 권한이 필요합니다.', 'system');
-      setStatus('마이크 오류', 'error');
-    }
-  }
+    if (isBusy || isRecording) return;
 
-  function stopRecording() {
-    if (mediaRecorder && isRecording) {
-      mediaRecorder.stop();
-      isRecording = false;
-      setMicState('processing');
-      setStatus('음성 처리 중...', 'busy');
-    }
-  }
-
-  async function handleVoiceInput(blob) {
+    isRecording = true;
+    setMicState('recording');
     setInputEnabled(false);
-    const thinking = addWave();
+    setStatus('말씀하세요... (서버 마이크 ON)', 'busy');
 
     try {
-      const fd = new FormData();
-      fd.append('audio', blob, 'audio.webm');
+      // Python 서버가 직접 마이크를 잡아서 STT 수행
+      const res     = await fetch(`${API}/api/stt/listen`, { method: 'POST' });
+      const data    = await res.json();
 
-      const sttRes  = await fetch(`${API}/api/stt`, { method: 'POST', body: fd });
-      const sttData = await sttRes.json();
-
-      if (sttData.status !== 'success' || !sttData.text) {
-        thinking.remove();
+      if (data.status !== 'success' || !data.text) {
         addMessage('음성을 인식하지 못했습니다. 다시 시도해주세요.', 'system');
         setMicState('idle');
         setInputEnabled(true);
@@ -741,12 +716,10 @@
         return;
       }
 
-      thinking.remove();
-      const userText = sttData.text;
+      const userText = data.text;
+      setMicState('processing');
       addMessage(userText, 'user');
-      setMicState('idle');
 
-      // 위험 명령 체크
       if (isDangerous(userText)) {
         showWarningModal(userText, () => executeCommand(userText));
         return;
@@ -754,10 +727,11 @@
       await executeCommand(userText);
 
     } catch (e) {
-      thinking.remove();
-      addMessage('오류: ' + e.message, 'system');
-      setMicState('idle');
+      addMessage('음성 인식 오류: ' + e.message, 'system');
+      setStatus('오류', 'error');
     } finally {
+      isRecording = false;
+      setMicState('idle');
       setInputEnabled(true);
       setStatus('ready');
     }
@@ -766,7 +740,7 @@
   // ══ 이벤트 바인딩 ════════════════════════════════════
 
   micBtn.addEventListener('click', () => {
-    isRecording ? stopRecording() : startRecording();
+    if (!isRecording) startRecording();
   });
 
   sendBtn.addEventListener('click', () => sendText(textInput.value));
@@ -774,6 +748,20 @@
   textInput.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(e.target.value); }
   });
+
+  // ── 미니창에서 전달된 명령 수신 (IPC) ──────────────────
+  if (window.electronAPI) {
+    window.electronAPI.onExecuteCommand(async (text) => {
+      if (!text) return;
+      addMessage(text, 'user');
+      setInputEnabled(false);
+      if (isDangerous(text)) {
+        showWarningModal(text, () => executeCommand(text));
+        return;
+      }
+      await executeCommand(text);
+    });
+  }
 
   // highlight.js 초기화
   hljs.configure({ ignoreUnescapedHTML: true });

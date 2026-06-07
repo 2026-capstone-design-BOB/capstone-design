@@ -29,7 +29,6 @@
       user-select: none;
     }
 
-    /* ── 메인 컨테이너 ── */
     #mini {
       width: 280px;
       height: 80px;
@@ -55,9 +54,13 @@
       border-color: rgba(124,106,255,0.7);
       box-shadow: 0 0 20px rgba(124,106,255,0.3), 0 8px 32px rgba(0,0,0,0.4);
     }
+    #mini.listening {
+      border-color: rgba(255,77,109,0.7);
+      box-shadow: 0 0 20px rgba(255,77,109,0.3), 0 8px 32px rgba(0,0,0,0.4);
+    }
     #mini:active { cursor: grabbing; }
 
-    /* ── 마이크 아이콘 영역 ── */
+    /* ── 마이크 버튼 ── */
     #micArea {
       width: 44px;
       height: 44px;
@@ -69,11 +72,13 @@
       justify-content: center;
       flex-shrink: 0;
       font-size: 18px;
+      cursor: pointer;
       transition: background 0.3s, border-color 0.3s, transform 0.2s;
       position: relative;
+      -webkit-app-region: no-drag;
     }
+    #micArea:hover { background: rgba(124,106,255,0.25); transform: scale(1.05); }
 
-    /* 감지 중 링 애니메이션 */
     #micArea::before {
       content: '';
       position: absolute;
@@ -91,22 +96,18 @@
       0%   { transform: scale(1);   opacity: 0.8; }
       100% { transform: scale(1.5); opacity: 0; }
     }
-
-    /* wake word 감지됐을 때 */
-    #micArea.wake {
+    #micArea.listening {
+      background: rgba(255,77,109,0.2);
+      border-color: var(--red);
+    }
+    #micArea.processing {
       background: rgba(124,106,255,0.3);
       border-color: var(--accent);
-      animation: micPulse 0.6s ease;
+      animation: micPulse 0.8s ease infinite;
     }
     @keyframes micPulse {
       0%,100% { transform: scale(1); }
-      50%     { transform: scale(1.15); }
-    }
-
-    /* 명령 듣는 중 */
-    #micArea.recording {
-      background: rgba(255,77,109,0.2);
-      border-color: var(--red);
+      50%     { transform: scale(1.08); }
     }
 
     /* ── 텍스트 영역 ── */
@@ -122,32 +123,34 @@
       font-size: 11px;
       color: var(--muted);
       font-family: 'Space Mono', monospace;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.3px;
       transition: color 0.3s;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     #stateLabel.active-text { color: var(--accent2); }
+    #stateLabel.listen-text { color: var(--red); }
 
     #lastText {
-      font-size: 13px;
+      font-size: 12px;
       color: var(--text);
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      opacity: 0.9;
     }
 
-    /* ── 파형 (녹음 중일 때) ── */
+    /* ── 파형 ── */
     #waveform {
       display: none;
       gap: 2px;
       align-items: center;
-      height: 18px;
+      height: 16px;
     }
     #waveform.show { display: flex; }
     #waveform span {
-      display: block;
-      width: 3px;
+      display: block; width: 3px;
       background: var(--red);
       border-radius: 2px;
       animation: waveBar 0.8s ease-in-out infinite;
@@ -170,8 +173,8 @@
       flex-shrink: 0;
       transition: background 0.3s;
     }
-    #dot.busy  { background: var(--accent2); animation: blink 0.8s infinite; }
-    #dot.rec   { background: var(--red); animation: blink 0.5s infinite; }
+    #dot.busy { background: var(--accent2); animation: blink 0.8s infinite; }
+    #dot.rec  { background: var(--red);    animation: blink 0.5s infinite; }
     @keyframes blink { 50% { opacity: 0; } }
 
     /* ── 닫기 버튼 ── */
@@ -188,34 +191,34 @@
       display: flex; align-items: center; justify-content: center;
       opacity: 0;
       transition: opacity 0.2s, background 0.2s;
+      -webkit-app-region: no-drag;
     }
     #mini:hover #closeBtn { opacity: 1; }
     #closeBtn:hover { background: rgba(255,77,109,0.3); color: var(--red); }
 
-    /* ── 더블클릭 힌트 ── */
     #hint {
       position: absolute;
-      bottom: 6px; right: 12px;
+      bottom: 5px; right: 12px;
       font-size: 9px;
       color: var(--muted);
       font-family: 'Space Mono', monospace;
       opacity: 0;
       transition: opacity 0.2s;
     }
-    #mini:hover #hint { opacity: 0.6; }
+    #mini:hover #hint { opacity: 0.5; }
   </style>
 </head>
 <body>
 
 <div id="mini">
-  <div id="micArea">🎤</div>
+  <div id="micArea" title="클릭해서 음성 명령">🎤</div>
 
   <div id="textArea">
-    <span id="stateLabel">대기 중 — "플루이즈"라고 말해보세요</span>
+    <span id="stateLabel">클릭하거나 더블클릭해 전체화면</span>
     <div id="waveform">
       <span></span><span></span><span></span><span></span><span></span>
     </div>
-    <span id="lastText" style="display:none"></span>
+    <span id="lastText"></span>
   </div>
 
   <div id="dot"></div>
@@ -224,63 +227,118 @@
 </div>
 
 <script>
-  const mini      = document.getElementById('mini');
-  const micArea   = document.getElementById('micArea');
-  const stateLabel= document.getElementById('stateLabel');
-  const waveform  = document.getElementById('waveform');
-  const lastText  = document.getElementById('lastText');
-  const dot       = document.getElementById('dot');
-  const closeBtn  = document.getElementById('closeBtn');
+  const mini       = document.getElementById('mini');
+  const micArea    = document.getElementById('micArea');
+  const stateLabel = document.getElementById('stateLabel');
+  const waveform   = document.getElementById('waveform');
+  const lastText   = document.getElementById('lastText');
+  const dot        = document.getElementById('dot');
+  const closeBtn   = document.getElementById('closeBtn');
 
-  // ── 상태 메시지 맵 ────────────────────────────────────────
-  const STATE = {
-    idle:             { label: '대기 중 — "플루이즈"라고 말해보세요', mic: '',          dot: '',     wave: false },
-    wake_detected:    { label: 'Wake word 감지!',                      mic: 'wake',      dot: 'busy', wave: false },
-    listening_command:{ label: '명령을 말씀하세요...',                   mic: 'recording', dot: 'rec',  wave: true  },
-    processing:       { label: '처리 중...',                            mic: '',          dot: 'busy', wave: false },
-  };
+  const API = 'http://localhost:8000';
 
-  function applyState(s) {
-    const cfg = STATE[s] || STATE.idle;
-    stateLabel.textContent = cfg.label;
-    stateLabel.className   = (s !== 'idle') ? 'active-text' : '';
+  // ── Web Speech API 설정 ───────────────────────────────
+  let isListening = false;
 
-    micArea.className = cfg.mic ? `${cfg.mic}` : '';
-    dot.className     = cfg.dot;
-    mini.className    = (s !== 'idle') ? 'active' : '';
+  function setMiniState(s) {
+    // idle | listening | processing | done
+    micArea.className = s !== 'idle' ? s : '';
+    dot.className     = s === 'listening' ? 'rec' : s === 'processing' ? 'busy' : '';
+    mini.className    = s !== 'idle' ? (s === 'listening' ? 'listening' : 'active') : '';
+    waveform.className = s === 'listening' ? 'show' : '';
 
-    // 파형
-    waveform.className = cfg.wave ? 'show' : '';
-    lastText.style.display = cfg.wave ? 'none' : '';
+    const labels = {
+      idle:       '대기중-"Pluiz를 불러보세요."',
+      listening:  '말씀하세요...',
+      processing: '처리 중...',
+    };
+    stateLabel.textContent = labels[s] || '';
+    stateLabel.className   = s === 'listening' ? 'listen-text' : s !== 'idle' ? 'active-text' : '';
+    micArea.textContent    = s === 'listening' ? '⏹' : s === 'processing' ? '⏳' : '🎤';
   }
 
-  // ── IPC: wake state 수신 ─────────────────────────────────
+  async function startVoice() {
+    if (isListening) return;
+
+    isListening = true;
+    setMiniState('listening');
+
+    try {
+      // Python 서버가 직접 마이크를 잡아서 STT 수행
+      const res  = await fetch(`${API}/api/stt/listen`, { method: 'POST' });
+      const data = await res.json();
+
+      if (data.status !== 'success' || !data.text) {
+        lastText.textContent = '인식 실패';
+        setMiniState('idle');
+        return;
+      }
+
+      const text = data.text;
+      lastText.textContent = text;
+      setMiniState('processing');
+
+      // 메인창으로 명령 전달 (IPC)
+      if (window.electronAPI) {
+        window.electronAPI.miniVoiceCommand(text);
+      } else {
+        fetch(`${API}/api/execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        }).then(() => setMiniState('idle'));
+      }
+    } catch (e) {
+      console.error('[Mini STT]', e);
+      lastText.textContent = '오류 발생';
+      setMiniState('idle');
+    } finally {
+      isListening = false;
+    }
+  }
+
+  // ── IPC: wake state 수신 ─────────────────────────────
   if (window.electronAPI) {
-    window.electronAPI.onWakeState((state) => applyState(state));
+    window.electronAPI.onWakeState((state) => {
+      const map = {
+        idle:             'idle',
+        wake_detected:    'processing',
+        listening_command:'listening',
+        processing:       'processing',
+      };
+      setMiniState(map[state] || 'idle');
+    });
   }
 
-  // ── 더블클릭 → 메인 창 열기 ──────────────────────────────
+  // ── 이벤트 ───────────────────────────────────────────
+
+  // 마이크 버튼 클릭 → 음성 인식 시작/중지
+  micArea.addEventListener('click', (e) => {
+    e.stopPropagation();
+    startVoice();
+  });
+
+  // 더블클릭 → 메인 창 열기
   mini.addEventListener('dblclick', () => {
     if (window.electronAPI) window.electronAPI.openMain();
   });
 
-  // ── 닫기 버튼 ────────────────────────────────────────────
+  // 닫기 버튼
   closeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (window.electronAPI) window.electronAPI.quitApp();
   });
 
-  // ── 드래그로 창 이동 ──────────────────────────────────────
-  let dragging = false;
-  let startX, startY;
+  // ── 드래그 이동 ──────────────────────────────────────
+  let dragging = false, startX, startY;
 
   mini.addEventListener('mousedown', (e) => {
-    if (e.target === closeBtn) return;
+    if (e.target === closeBtn || e.target === micArea) return;
     dragging = true;
     startX = e.screenX;
     startY = e.screenY;
     document.addEventListener('mousemove', onDrag);
-    document.addEventListener('mouseup', onDragEnd);
+    document.addEventListener('mouseup',   onDragEnd);
   });
 
   function onDrag(e) {
@@ -295,11 +353,10 @@
   function onDragEnd() {
     dragging = false;
     document.removeEventListener('mousemove', onDrag);
-    document.removeEventListener('mouseup', onDragEnd);
+    document.removeEventListener('mouseup',   onDragEnd);
   }
 
-  // ── 초기 상태 ────────────────────────────────────────────
-  applyState('idle');
+  setMiniState('idle');
 </script>
 </body>
 </html>
