@@ -91,11 +91,14 @@ class MultistepExecutor:
 
             enriched_steps.append(step_with_code)
 
-            # 스텝별 input 생성 — LLM이 해당 스텝만 처리하도록
+            # 스텝별 input 생성 — natural_language는 params.input이 사용자 자연어
             action = step.get("action", "")
             params = step.get("params", {})
-            param_str = " ".join(str(v) for v in params.values() if v)
-            step_input = f"{action} {param_str}".strip() if param_str else action
+            if action == "natural_language" and "input" in params:
+                step_input = params["input"]
+            else:
+                param_str = " ".join(str(v) for v in params.values() if v)
+                step_input = f"{action} {param_str}".strip() if param_str else action
 
             # 클로저에서 i 캡처
             def make_cb(idx, s):
@@ -138,8 +141,11 @@ class MultistepExecutor:
             print(f"[MultistepExecutor] 스텝 {i+1} 제출: {step.get('action')}")
             action = step.get("action", "")
             params = step.get("params", {})
-            param_str = " ".join(str(v) for v in params.values() if v)
-            step_input = f"{action} {param_str}".strip() if param_str else action
+            if action == "natural_language" and "input" in params:
+                step_input = params["input"]
+            else:
+                param_str = " ".join(str(v) for v in params.values() if v)
+                step_input = f"{action} {param_str}".strip() if param_str else action
             self.executor.submit(
                 user_input=step_input,
                 command=step,

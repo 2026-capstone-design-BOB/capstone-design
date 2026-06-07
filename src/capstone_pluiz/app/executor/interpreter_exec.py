@@ -5,6 +5,7 @@ import re
 import subprocess
 import psutil
 from app.agents.supervisor_agent import SupervisorAgent
+from app.executor.offline_executor import OfflineExecutor
 from app.cache.command_cache import CommandCache
 from app.security.ast_guard import check_code
 
@@ -274,6 +275,71 @@ def _verify_result(command: dict, exec_result: dict) -> dict:
             return {"verified": False, "reason": f"생성 확인 실패: {full_path}"}
         return {"verified": True, "reason": ""}
 
+    if action == "natural_language":
+        stdout = exec_result.get("stdout", "")
+        code   = exec_result.get("code", "")
+
+        # ── Step 1. 실행 완료 stdout 확인 (소프트 검증) ──────────
+        if "실행 완료" not in stdout:
+            return {
+                "verified": False,
+                "reason": (
+                    f"실행 완료 확인 불가 — stdout: {stdout.strip()[:80]!r}"
+                    if stdout.strip()
+                    else "실행 완료 확인 불가 — stdout 없음"
+                )
+            }
+
+        # ── Step 2. 코드 분석 → 동작 유형 추론 → 하드 검증 ──────
+        # 2-A. 앱 실행 감지: subprocess.Popen + .exe 경로 포함
+        if "subprocess.Popen" in code and ".exe" in code.lower():
+            exe_matches = _EXE_PATH_RE.findall(code)
+            for raw_path in exe_matches:
+                exe_name = os.path.basename(raw_path).lower()
+                # APP_PROCESS_MAP 역방향으로 앱명 추론
+                app_name = next(
+                    (k for k, v in APP_PROCESS_MAP.items()
+                     if any(exe_name == proc.lower() for proc in v)),
+                    None
+                )
+                if app_name:
+                    time.sleep(0.5)
+                    if not _is_process_running(app_name):
+                        proc_names = APP_PROCESS_MAP.get(app_name, [exe_name])
+                        return {
+                            "verified": False,
+                            "reason": (
+                                f"앱 실행 확인 실패: '{app_name}' 프로세스"
+                                f"({', '.join(proc_names)})가 실행 후 감지되지 않음"
+                            )
+                        }
+                    return {"verified": True, "reason": ""}
+
+        # 2-B. 파일/폴더 생성 감지: open() 쓰기 모드 또는 os.makedirs/mkdir/Path.touch
+        file_creation_patterns = (
+            "open(", "Path(", "os.makedirs", "os.mkdir", ".touch(", ".write(",
+        )
+        if any(p in code for p in file_creation_patterns):
+            # stdout에서 생성된 경로 추출 시도
+            path_match = re.search(
+                r'(?:생성|저장|만들|created)[^\n]*?([A-Za-z]:[/\\][^\s\'"]+)',
+                stdout, re.IGNORECASE
+            )
+            if path_match:
+                created_path = path_match.group(1).replace('\\', '/')
+                if not os.path.exists(created_path):
+                    return {
+                        "verified": False,
+                        "reason": f"파일/폴더 생성 확인 실패: {created_path}"
+                    }
+                return {"verified": True, "reason": ""}
+            # 경로 추출 실패 — stdout 신뢰로 폴백
+            return {"verified": True, "reason": ""}
+
+
+        # 2-C. 그 외 (볼륨, 밝기, 스크린샷 등) — stdout 신뢰
+        return {"verified": True, "reason": ""}
+
     return {"verified": True, "reason": ""}
 
 
@@ -283,15 +349,27 @@ class InterpreterExecutor:
     def __init__(self):
         self.supervisor = SupervisorAgent()
         self.cache = CommandCache()
+        self.offline = OfflineExecutor()
+        # API 완전 불가 상태 추적 — True가 되면 이후 요청도 오프라인으로
+        self._api_down = not self.supervisor.available
         print("[Executor] 초기화 완료")
 
-    def run_from_cache(self, cached: dict) -> dict:
+    def run_from_cache(self, cached: dict, command: dict | None = None) -> dict:
         code = cached.get("code", "")
         start = time.time()
         result = self._execute_code(code)
         print(f"[시간] 캐시 코드 실행: {time.time()-start:.3f}초")
-        msg = "완료됐습니다." if result["status"] == "success" else "실행 중 오류가 발생했습니다."
-        return {"status": "success", "message": msg, "from_cache": True}
+
+        if result["status"] == "blocked":
+            return result
+
+        if result["status"] in ("error", "syntax_error", "no_retry"):
+            print(f"[run_from_cache] 실행 실패 — 캐시 무효화: {result.get('message')}")
+            if command:
+                self.cache.invalidate(command)
+            return {"status": "error", "message": result.get("message", "실행 중 오류가 발생했습니다."), "from_cache": True}
+
+        return {"status": "success", "message": "완료됐습니다.", "from_cache": True}
 
     def execute(self, command: dict, original_input: str = "") -> dict:
         start_total = time.time()
@@ -365,23 +443,60 @@ class InterpreterExecutor:
                 if result["status"] == "blocked":
                     return result
 
+                # 되묻기 — 캐시 무효화 후 반환
+                if result["status"] == "ask":
+                    self.cache.invalidate(command)
+                    return {"status": "ask", "message": result["message"], "from_cache": False}
+
+                result["code"] = cached["code"]  # 하드 검증용 코드 주입
                 verified = _verify_result(command, result)
                 if not verified["verified"]:
-                    print(f"[검증 실패] 캐시 코드 오작동 — 캐시 무효화: {verified['reason']}")
+                    print(f"[검증 실패] 캐시 코드 오작동 — 캐시 무효화 후 재생성: {verified['reason']}")
                     self.cache.invalidate(command)
-                    return {"status": "error", "message": verified["reason"], "from_cache": True}
-
-                print(f"[시간] 총 소요: {time.time()-start_total:.3f}초 ✅ (캐시)")
-                return {"status": "success", "message": "완료됐습니다.", "from_cache": True}
+                    # 캐시 무효화 후 Step 2로 fall-through — 재생성 시작
+                    cache_miss_error_context = {
+                        "type": "verification_failed",
+                        "reason": verified["reason"],
+                        "code": cached["code"],
+                    }
+                else:
+                    print(f"[시간] 총 소요: {time.time()-start_total:.3f}초 ✅ (캐시)")
+                    return {"status": "success", "message": "완료됐습니다.", "from_cache": True}
+            else:
+                cache_miss_error_context = None
 
             # ── Step 2. 캐시 미스 → 코드 생성 + 에러 피드백 재시도 ──
-            error_context = None
+            error_context = cache_miss_error_context
+
+            # command에서 히스토리 추출 (_history는 라우팅에 영향 없는 메타 필드)
+            history = command.pop("_history", None)
+
+            # ── API 완전 불가 → 즉시 오프라인 폴백 ─────────────────
+            if self._api_down:
+                print("[Executor] API 불가 상태 → 오프라인 폴백 (Open Interpreter)")
+                return self.offline.run(original_input)
 
             for attempt in range(MAX_ATTEMPTS):
-                label = "캐시 미스 → " if attempt == 0 else f"재시도 {attempt} → "
+                if attempt == 0:
+                    label = "캐시 무효화 후 재생성 → " if cache_miss_error_context else "캐시 미스 → "
+                else:
+                    label = f"재시도 {attempt} → "
                 print(f"[Executor] {label}Gemini 코드 생성 중...")
                 t = time.time()
-                code = self.supervisor.generate_code(command, original_input, error_context)
+                try:
+                    code = self.supervisor.generate_code(command, original_input, error_context, history)
+                except Exception as api_err:
+                    # API 완전 불가 오류 → 오프라인 전환 후 이후 요청도 오프라인
+                    err_msg = str(api_err).lower()
+                    is_permanent = any(t in err_msg for t in ("connection", "timeout", "unavailable", "overloaded", "api_key", "permission"))
+                    if is_permanent:
+                        print(f"[Executor] API 오류 감지 → 오프라인 전환: {type(api_err).__name__}")
+                        self._api_down = True
+                        return self.offline.run(original_input)
+                    # 일시적 오류(429 등) → 재시도 계속
+                    print(f"[Executor] 일시적 API 오류 (재시도 {attempt+1}/{MAX_ATTEMPTS}): {api_err}")
+                    error_context = {"type": "error", "reason": str(api_err), "code": ""}
+                    continue
                 print(f"[시간] Gemini 코드 생성: {time.time()-t:.3f}초")
 
                 if not code:
@@ -396,6 +511,16 @@ class InterpreterExecutor:
                     print(f"[시간] 총 소요: {time.time()-start_total:.3f}초 (차단)")
                     return result
 
+                # 되묻기 — 캐시 저장 없이 즉시 반환
+                if result["status"] == "ask":
+                    print(f"[시간] 총 소요: {time.time()-start_total:.3f}초 (되묻기)")
+                    return {"status": "ask", "message": result["message"], "from_cache": False}
+
+                # 앱 미실행 등 재시도해도 의미 없는 케이스 — 즉시 에러 반환
+                if result["status"] == "no_retry":
+                    print(f"[Executor] 재시도 불필요 — 즉시 종료: {result['message']}")
+                    return {"status": "error", "message": result["message"], "from_cache": False}
+
                 if result["status"] in ("syntax_error", "error"):
                     error_context = {
                         "type": result["status"],
@@ -405,6 +530,7 @@ class InterpreterExecutor:
                     print(f"[시도 {attempt+1}/{MAX_ATTEMPTS}] 실행 실패: {error_context['reason']}")
                     continue
 
+                result["code"] = code  # 하드 검증용 코드 주입
                 verified = _verify_result(command, result)
                 if not verified["verified"]:
                     error_context = {
@@ -428,14 +554,30 @@ class InterpreterExecutor:
                 return {"status": "success", "message": msg, "from_cache": False}
 
             # MAX_ATTEMPTS 모두 실패
+            # API는 살아있으나 코드 생성 반복 실패 — 오프라인 폴백 안 함
             last_reason = error_context.get("reason", "알 수 없는 오류") if error_context else "알 수 없는 오류"
             print(f"[Executor] {MAX_ATTEMPTS}회 시도 모두 실패: {last_reason}")
             print(f"[시간] 총 소요: {time.time()-start_total:.3f}초 (최종 실패)")
-            return {"status": "error", "message": f"실행에 실패했습니다: {last_reason}"}
+            return {"status": "error", "message": f"명령 실행에 실패했습니다. 다시 시도해주세요.", "from_cache": False}
 
         except Exception as e:
             print(f"[Executor 오류] {e}")
             return {"status": "error", "message": str(e)}
+
+    def _wrap_in_try_except(self, code: str) -> str:
+        """
+        try/except가 없는 코드를 자동으로 감싸서
+        내부 실패가 조용히 묻히지 않도록 보장.
+        """
+        if "try:" in code and "except" in code:
+            return code  # 이미 있으면 그대로
+        indented = "\n".join("    " + line for line in code.splitlines())
+        return (
+            "try:\n"
+            f"{indented}\n"
+            "except Exception as e:\n"
+            '    print(f"실행 실패: {e}")'
+        )
 
     def _execute_code(self, code: str) -> dict:
         guard_result = check_code(code)
@@ -443,9 +585,47 @@ class InterpreterExecutor:
             if "문법 오류" in guard_result["message"] or "파싱 오류" in guard_result["message"]:
                 return {"status": "syntax_error", "message": guard_result["message"]}
             return {"status": "blocked", "message": guard_result["message"]}
+
+        # try/except 없는 코드 자동 래핑 — 내부 실패 감지 보장
+        code = self._wrap_in_try_except(code)
+
+        import io
+        import sys
+        stdout_capture = io.StringIO()
         try:
+            # stdout 캡처 — except 블록의 print(f"실행 실패: {e}") 감지용
+            sys.stdout = stdout_capture
             exec(code, {"__builtins__": __builtins__})
-            return {"status": "success"}
         except Exception as e:
+            sys.stdout = sys.__stdout__
+            captured = stdout_capture.getvalue()
+            if captured.strip():
+                print(captured.strip())
             print(f"[코드 실행 오류] {e}")
             return {"status": "error", "message": str(e)}
+        finally:
+            sys.stdout = sys.__stdout__
+
+        captured = stdout_capture.getvalue()
+        if captured.strip():
+            print(captured.strip())  # 정상 출력도 터미널에 표시
+
+        # "되묻기:" 패턴 감지 — 대상 불명 명령, 캐시 저장 안 함
+        if "되묻기:" in captured:
+            # "되묻기:" 이후 전체 문자열 보존 — 태그([최대화] 등) 포함
+            question = captured.strip().split("되묻기:", 1)[-1].strip()
+            full_msg = "되묻기:" + question  # TAG_PATTERN 매칭용으로 prefix 유지
+            print(f"[되묻기] {question}")
+            return {"status": "ask", "message": full_msg}
+
+        # "실행 실패:" 패턴 감지 — try/except 내부에서 조용히 실패한 케이스
+        if "실행 실패:" in captured:
+            reason = captured.strip().split("실행 실패:", 1)[1].strip()
+            print(f"[코드 실행 오류] 내부 실패 감지: {reason}")
+            # 앱 미실행 케이스 — 코드 오류 아님, 재시도 불필요
+            no_retry = ("프로세스가 실행 중이지 않습니다", "창을 찾을 수 없습니다")
+            if any(k in reason for k in no_retry):
+                return {"status": "no_retry", "message": reason}
+            return {"status": "error", "message": f"실행 실패: {reason}"}
+
+        return {"status": "success", "stdout": captured}

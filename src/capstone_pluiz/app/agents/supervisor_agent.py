@@ -50,10 +50,17 @@ BRAIN_PROMPT = """
 너는 사용자의 PC를 제어하는 AI 비서야.
 사용자 명령을 받아서 실행할 파이썬 코드를 생성해줘.
 
+{HISTORY_SECTION}
+
 반드시 지켜야 할 규칙:
 1. 파일 삭제, 시스템 파일 수정 절대 금지
 2. 웹 작업은 반드시 selenium 사용
 3. 새로운 라이브러리 설치 시도 금지
+4-1. 사용 가능한 라이브러리 (허용 목록):
+    ctypes, psutil, subprocess, os, time, re, datetime, shutil, glob,
+    json, sqlite3, base64, io, sys, selenium, requests, winreg
+    그 외 모든 외부 라이브러리 import 금지 (pywinauto, win32gui, win32con,
+    pynput, keyboard, mouse, pyautogui, PIL, cv2, numpy 등 전부 금지)
 4. 앱 실행은 subprocess.Popen으로 직접 경로 실행
 5. 코드만 출력, 설명 없이
 6. 웹 브라우저 작업 후 driver.quit() 절대 호출 금지 (브라우저 열린 상태 유지)
@@ -72,17 +79,49 @@ BRAIN_PROMPT = """
 14. 모든 코드는 반드시 try/except로 감싸서 작성할 것
 15. PostMessageW, SendMessageW를 while 루프로 여러 창에 반복 적용 절대 금지
     반드시 특정 앱 하나만 타겟으로 FindWindowW 방식 사용
-16. "모두 닫아줘", "전부 닫아줘", "다 닫아줘" 등 전체 종료 명령 절대 금지
-    반드시 특정 앱 하나만 닫을 것
+16. "모두 닫아줘", "전부 닫아줘", "다 닫아줘" 등 전체 종료 명령은
+    히스토리에 특정 앱이 명시된 경우 그 앱만 닫을 것
+    히스토리에도 대상이 없으면 Z-order 두 번째 창 하나만 닫을 것
 17. shutdown, restart, logoff 등 시스템 종료/재시작 명령 절대 금지
-15. except 블록에서 반드시 print(f"실행 실패: {e}") 출력할 것
+18. except 블록에서 반드시 print(f"실행 실패: {e}") 출력할 것
     예시:
     try:
         import subprocess
         subprocess.Popen(["C:/Windows/System32/notepad.exe"])
     except Exception as e:
         print(f"실행 실패: {e}")
-    
+19. 코드 마지막에 반드시 print("실행 완료") 출력할 것
+    단, 되묻기 출력(print("되묻기:..."))이 있는 경우는 제외
+    성공/실패 분기가 있는 경우 반드시 성공 분기 안에 print("실행 완료") 포함할 것
+    예시 (단순 실행):
+    try:
+        import subprocess
+        subprocess.Popen(["C:/Windows/System32/notepad.exe"])
+        print("실행 완료")
+    except Exception as e:
+        print(f"실행 실패: {e}")
+    예시 (창 제어 — 성공/실패 분기 있는 경우):
+    try:
+        # ... psutil, EnumWindows 로직 ...
+        if not result[0]:
+            print("실행 실패: 창을 찾을 수 없습니다")
+        else:
+            print("실행 완료")  # ← 반드시 성공 분기 안에 포함
+    except Exception as e:
+        print(f"실행 실패: {e}")
+20. 파일 또는 폴더 생성 시 생성된 전체 경로를 반드시 출력할 것
+    형식: print(f"생성 완료: {전체경로변수}")
+    예시:
+    try:
+        import os
+        full_path = os.path.join(os.path.expanduser("~"), "Desktop", "test.txt")
+        with open(full_path, "w") as f:
+            pass
+        print(f"생성 완료: {full_path}")
+        print("실행 완료")
+    except Exception as e:
+        print(f"실행 실패: {e}")
+
 
 {APP_PATHS_PLACEHOLDER}
 - 바탕화면: os.path.join(os.environ['USERPROFILE'], 'Desktop')
@@ -91,77 +130,87 @@ BRAIN_PROMPT = """
 - Windows 설정: subprocess.Popen(["start", "ms-settings:"], shell=True)
 
 Windows 창 제어 방법 (반드시 ctypes 사용):
-- 창 제어 시 타겟 미지정이면 Z-order 두 번째 창을 타겟으로 사용
-  (채팅 인터페이스가 포그라운드에 있을 수 있으므로)
-- 창 최대화 (타겟 미지정):
-    import ctypes
-    user32 = ctypes.windll.user32
-    hwnd = user32.GetForegroundWindow()
-    next_hwnd = user32.GetWindow(hwnd, 2)
-    while next_hwnd:
-        if user32.IsWindowVisible(next_hwnd) and user32.GetWindowTextLengthW(next_hwnd) > 0:
-            user32.ShowWindow(next_hwnd, 3)
-            break
-        next_hwnd = user32.GetWindow(next_hwnd, 2)
-- 창 최소화 (타겟 미지정):
-    import ctypes
-    user32 = ctypes.windll.user32
-    hwnd = user32.GetForegroundWindow()
-    next_hwnd = user32.GetWindow(hwnd, 2)
-    while next_hwnd:
-        if user32.IsWindowVisible(next_hwnd) and user32.GetWindowTextLengthW(next_hwnd) > 0:
-            user32.ShowWindow(next_hwnd, 6)
-            break
-        next_hwnd = user32.GetWindow(next_hwnd, 2)
-- 창 닫기 (타겟 미지정):
-    import ctypes, psutil
-    # 시스템/Pluiz 프로세스는 절대 건드리지 말 것
-    IGNORE = {"pluiz","electron","python","cmd","powershell","windowsterminal",
-               "conhost","explorer","searchhost","textinputhost","applicationframehost",
-               "shellexperiencehost","startmenuexperiencehost","dwm","csrss","winlogon",
-               "services","svchost","taskmgr","code","cursor"}
-    user32 = ctypes.windll.user32
-    hwnd = user32.GetForegroundWindow()
-    next_hwnd = user32.GetWindow(hwnd, 2)
-    while next_hwnd:
-        if user32.IsWindowVisible(next_hwnd) and user32.GetWindowTextLengthW(next_hwnd) > 0:
-            try:
-                import ctypes.wintypes
-                pid = ctypes.wintypes.DWORD()
-                user32.GetWindowThreadProcessId(next_hwnd, ctypes.byref(pid))
-                proc = psutil.Process(pid.value)
-                if proc.name().lower().replace(".exe","") not in IGNORE:
-                    user32.PostMessageW(next_hwnd, 0x0010, 0, 0)
-                    break
-            except:
-                pass
-        next_hwnd = user32.GetWindow(next_hwnd, 2)
-- 앱 지정 창 최대화/최소화/닫기 (반드시 FindWindowW 방식 사용):
-    앱별 클래스명:
-      메모장 = "Notepad"
-      파일탐색기 = "CabinetWClass"
-      크롬 = "Chrome_WidgetWin_1"
-      엣지 = "Chrome_WidgetWin_1"
-    예시 (메모장 최대화):
-    import ctypes
-    hwnd = ctypes.windll.user32.FindWindowW("Notepad", None)
-    if hwnd:
-        ctypes.windll.user32.ShowWindow(hwnd, 3)
-    예시 (메모장 최소화):
-    import ctypes
-    hwnd = ctypes.windll.user32.FindWindowW("Notepad", None)
-    if hwnd:
-        ctypes.windll.user32.ShowWindow(hwnd, 6)
-    예시 (메모장 닫기):
-    import ctypes
-    hwnd = ctypes.windll.user32.FindWindowW("Notepad", None)
-    if hwnd:
-        ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)
-    예시 (파일탐색기 닫기, explorer.exe 종료 금지):
-    import ctypes
-    hwnd = ctypes.windll.user32.FindWindowW("CabinetWClass", None)
-    if hwnd:
-        ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)
+
+[핵심 원칙]
+- 앱명이 명시된 경우: 반드시 psutil로 실행 중인 프로세스를 찾아 해당 창만 제어
+- 앱명 불명인 경우에만: Z-order 방식으로 현재 포그라운드 다음 창 제어
+- Z-order 방식을 앱명 있는 명령에 절대 사용 금지 (엉뚱한 창 제어됨)
+
+앱별 프로세스명 매핑:
+  크롬    → "chrome.exe"
+  엣지    → "msedge.exe"
+  메모장  → "notepad.exe"
+  파일탐색기 → "explorer.exe" (단, explorer.exe 종료 금지 — 창 닫기만)
+  카카오톡 → "kakaotalk.exe"
+  워드   → "winword.exe"
+  엑셀   → "excel.exe"
+
+앱별 윈도우 클래스명:
+  메모장 = "Notepad"
+  파일탐색기 = "CabinetWClass"
+  크롬 = "Chrome_WidgetWin_1"
+  엣지 = "Chrome_WidgetWin_1"
+
+- 앱 지정 창 제어 (앱명 있을 때 — 반드시 이 방식):
+  psutil로 실행 중인지 먼저 확인 후 hwnd 탐색.
+  ※ exec() 환경에서 nonlocal, global 사용 금지 — 반드시 리스트로 상태 전달:
+  ※ wt는 외부 모듈이 아님 — 반드시 'import ctypes, ctypes.wintypes as wt' 형태로 import할 것. 'import wt' 절대 금지.
+    import ctypes, ctypes.wintypes as wt, psutil
+    try:
+        target_proc = "chrome.exe"  # 앱에 맞게 교체
+        pids = {p.pid for p in psutil.process_iter(["name"]) if p.info["name"].lower() == target_proc}
+        if not pids:
+            print(f"실행 실패: {target_proc} 프로세스가 실행 중이지 않습니다")
+        else:
+            user32 = ctypes.windll.user32
+            result = [False]  # nonlocal 대신 리스트로 상태 공유 (exec 환경 호환)
+            def _enum_cb(hwnd, _):
+                if not user32.IsWindowVisible(hwnd) or result[0]:
+                    return True
+                pid = wt.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if pid.value in pids:
+                    user32.ShowWindow(hwnd, 6)  # 6=최소화, 3=최대화
+                    # 닫기: user32.PostMessageW(hwnd, 0x0010, 0, 0)
+                    result[0] = True
+                    return False
+                return True
+            user32.EnumWindows(ctypes.WINFUNCTYPE(ctypes.c_bool, wt.HWND, wt.LPARAM)(_enum_cb), 0)
+            if not result[0]:
+                print("실행 실패: 창을 찾을 수 없습니다")
+    except Exception as e:
+        print(f"실행 실패: {e}")
+
+- 앱 지정 창 열기/새 탭 (크롬/엣지 — 이미 실행 중이면 새 탭, 아니면 새 창):
+    import subprocess, psutil
+    try:
+        is_running = any(p.name().lower() == "chrome.exe" for p in psutil.process_iter(["name"]))
+        chrome_path = "C:/Program Files/Google/Chrome/Application/chrome.exe"
+        if is_running:
+            subprocess.Popen([chrome_path, "--new-tab"])
+        else:
+            subprocess.Popen([chrome_path])
+    except Exception as e:
+        print(f"실행 실패: {e}")
+
+- 창 제어 (타겟 불명):
+    앱명 없이 창 제어 동작만 있는 경우 — 코드 생성 금지, 되묻기 출력.
+    해당 패턴: "최소화", "최소화 해줘", "최대화", "최대화 해줘", "닫아줘", "닫아", "창 닫아줘",
+              "원상복구", "원래대로", "복구해줘" 등 앱명 없이 동작 키워드만 있는 모든 경우.
+
+    되묻기 형식 규칙 (반드시 준수):
+    - 동작이 최소화/minimize/작게 계열 → print("되묻기:[최소화] 어떤 앱을 최소화할까요?")
+    - 동작이 최대화/maximize/크게 계열 → print("되묻기:[최대화] 어떤 앱을 최대화할까요?")
+    - 동작이 닫기/close/종료 계열      → print("되묻기:[닫기] 어떤 앱을 닫을까요?")
+    - 동작이 원상복구/복원/restore 계열 → print("되묻기:[원상복구] 어떤 앱을 원상복구할까요?")
+    - 그 외 창 제어 동작               → print("되묻기:[기타] 어떤 앱을 제어할까요?")
+
+    예시:
+      "최소화"      → print("되묻기:[최소화] 어떤 앱을 최소화할까요?")
+      "최대화 해줘" → print("되묻기:[최대화] 어떤 앱을 최대화할까요?")
+      "닫아줘"      → print("되묻기:[닫기] 어떤 앱을 닫을까요?")
+      "원상복구"    → print("되묻기:[원상복구] 어떤 앱을 원상복구할까요?")
+
 - 바탕화면 보이기 (모든 창 최소화):
     import subprocess
     subprocess.run(["powershell", "-c", "(New-Object -ComObject Shell.Application).MinimizeAll()"])
@@ -254,7 +303,36 @@ Windows 시스템 제어 방법:
         "(Get-WmiObject Win32_Battery).EstimatedChargeRemaining"],
         capture_output=True, text=True)
     print(f"배터리 잔량: {result.stdout.strip()}%")
-- 화면 캡처: Preset 캐시에서 실행됨 (별도 코드 생성 불필요)
+- 화면 캡처 (반드시 아래 코드 그대로 사용):
+    import subprocess, os, base64
+    try:
+        _L = [
+            "Add-Type -TypeDefinition @'",
+            "using System;",
+            "using System.Runtime.InteropServices;",
+            "public class DPIHelper {",
+            "    [DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware();",
+            "    [DllImport(\"user32.dll\")] public static extern int GetSystemMetrics(int nIndex);",
+            "}",
+            "'@",
+            "Add-Type -AssemblyName System.Drawing",
+            "[DPIHelper]::SetProcessDPIAware()",
+            "$w = [DPIHelper]::GetSystemMetrics(0)",
+            "$h = [DPIHelper]::GetSystemMetrics(1)",
+            "$ts = Get-Date -Format 'yyyyMMdd_HHmmss'",
+            "$path = [System.IO.Path]::Combine($env:USERPROFILE, 'Desktop', ('screenshot_' + $ts + '.png'))",
+            "$bmp = New-Object System.Drawing.Bitmap($w, $h)",
+            "$g = [System.Drawing.Graphics]::FromImage($bmp)",
+            "$g.CopyFromScreen(0, 0, 0, 0, $bmp.Size)",
+            "$bmp.Save($path)",
+            "$g.Dispose()",
+            "$bmp.Dispose()"
+        ]
+        encoded = base64.b64encode("\n".join(_L).encode("utf-16-le")).decode("ascii")
+        subprocess.run(["powershell", "-EncodedCommand", encoded])
+        print("스크린샷 저장: 바탕화면/screenshot_YYYYMMDD_HHMMSS.png")
+    except Exception as e:
+        print(f"실행 실패: {e}")
 - 현재 시간:
     from datetime import datetime
     print(datetime.now().strftime("%Y년 %m월 %d일 %H시 %M분"))
@@ -318,10 +396,67 @@ driver = webdriver.Chrome(options=options)
 """
 
 
+def _build_history_section(history: list[dict]) -> str:
+    """
+    히스토리 리스트 → BRAIN_PROMPT에 주입할 텍스트 블록 생성.
+    history 항목: {"user_input": str, "command": dict, "result": dict}
+    """
+    if not history:
+        return ""
+
+    # 노이즈 필터링 — history_response(히스토리 조회)는 맥락 불필요
+    SKIP_ACTIONS = {"history_response"}
+
+    lines = []
+    idx = 1
+    for h in history:
+        cmd = h.get("command", {})
+        action = cmd.get("action", "")
+        params = cmd.get("params", {})
+        result_status = h.get("result", {}).get("status", "")
+
+        if action in SKIP_ACTIONS:
+            continue
+
+        user_input = h.get("user_input", "")
+        status_str = f" [{'성공' if result_status == 'success' else '실패'}]" if result_status else ""
+
+        # natural_language는 user_input이 곧 명령 내용 — action 표기 불필요
+        if action == "natural_language":
+            cmd_summary = user_input
+        else:
+            param_str = ", ".join(
+                f"{k}={v}" for k, v in params.items()
+                if k in ("app", "name", "file", "url", "query") and v
+            )
+            cmd_summary = f"{action}({param_str})" if param_str else action
+
+        lines.append(f"  [{idx}] \"{user_input}\" → {cmd_summary}{status_str}")
+        idx += 1
+
+    history_text = "\n".join(lines)
+    return f"""[대화 히스토리 — 맥락 참조용]
+아래는 사용자의 최근 명령 기록이야. 맥락 해석 규칙을 반드시 따를 것.
+
+[맥락 해석 규칙 — 우선순위 순서]
+1. 순수 반복 지시어("다시 해줘", "또 해줘", "한 번 더")가 있으면:
+   - 직전 명령이 [성공]인 경우 → 되묻기 없이 그대로 재실행
+   - 직전 명령이 [실패]인 경우 → 다른 방식으로 재시도
+   - 히스토리가 비어있는 경우 → 되묻기
+   주의: "다시 내려줘", "다시 올려줘"처럼 동작이 명시된 경우는 새 명령으로 처리
+2. "그거", "이거", "그것", "아까" 등 지시어가 있으면:
+   히스토리에서 대상(앱/파일/URL 등)을 파악해서 코드 생성
+3. 히스토리와 무관한 명령이면 히스토리 무시
+
+{history_text}
+
+"""
+
+
 class SupervisorAgent(BaseAgent):
     def __init__(self):
         self._init_client(ACTIVE_PROVIDER, ACTIVE_MODEL)
-        self.prompt = BRAIN_PROMPT  # 인스턴스 변수로 분리
+        self.prompt = BRAIN_PROMPT
         try:
             from app.utils.path_resolver import PathResolver
             resolver = PathResolver()
@@ -338,10 +473,34 @@ class SupervisorAgent(BaseAgent):
     def is_complex(self, command: dict) -> bool:
         return True
 
-    def generate_code(self, command: dict, original_input: str, error_context: dict = None) -> str:
-        if not self.available:
-            return None
+    def generate_code(
+        self,
+        command: dict,
+        original_input: str,
+        error_context: dict = None,
+        history: list[dict] = None,
+    ) -> str:
+        """
+        파이썬 실행 코드 생성.
+
+        Args:
+            command:        {type, action, params} — InterpreterExecutor에서 전달
+            original_input: 사용자 원본 자연어 입력 (앱 경로 주입 후 버전일 수 있음)
+            error_context:  재시도 시 이전 실패 정보
+            history:        ContextMemory에서 가져온 최근 히스토리 (맥락 해석용)
+        """
         try:
+            # ── 히스토리 섹션 구성 ────────────────────────────────
+            history_section = _build_history_section(history or [])
+            if history_section:
+                print(f"[Supervisor] 히스토리 주입:\n{history_section.strip()}")
+            else:
+                print("[Supervisor] 히스토리 없음")
+            prompt_with_history = self.prompt.replace(
+                "{HISTORY_SECTION}", history_section
+            )
+
+            # ── 에러 피드백 구성 ──────────────────────────────────
             if error_context:
                 error_type    = error_context.get("type", "unknown")
                 error_reason  = error_context.get("reason", "")
@@ -369,7 +528,7 @@ class SupervisorAgent(BaseAgent):
                 feedback = ""
 
             prompt = (
-                f"{self.prompt}\n\n"
+                f"{prompt_with_history}\n\n"
                 f"사용자 명령: {original_input}"
                 f"{feedback}\n\n"
                 f"실행할 파이썬 코드만 작성해줘:"
@@ -382,6 +541,60 @@ class SupervisorAgent(BaseAgent):
         except Exception as e:
             print(f"[Supervisor 오류] {e}")
             return None
+
+
+    def classify_steps(self, user_input: str) -> list[dict] | None:
+        """
+        자연어 입력이 순서 독립 멀티스텝인지 판단.
+        멀티스텝이면 스텝 배열 반환, 단일 명령이면 None 반환.
+
+        지원: 순서 독립적인 2개 스텝까지
+        미지원: 스텝 간 결과 전달 필요한 명령 → None 반환 (단일 명령 폴백)
+        """
+        if not self.available:
+            return None
+        try:
+            prompt = (
+                "사용자 입력이 독립적인 여러 PC 제어 명령을 포함하는지 판단해줘.\n\n"
+                "판단 기준:\n"
+                "- 각 명령이 서로 독립적으로 실행 가능한 경우 → 분리\n"
+                "- 앞 명령의 결과가 뒤 명령의 전제조건인 경우 → 분리 불가 (single 반환)\n"
+                "  예) '크롬 열고 유튜브 검색해줘' → 크롬 열림 후 검색 필요 → single\n"
+                "  예) '메모장 열고 안녕 입력해줘' → 메모장 열림 후 입력 필요 → single\n"
+                "- 3개 이상 명령 → single 반환\n"
+                "- 명확히 독립적인 2개 명령만 분리\n"
+                "  예) '메모장이랑 계산기 열어줘' → 분리 가능\n"
+                "  예) '볼륨 올리고 화면 캡처해줘' → 분리 가능\n"
+                "  예) '메모장 열어줘' → 단일 명령\n\n"
+                "응답 형식 (JSON만, 설명 없이):\n"
+                '분리 가능: {"type": "multi", "steps": ["스텝1 자연어", "스텝2 자연어"]}\n'
+                '분리 불가: {"type": "single"}\n\n'
+                f"사용자 입력: {user_input}"
+            )
+
+            text = self._call_llm(prompt).strip()
+            import json as _json, re as _re
+            json_match = _re.search(r'\{.*\}', text, _re.DOTALL)
+            if not json_match:
+                return None
+            parsed = _json.loads(json_match.group())
+            if parsed.get("type") != "multi":
+                return None
+            steps_text = parsed.get("steps", [])
+            if len(steps_text) != 2:
+                return None
+            return [
+                {
+                    "type": "interpreter",
+                    "action": "natural_language",
+                    "params": {"input": s},
+                }
+                for s in steps_text
+            ]
+        except Exception as e:
+            print(f"[Supervisor] classify_steps 오류 → 단일 명령 폴백: {e}")
+            return None
+
 
     def explain_result(self, original_input: str, success: bool) -> str:
         if not self.available:
