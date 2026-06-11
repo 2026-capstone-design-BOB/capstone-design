@@ -1,0 +1,13 @@
+{
+  "name": "pluiz",
+  "version": "2.0.0",
+  "description": "Pluiz - Voice AI Agent for Windows",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "install-deps": "npm install"
+  },
+  "dependencies": {
+    "electron": "^32.0.0"
+  }
+}

@@ -1,0 +1,195 @@
+"""
+파일시스템 도구
+파일/폴더 생성, 파일 탐색, 최근 파일 열기
+"""
+
+import os
+import glob
+import subprocess
+from datetime import datetime
+from langchain_core.tools import tool
+
+
+# 지원하는 위치 매핑
+LOCATION_MAP: dict[str, str] = {
+    "desktop":   os.path.join(os.path.expanduser("~"), "Desktop"),
+    "바탕화면":   os.path.join(os.path.expanduser("~"), "Desktop"),
+    "downloads": os.path.join(os.path.expanduser("~"), "Downloads"),
+    "다운로드":   os.path.join(os.path.expanduser("~"), "Downloads"),
+    "documents": os.path.join(os.path.expanduser("~"), "Documents"),
+    "문서":       os.path.join(os.path.expanduser("~"), "Documents"),
+    "pictures":  os.path.join(os.path.expanduser("~"), "Pictures"),
+    "사진":       os.path.join(os.path.expanduser("~"), "Pictures"),
+    "home":      os.path.expanduser("~"),
+    "홈":         os.path.expanduser("~"),
+}
+
+
+def _resolve_location(location: str) -> str | None:
+    """위치 문자열을 실제 경로로 변환."""
+    key = location.lower().strip()
+    path = LOCATION_MAP.get(key)
+    if path and os.path.exists(path):
+        return path
+    # 절대 경로면 그대로 사용
+    if os.path.isabs(location) and os.path.exists(location):
+        return location
+    return None
+
+
+@tool
+def create_file(name: str, location: str = "desktop", content: str = "") -> str:
+    """
+    파일을 생성합니다.
+    name: 파일명 (확장자 포함, 예: 메모.txt, 보고서.docx)
+    location: 저장 위치 (desktop/바탕화면, downloads/다운로드, documents/문서) — 기본 바탕화면
+    content: 파일 내용 (선택, 기본 빈 파일)
+    """
+    base = _resolve_location(location)
+    if not base:
+        return f"✗ '{location}'은(는) 지원하지 않는 위치입니다. (desktop, downloads, documents 중 선택)"
+
+    path = os.path.join(base, name)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return f"✓ '{name}' 파일을 {location}에 생성했습니다.\n경로: {path}"
+    except Exception as e:
+        return f"✗ 파일 생성 실패: {e}"
+
+
+@tool
+def create_folder(name: str, location: str = "desktop") -> str:
+    """
+    폴더를 생성합니다.
+    name: 폴더명
+    location: 위치 (desktop, downloads, documents) — 기본 바탕화면
+    """
+    base = _resolve_location(location)
+    if not base:
+        return f"✗ '{location}'은(는) 지원하지 않는 위치입니다."
+
+    path = os.path.join(base, name)
+    try:
+        os.makedirs(path, exist_ok=True)
+        return f"✓ '{name}' 폴더를 {location}에 생성했습니다.\n경로: {path}"
+    except Exception as e:
+        return f"✗ 폴더 생성 실패: {e}"
+
+
+@tool
+def find_file(name: str = "", extension: str = "", location: str = "downloads") -> str:
+    """
+    파일을 탐색합니다.
+    name: 파일명 또는 키워드 (선택)
+    extension: 확장자 (예: pdf, txt, docx) — 선택
+    location: 탐색 위치 (desktop, downloads, documents) — 기본 다운로드
+    """
+    base = _resolve_location(location)
+    if not base:
+        return f"✗ '{location}'은(는) 지원하지 않는 위치입니다."
+
+    # 검색 패턴 구성
+    if name and extension:
+        pattern = f"*{name}*.{extension}"
+    elif name:
+        pattern = f"*{name}*"
+    elif extension:
+        pattern = f"*.{extension}"
+    else:
+        return "✗ 파일명 또는 확장자를 지정해주세요."
+
+    matches = glob.glob(os.path.join(base, pattern), recursive=False)
+    matches += glob.glob(os.path.join(base, "**", pattern), recursive=True)
+    matches = list(dict.fromkeys(matches))  # 중복 제거
+
+    if not matches:
+        return f"✗ '{location}'에서 조건에 맞는 파일을 찾지 못했습니다."
+
+    result_lines = [f"✓ {len(matches)}개 파일을 찾았습니다:"]
+    for i, m in enumerate(matches[:10], 1):
+        result_lines.append(f"  {i}. {os.path.basename(m)}")
+    if len(matches) > 10:
+        result_lines.append(f"  ... 외 {len(matches)-10}개")
+
+    return "\n".join(result_lines)
+
+
+@tool
+def open_recent_file() -> str:
+    """
+    최근에 열었던 파일 목록을 보여주고 탐색기로 최근 파일 폴더를 엽니다.
+    """
+    recent_path = os.path.join(
+        os.environ.get("APPDATA", ""),
+        "Microsoft", "Windows", "Recent"
+    )
+    try:
+        subprocess.Popen(["explorer", recent_path])
+        return f"✓ 최근 파일 폴더를 열었습니다."
+    except Exception as e:
+        return f"✗ 최근 파일 열기 실패: {e}"
+
+
+@tool
+def open_file(file_path: str, app: str = "") -> str:
+    """
+    파일을 기본 앱 또는 지정한 앱으로 엽니다.
+    file_path: 파일 경로 또는 파일명 (바탕화면·문서·다운로드 상대경로 가능)
+               예: "메모.txt", "바탕화면/보고서.docx", "C:/Users/user/Desktop/todo.txt"
+    app: 열 앱 이름 (예: notepad, chrome, excel). 비워두면 기본 앱으로 열기.
+    """
+    # 상대 경로 해석 (바탕화면, 문서, 다운로드)
+    resolved = _resolve_location_in_path(file_path)
+
+    if not os.path.exists(resolved):
+        return f"✗ 파일을 찾을 수 없습니다: {resolved}"
+
+    try:
+        if app:
+            # 앱 이름으로 실행 파일 찾기
+            from tools.app_control import _normalize, APP_PROCESS_MAP, _resolve_path
+            app_key = _normalize(app)
+            exe_list = APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])
+
+            # 직접 exe 이름으로 시도
+            import shutil
+            exe_name = exe_list[0]
+            exe_path = shutil.which(exe_name) or _resolve_path(app_key)
+
+            if exe_path:
+                subprocess.Popen([exe_path, resolved])
+            else:
+                # fallback: shell 명령
+                subprocess.Popen([exe_name, resolved], shell=True)
+        else:
+            os.startfile(resolved)
+
+        return f"✓ '{os.path.basename(resolved)}' 파일을 열었습니다."
+    except Exception as e:
+        return f"✗ 파일 열기 실패: {e}"
+
+
+def _resolve_location_in_path(file_path: str) -> str:
+    """경로 문자열을 실제 경로로 변환. 상대 위치명(바탕화면 등) 처리."""
+    # 이미 절대경로면 그대로
+    if os.path.isabs(file_path):
+        return file_path
+
+    # "위치/파일명" 형식 분리
+    parts = file_path.replace("\\", "/").split("/", 1)
+    if len(parts) == 2:
+        base = _resolve_location(parts[0])
+        if base:
+            return os.path.join(base, parts[1])
+
+    # 파일명만 있을 때 — 주요 위치에서 탐색
+    for loc in ["바탕화면", "문서", "다운로드"]:
+        base = _resolve_location(loc)
+        if base:
+            candidate = os.path.join(base, file_path)
+            if os.path.exists(candidate):
+                return candidate
+
+    # 그대로 반환 (절대경로로 취급)
+    return file_path

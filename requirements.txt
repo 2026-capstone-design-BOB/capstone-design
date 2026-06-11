@@ -1,0 +1,31 @@
+# ── LLM / Agent ──────────────────────────────────────────────────
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-google-genai>=2.0.0   # Gemini (primary)
+langchain-anthropic>=0.3.0      # Claude (secondary, add key later)
+
+# ── 브라우저 자동화 ────────────────────────────────────────────────
+playwright>=1.47.0
+
+# ── 음성 입출력 ────────────────────────────────────────────────────
+faster-whisper>=1.0.0
+edge-tts>=6.1.0
+sounddevice>=0.4.6          # wake word 상시 감지용 마이크 스트림
+numpy>=1.24.0
+
+# ── 웹 서버 (Electron UI 통신) ───────────────────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+
+# ── 유틸리티 ──────────────────────────────────────────────────────
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+psutil>=6.0.0
+aiofiles>=23.0.0
+
+# ── 선택적 (도구 기능 강화) ───────────────────────────────────────
+# pycaw>=20181226          # 볼륨 정밀 제어 (없으면 키보드 시뮬레이션 fallback)
+# wmi                      # 밝기 제어 (없으면 PowerShell fallback)
+# Pillow>=10.0.0           # 스크린샷 (없으면 PowerShell fallback)

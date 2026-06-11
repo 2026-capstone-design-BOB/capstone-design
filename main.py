@@ -1,0 +1,247 @@
+"""
+Pluiz v2 - FastAPI 서버
+Electron UI와 HTTP/WebSocket으로 통신
+"""
+
+import asyncio
+import os
+import uvicorn
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from config.settings import get_settings
+from core.agent import get_agent
+from services.tts import get_tts
+from services.stt import get_stt
+
+app = FastAPI(title="Pluiz v2", version="2.0.0")
+
+# Electron에서 접근 허용
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ── 데이터 모델 ───────────────────────────────────────────────────
+
+class TextRequest(BaseModel):
+    text: str
+    thread_id: str = "default"
+    use_tts: bool = False
+
+
+class TextResponse(BaseModel):
+    response: str
+    thread_id: str
+
+
+class ConfigRequest(BaseModel):
+    provider: str   # "gemini" | "claude" | "openai"
+    api_key: str
+
+
+# ── REST 엔드포인트 ────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    """서버 상태 확인."""
+    return {"status": "ok", "version": "2.0.0"}
+
+
+@app.get("/api/config")
+async def get_config():
+    """현재 LLM 설정 반환."""
+    s = get_settings()
+    return {
+        "provider": s.llm_provider,
+        "has_key": bool(s.active_api_key),
+        "model": s.active_model,
+    }
+
+
+@app.post("/api/config")
+async def save_config(req: ConfigRequest):
+    """API 키 및 provider 저장 → 에이전트 재초기화."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+
+    # .env 파일 읽기
+    lines: list[str] = []
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+    key_var = f"{req.provider.upper()}_API_KEY"
+    provider_found = key_found = False
+    new_lines: list[str] = []
+
+    for line in lines:
+        if line.startswith("LLM_PROVIDER="):
+            new_lines.append(f"LLM_PROVIDER={req.provider}\n")
+            provider_found = True
+        elif line.startswith(key_var + "="):
+            new_lines.append(f"{key_var}={req.api_key}\n")
+            key_found = True
+        else:
+            new_lines.append(line)
+
+    if not provider_found:
+        new_lines.insert(0, f"LLM_PROVIDER={req.provider}\n")
+    if not key_found:
+        new_lines.append(f"{key_var}={req.api_key}\n")
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+
+    # 캐시 초기화 → 다음 get_settings() 호출에서 .env 재로드
+    get_settings.cache_clear()
+
+    # 에이전트 재초기화
+    from core.agent import reset_agent
+    reset_agent()
+
+    print(f"[config] provider={req.provider} key=***{req.api_key[-4:] if req.api_key else ''} 저장됨")
+    return {"status": "ok", "provider": req.provider}
+
+
+@app.post("/chat")
+async def chat(req: TextRequest):
+    """
+    텍스트 명령 처리.
+    Electron UI의 채팅 입력창에서 호출.
+    """
+    from fastapi.responses import JSONResponse
+    try:
+        agent = get_agent()
+        response = await agent.run_async(req.text, thread_id=req.thread_id)
+
+        if req.use_tts:
+            tts = get_tts()
+            asyncio.create_task(tts.speak_async(response))
+
+        return {"response": response, "thread_id": req.thread_id}
+    except Exception as e:
+        print(f"[/chat 오류] {type(e).__name__}: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "response": f"처리 중 오류: {e}", "thread_id": req.thread_id}
+        )
+
+
+@app.post("/voice")
+async def voice_input(audio: UploadFile = File(...), thread_id: str = "default", use_tts: bool = True):
+    """
+    음성 파일 업로드 → STT → 에이전트 처리 → (TTS) 응답.
+    Electron에서 마이크 녹음 후 전송.
+    """
+    audio_bytes = await audio.read()
+
+    # STT
+    stt = get_stt()
+    text = stt.transcribe_bytes(audio_bytes)
+    if not text:
+        return {"error": "음성을 인식하지 못했습니다.", "text": "", "response": ""}
+
+    # 에이전트
+    agent = get_agent()
+    response = await agent.run_async(text, thread_id=thread_id)
+
+    # TTS
+    if use_tts:
+        tts = get_tts()
+        audio_bytes_response = await tts.to_bytes_async(response)
+        # Base64로 인코딩해서 반환
+        import base64
+        audio_b64 = base64.b64encode(audio_bytes_response).decode()
+        return {
+            "text": text,
+            "response": response,
+            "audio_base64": audio_b64,
+        }
+
+    return {"text": text, "response": response}
+
+
+@app.get("/history")
+async def get_history(n: int = 20):
+    """최근 대화 히스토리 반환."""
+    from memory.session import SessionMemory
+    memory = SessionMemory()
+    return {"history": memory.get_recent(n)}
+
+
+@app.delete("/history")
+async def clear_history():
+    """대화 히스토리 초기화."""
+    from memory.session import SessionMemory
+    memory = SessionMemory()
+    memory.clear()
+    return {"status": "cleared"}
+
+
+# ── WebSocket (실시간 스트리밍) ───────────────────────────────────
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket으로 스트리밍 응답.
+    토큰 단위로 UI에 실시간 전송.
+    use_tts=true 시 end 메시지에 audio_base64 포함.
+    """
+    await websocket.accept()
+    agent = get_agent()
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            text = data.get("text", "")
+            thread_id = data.get("thread_id", "default")
+            use_tts = data.get("use_tts", False)
+
+            if not text:
+                continue
+
+            await websocket.send_json({"type": "start"})
+
+            full_response = ""
+            async for chunk in agent.stream(text, thread_id=thread_id):
+                full_response += chunk
+                await websocket.send_json({"type": "chunk", "content": chunk})
+
+            # TTS 요청 시 MP3를 base64로 함께 전송
+            end_payload: dict = {"type": "end", "full": full_response}
+            if use_tts and full_response:
+                try:
+                    import base64
+                    tts = get_tts()
+                    audio_bytes = await tts.to_bytes_async(full_response)
+                    end_payload["audio_base64"] = base64.b64encode(audio_bytes).decode()
+                except Exception as tts_err:
+                    print(f"[TTS] 오류: {tts_err}")
+
+            await websocket.send_json(end_payload)
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except Exception:
+            pass
+
+
+# ── 진입점 ────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    settings = get_settings()
+    print(f"[Pluiz v2] 서버 시작: http://{settings.server_host}:{settings.server_port}")
+    print(f"[Pluiz v2] LLM provider: {settings.llm_provider} / {settings.active_model}")
+    uvicorn.run(
+        "main:app",
+        host=settings.server_host,
+        port=settings.server_port,
+        reload=False,
+    )

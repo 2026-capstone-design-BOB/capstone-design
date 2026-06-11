@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self' http://127.0.0.1:8765 ws://127.0.0.1:8765 blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; media-src blob: http://127.0.0.1:8765;">
+<title>Pluiz</title>
+<style>
+  :root {
+    --accent: #7c6fef;
+    --danger: #f87171;
+    --warn:   #fbbf24;
+    --ok:     #4ade80;
+    --text:   #e8e8f0;
+    --muted:  #8888aa;
+    --bg:     rgba(14,14,22,0.96);
+    --surf:   rgba(28,28,44,0.97);
+    --border: rgba(124,111,239,0.28);
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100vh; background:transparent; overflow:hidden;
+              font-family:'Segoe UI','Apple SD Gothic Neo',sans-serif; color:var(--text); }
+  .card {
+    position:relative; width:100%; height:100vh; background:var(--bg);
+    border:1px solid var(--border); border-radius:20px;
+    backdrop-filter:blur(16px); box-shadow:0 6px 40px rgba(0,0,0,.6);
+    display:flex; flex-direction:column; overflow:hidden;
+    -webkit-app-region:drag;
+  }
+
+  /* ── SETTINGS OVERLAY ───────────────────────────────────── */
+  .settings-overlay {
+    position:absolute; top:0; left:0; right:0; bottom:0;
+    background:var(--bg); border-radius:20px; z-index:1000;
+    display:none; flex-direction:column; overflow:hidden;
+    -webkit-app-region:drag;
+  }
+  .settings-overlay.show { display:flex; }
+  .s-header {
+    height:44px; display:flex; align-items:center; padding:0 10px 0 14px;
+    border-bottom:1px solid var(--border); background:var(--surf); flex-shrink:0;
+  }
+  .s-header-title { flex:1; font-size:13px; font-weight:600; }
+  .s-body {
+    flex:1; padding:16px; display:flex; flex-direction:column;
+    gap:11px; -webkit-app-region:no-drag; overflow-y:auto;
+  }
+  .s-desc { font-size:12px; color:var(--muted); line-height:1.5; }
+  .provider-tabs { display:flex; gap:6px; }
+  .ptab {
+    flex:1; padding:7px 0; border:1px solid var(--border); border-radius:8px;
+    background:transparent; color:var(--muted); font-size:12px; cursor:pointer;
+    transition:all .15s;
+  }
+  .ptab.active { background:rgba(124,111,239,.2); border-color:var(--accent); color:var(--text); font-weight:600; }
+  .ptab:hover:not(.active) { background:rgba(255,255,255,.05); color:var(--text); }
+  .s-label { font-size:11px; color:var(--muted); margin-bottom:5px; }
+  .s-input {
+    width:100%; padding:8px 10px; background:rgba(28,28,44,.9);
+    border:1px solid var(--border); border-radius:10px; color:var(--text);
+    font-size:12px; outline:none; transition:border-color .15s; font-family:inherit;
+  }
+  .s-input:focus { border-color:var(--accent); }
+  .s-input::placeholder { color:var(--muted); }
+  .s-link { font-size:11px; color:var(--accent); text-decoration:none; display:inline-block; margin-top:5px; }
+  .s-link:hover { text-decoration:underline; }
+  .s-status { font-size:12px; min-height:16px; }
+  .s-status.ok  { color:var(--ok); }
+  .s-status.err { color:var(--danger); }
+  .s-actions { display:flex; gap:8px; }
+  .s-save-btn {
+    flex:1; padding:9px 0; background:var(--accent); border:none; border-radius:10px;
+    color:#fff; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s;
+  }
+  .s-save-btn:hover { background:#5b51d8; }
+  .s-save-btn:disabled { background:var(--surf); color:var(--muted); cursor:not-allowed; }
+  .s-cancel-btn {
+    padding:9px 14px; background:transparent; border:1px solid var(--border);
+    border-radius:10px; color:var(--muted); font-size:12px; cursor:pointer; transition:all .15s;
+  }
+  .s-cancel-btn:hover { border-color:var(--text); color:var(--text); }
+
+  /* ── IDLE ────────────────────────────────────────────────── */
+  .idle-view {
+    flex:1; display:flex; align-items:center; gap:8px; padding:0 10px 0 12px;
+    cursor:pointer;
+  }
+  .logo-ring {
+    width:36px; height:36px; border-radius:50%; flex-shrink:0;
+    background:linear-gradient(135deg,var(--accent),#a78bfa);
+    display:flex; align-items:center; justify-content:center; font-size:18px;
+  }
+  .logo-ring.listening { animation:ring-breathe 2.5s ease-in-out infinite; }
+  .logo-ring.awake     { animation:ring-wake .5s ease forwards; }
+  @keyframes ring-breathe {
+    0%,100%{box-shadow:0 0 0 2px rgba(74,222,128,.35)}
+    50%    {box-shadow:0 0 0 7px rgba(74,222,128,.08)}
+  }
+  @keyframes ring-wake {
+    0%  {transform:scale(1);   box-shadow:0 0 0 0 rgba(251,191,36,.9)}
+    40% {transform:scale(1.3); box-shadow:0 0 0 12px rgba(251,191,36,0)}
+    100%{transform:scale(1);   box-shadow:0 0 0 0 rgba(251,191,36,0)}
+  }
+  .idle-info { flex:1; min-width:0; }
+  .idle-name { font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px; }
+  .idle-hint { font-size:10px; color:var(--muted); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .idle-actions {
+    display:flex; gap:4px; align-items:center; flex-shrink:0;
+    -webkit-app-region:no-drag;
+  }
+  .idle-icon-btn {
+    width:30px; height:30px; border:1px solid var(--border); border-radius:8px;
+    background:rgba(124,111,239,.07); color:var(--muted); font-size:13px;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:all .15s;
+  }
+  .idle-icon-btn:hover { background:rgba(124,111,239,.2); color:var(--text); border-color:var(--accent); }
+  .idle-icon-btn.mic-idle:hover { background:rgba(248,113,113,.15); color:var(--danger); border-color:var(--danger); }
+
+  /* dots */
+  .sdot { width:7px; height:7px; border-radius:50%; display:inline-block; flex-shrink:0; }
+  .sdot.ok   { background:var(--ok);   box-shadow:0 0 6px var(--ok);   animation:dot-b 2.5s ease-in-out infinite; }
+  .sdot.warn { background:var(--warn); box-shadow:0 0 6px var(--warn); animation:dot-f .7s ease-in-out infinite; }
+  .sdot.off  { background:var(--danger); box-shadow:0 0 5px var(--danger); }
+  .sdot.spin { background:var(--warn); box-shadow:0 0 5px var(--warn); animation:dot-f .7s ease-in-out infinite; }
+  @keyframes dot-b { 0%,100%{opacity:.5;transform:scale(1)} 50%{opacity:1;transform:scale(1.3)} }
+  @keyframes dot-f { 0%,100%{opacity:1} 50%{opacity:.25} }
+
+  /* ── ACTIVE ──────────────────────────────────────────────── */
+  .active-view { display:none; flex-direction:column; height:100%; }
+  .a-header {
+    height:44px; display:flex; align-items:center; padding:0 8px 0 14px;
+    border-bottom:1px solid var(--border); background:var(--surf); flex-shrink:0;
+    -webkit-app-region:drag; cursor:pointer;
+  }
+  .a-title { flex:1; font-size:13px; font-weight:600; display:flex; align-items:center; gap:7px; }
+  .a-logo  { width:22px; height:22px; border-radius:7px;
+             background:linear-gradient(135deg,var(--accent),#a78bfa);
+             display:flex; align-items:center; justify-content:center; font-size:11px; }
+  .hbtn {
+    width:28px; height:28px; border:none; border-radius:7px;
+    background:transparent; color:var(--muted); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; font-size:12px;
+    transition:all .15s; -webkit-app-region:no-drag; flex-shrink:0;
+  }
+  .hbtn:hover { background:rgba(255,255,255,.08); color:var(--text); }
+  .hbtn.close:hover { background:rgba(248,113,113,.18); color:var(--danger); }
+
+  .voice-zone {
+    flex-shrink:0; display:flex; flex-direction:column;
+    align-items:center; padding:10px 16px 8px; gap:7px;
+    border-bottom:1px solid var(--border); -webkit-app-region:no-drag;
+  }
+  .waveform { display:flex; gap:3px; align-items:center; height:28px; }
+  .bar { width:3px; background:var(--accent); border-radius:3px; height:5px; }
+  .wf-rec  .bar { background:var(--danger); animation:wav .5s ease-in-out infinite; }
+  .wf-proc .bar { background:var(--warn);   animation:wav 1.0s ease-in-out infinite; }
+  @keyframes wav { 0%,100%{height:4px} 50%{height:22px} }
+  .bar:nth-child(1){animation-delay:0s}   .bar:nth-child(2){animation-delay:.07s}
+  .bar:nth-child(3){animation-delay:.14s} .bar:nth-child(4){animation-delay:.21s}
+  .bar:nth-child(5){animation-delay:.28s} .bar:nth-child(6){animation-delay:.07s}
+  .bar:nth-child(7){animation-delay:.14s}
+
+  .state-row { display:flex; align-items:center; gap:10px; }
+  .state-lbl { font-size:12px; color:var(--muted); min-width:90px; text-align:center; }
+  .state-lbl.rec  { color:var(--danger); font-weight:600; }
+  .state-lbl.proc { color:var(--warn); }
+
+  .cd-ring { position:relative; width:44px; height:44px; display:none; }
+  .cd-ring.show { display:block; }
+  .cd-ring svg { transform:rotate(-90deg); }
+  .cd-ring .tr { fill:none; stroke:rgba(248,113,113,.2); stroke-width:3; }
+  .cd-ring .pr { fill:none; stroke:var(--danger); stroke-width:3; stroke-linecap:round;
+                 stroke-dasharray:120; stroke-dashoffset:0; transition:stroke-dashoffset .1s linear; }
+  .cd-num { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+            font-size:12px; font-weight:700; color:var(--danger); }
+
+  .mic-btn {
+    width:44px; height:44px; border:2px solid var(--border); border-radius:50%;
+    background:rgba(124,111,239,.1); color:var(--accent); font-size:20px;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:all .2s; -webkit-app-region:no-drag;
+  }
+  .mic-btn:hover { background:rgba(124,111,239,.22); border-color:var(--accent); }
+  .mic-btn.rec { background:rgba(248,113,113,.15); border-color:var(--danger); color:var(--danger);
+                 animation:mic-p 1s ease-in-out infinite; }
+  @keyframes mic-p { 0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,.5)} 50%{box-shadow:0 0 0 9px rgba(248,113,113,0)} }
+
+  .chat-list {
+    flex:1; overflow-y:auto; padding:8px 10px;
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .chat-list::-webkit-scrollbar { width:3px; }
+  .chat-list::-webkit-scrollbar-thumb { background:var(--surf); border-radius:3px; }
+  .msg { display:flex; gap:6px; max-width:96%; animation:fadeUp .15s ease; }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+  .msg.u { align-self:flex-end; flex-direction:row-reverse; }
+  .msg.a { align-self:flex-start; }
+  .av { width:22px; height:22px; border-radius:50%; flex-shrink:0;
+        display:flex; align-items:center; justify-content:center; font-size:11px; }
+  .av.u { background:var(--accent); }
+  .av.a { background:linear-gradient(135deg,#1e3a5f,#2a4a7f); border:1px solid var(--border); }
+  .bbl { padding:6px 10px; border-radius:10px; font-size:12px; line-height:1.5;
+         white-space:pre-wrap; word-break:break-word; }
+  .msg.u .bbl { background:rgba(36,36,58,.9); border:1px solid var(--border); border-top-right-radius:3px; }
+  .msg.a .bbl { background:rgba(20,40,60,.9); border:1px solid rgba(30,90,150,.3); border-top-left-radius:3px; }
+
+  .typing { display:none; align-self:flex-start; gap:6px; align-items:center; }
+  .typing.show { display:flex; }
+  .dots { display:flex; gap:3px; padding:6px 10px; background:rgba(20,40,60,.9);
+          border-radius:10px; border:1px solid rgba(30,90,150,.3); }
+  .d { width:5px; height:5px; border-radius:50%; background:var(--muted); animation:bop .9s infinite; }
+  .d:nth-child(2){animation-delay:.15s} .d:nth-child(3){animation-delay:.3s}
+  @keyframes bop { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+
+  .input-row {
+    display:flex; gap:6px; padding:8px 8px 10px; align-items:flex-end;
+    border-top:1px solid var(--border); flex-shrink:0; -webkit-app-region:no-drag;
+  }
+  #txt {
+    flex:1; background:rgba(28,28,44,.9); border:1px solid var(--border);
+    border-radius:10px; padding:7px 10px; color:var(--text); font-size:12px;
+    font-family:inherit; resize:none; max-height:60px; min-height:28px;
+    line-height:1.45; outline:none;
+  }
+  #txt::placeholder { color:var(--muted); }
+  #txt:focus { border-color:var(--accent); }
+  .send-btn {
+    width:32px; height:32px; border:none; border-radius:9px;
+    background:var(--accent); color:#fff; font-size:14px;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:all .15s; flex-shrink:0;
+  }
+  .send-btn:hover { background:#5b51d8; }
+  .send-btn:disabled { background:var(--surf); color:var(--muted); cursor:not-allowed; }
+
+  .card.active .idle-view   { display:none; }
+  .card.active .active-view { display:flex; }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+
+  <!-- ── SETTINGS OVERLAY ─────────────────────────────────── -->
+  <div class="settings-overlay" id="settings-overlay">
+    <div class="s-header">
+      <span class="s-header-title">⚙️ AI 두뇌 설정</span>
+      <button class="hbtn" id="s-close-btn"
+        onclick="hideSettings()"
+        ondblclick="event.stopPropagation()"
+        title="닫기">✕</button>
+    </div>
+    <div class="s-body">
+      <div class="s-desc">어떤 AI API를 사용할지 설정하세요.<br>저장 후 즉시 반영됩니다.</div>
+
+      <div>
+        <div class="s-label">AI 제공자</div>
+        <div class="provider-tabs">
+          <button class="ptab active" id="ptab-gemini" onclick="selectProvider('gemini')">Gemini</button>
+          <button class="ptab"        id="ptab-claude" onclick="selectProvider('claude')">Claude</button>
+          <button class="ptab"        id="ptab-openai" onclick="selectProvider('openai')">OpenAI</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="s-label">API Key</div>
+        <input class="s-input" type="password" id="api-key-input"
+          placeholder="API Key를 입력하세요"
+          autocomplete="off"
+          onkeydown="if(event.key==='Enter') saveConfig()">
+        <a class="s-link" id="s-link" href="#" target="_blank">키 발급하기 →</a>
+      </div>
+
+      <div class="s-status" id="s-status"></div>
+
+      <div class="s-actions">
+        <button class="s-save-btn"   id="s-save-btn"   onclick="saveConfig()">저장하고 시작</button>
+        <button class="s-cancel-btn" id="s-cancel-btn" onclick="hideSettings()">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── IDLE ─────────────────────────────────────────────── -->
+  <div class="idle-view" id="idle-view"
+    onclick="activate(false)"
+    ondblclick="activate(true)">
+    <div class="logo-ring" id="logo-ring">🎙️</div>
+    <div class="idle-info">
+      <div class="idle-name">소윤 <span class="sdot spin" id="sdot"></span></div>
+      <div class="idle-hint" id="idle-hint">더블클릭 · 🎙️</div>
+    </div>
+    <div class="idle-actions">
+      <button class="idle-icon-btn"
+        onclick="event.stopPropagation(); showSettings()"
+        ondblclick="event.stopPropagation()"
+        title="설정">⚙️</button>
+      <button class="idle-icon-btn mic-idle"
+        onclick="event.stopPropagation(); activate(true)"
+        ondblclick="event.stopPropagation()"
+        title="음성 입력">🎙️</button>
+    </div>
+  </div>
+
+  <!-- ── ACTIVE ────────────────────────────────────────────── -->
+  <div class="active-view">
+
+    <div class="a-header" ondblclick="deactivate()">
+      <div class="a-title">
+        <div class="a-logo">🎙️</div>
+        소윤
+        <span class="sdot spin" id="sdot2"></span>
+      </div>
+      <button class="hbtn"
+        onclick="event.stopPropagation(); showSettings()"
+        ondblclick="event.stopPropagation()"
+        title="설정">⚙️</button>
+      <button class="hbtn close"
+        onclick="event.stopPropagation(); window.pluiz.quit()"
+        ondblclick="event.stopPropagation()"
+        title="종료">✕</button>
+    </div>
+
+    <div class="voice-zone">
+      <div class="waveform" id="wf">
+        <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+        <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      </div>
+      <div class="state-row">
+        <div class="state-lbl" id="slbl">말씀하세요...</div>
+        <div class="cd-ring" id="cdring">
+          <svg width="44" height="44" viewBox="0 0 44 44">
+            <circle class="tr" cx="22" cy="22" r="19"/>
+            <circle class="pr" cx="22" cy="22" r="19" id="cdprog"/>
+          </svg>
+          <div class="cd-num" id="cdnum">8</div>
+        </div>
+        <button class="mic-btn" id="mic-btn" onclick="toggleMic()">🎙️</button>
+      </div>
+    </div>
+
+    <div class="chat-list" id="chat">
+      <div class="typing" id="typing">
+        <div class="av a">🤖</div>
+        <div class="dots"><div class="d"></div><div class="d"></div><div class="d"></div></div>
+      </div>
+    </div>
+
+    <div class="input-row">
+      <textarea id="txt" placeholder="텍스트로 입력..." rows="1"
+        onkeydown="onKey(event)" oninput="resizeTxt(this)"></textarea>
+      <button class="send-btn" id="send-btn" onclick="sendText()">▲</button>
+    </div>
+  </div>
+
+</div>
+<script>
+const API = 'http://127.0.0.1:8765';
+let ws       = null;
+let threadId = 'pluiz_' + Date.now();
+let busy     = false;
+let isActive = false;
+let isRec    = false;
+let mr       = null;
+let chunks   = [];
+let streamEl = null;
+let apiChecked     = false;
+let hasExistingKey = false;
+let selectedProvider = 'gemini';
+
+const PROVIDER_LINKS = {
+  gemini: 'https://aistudio.google.com/apikey',
+  claude: 'https://console.anthropic.com/',
+  openai: 'https://platform.openai.com/api-keys',
+};
+
+// 카운트다운
+const REC_SEC = 8;
+const CIRCUM  = 2 * Math.PI * 19;
+let cdInterval = null, cdRemain = REC_SEC;
+
+// ── WebSocket ──────────────────────────────────────────────────
+function connect() {
+  ws = new WebSocket('ws://127.0.0.1:8765/ws');
+
+  ws.onopen = () => {
+    setDots(true);
+    if (!apiChecked) {
+      apiChecked = true;
+      checkApiConfig();
+    }
+  };
+  ws.onclose = () => { setDots(false); setTimeout(connect, 3000); };
+  ws.onerror = () => setDots(false);
+
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'start') {
+      showTyping(false);
+      streamEl = addMsg('a', '');
+    } else if (m.type === 'chunk') {
+      if (streamEl) streamEl.querySelector('.bbl').textContent += m.content;
+      scrollChat();
+    } else if (m.type === 'end') {
+      if (streamEl) { streamEl.querySelector('.bbl').textContent = m.full; streamEl = null; }
+      if (m.audio_base64) playAudio(m.audio_base64);
+      setBusy(false); setState('ready'); setWf('');
+    } else if (m.type === 'error') {
+      addMsg('a', '⚠️ ' + m.message);
+      setBusy(false); setState('ready'); setWf('');
+    }
+  };
+}
+
+function setDots(ok) {
+  const cls = ok ? 'sdot ok' : 'sdot off';
+  document.getElementById('sdot').className  = cls;
+  document.getElementById('sdot2').className = cls;
+  const ring = document.getElementById('logo-ring');
+  ok ? ring.classList.add('listening') : ring.classList.remove('listening');
+  document.getElementById('idle-hint').textContent =
+    ok ? '더블클릭 · 🎙️' : '서버 연결 중...';
+}
+
+// ── API 설정 확인 ──────────────────────────────────────────────
+async function checkApiConfig() {
+  try {
+    const res  = await fetch(`${API}/api/config`);
+    const data = await res.json();
+    hasExistingKey   = data.has_key;
+    selectedProvider = data.provider || 'gemini';
+    updateProviderTabs();
+    if (!data.has_key) {
+      // 키 없음 → 설정창 자동 오픈
+      activate(false);
+      setTimeout(() => _showSettingsNow(true), 300);
+    }
+  } catch(e) {
+    console.error('[config check]', e);
+  }
+}
+
+// ── 설정창 ─────────────────────────────────────────────────────
+function selectProvider(p) {
+  selectedProvider = p;
+  updateProviderTabs();
+}
+
+function updateProviderTabs() {
+  ['gemini','claude','openai'].forEach(p => {
+    const el = document.getElementById('ptab-' + p);
+    if (el) el.className = 'ptab' + (p === selectedProvider ? ' active' : '');
+  });
+  const link = document.getElementById('s-link');
+  if (link) link.href = PROVIDER_LINKS[selectedProvider] || '#';
+}
+
+function showSettings() {
+  if (!isActive) {
+    activate(false);
+    setTimeout(() => _showSettingsNow(false), 280);
+  } else {
+    _showSettingsNow(false);
+  }
+}
+
+function _showSettingsNow(isFirst) {
+  updateProviderTabs();
+  document.getElementById('s-status').textContent = '';
+  document.getElementById('s-status').className = 's-status';
+  document.getElementById('api-key-input').value = '';
+  // 취소 버튼: 이미 키가 있을 때만 표시
+  document.getElementById('s-cancel-btn').style.display = hasExistingKey ? 'block' : 'none';
+  document.getElementById('s-close-btn').style.display  = hasExistingKey ? 'flex'  : 'none';
+  document.getElementById('settings-overlay').classList.add('show');
+  setTimeout(() => document.getElementById('api-key-input').focus(), 100);
+}
+
+function hideSettings() {
+  if (!hasExistingKey) return; // 키 없으면 닫기 불가
+  document.getElementById('settings-overlay').classList.remove('show');
+  document.getElementById('api-key-input').value = '';
+}
+
+async function saveConfig() {
+  const key = document.getElementById('api-key-input').value.trim();
+  if (!key) { setSettingStatus('API Key를 입력하세요', 'err'); return; }
+
+  const saveBtn = document.getElementById('s-save-btn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = '저장 중...';
+  setSettingStatus('', '');
+
+  try {
+    const res = await fetch(`${API}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: selectedProvider, api_key: key }),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      hasExistingKey = true;
+      setSettingStatus('✓ 저장 완료!', 'ok');
+      setTimeout(() => {
+        document.getElementById('settings-overlay').classList.remove('show');
+        document.getElementById('api-key-input').value = '';
+        // WS 재연결 → 새 에이전트 사용
+        if (ws) { ws.close(); }
+      }, 1000);
+    } else {
+      setSettingStatus('저장 실패: ' + JSON.stringify(data), 'err');
+    }
+  } catch(e) {
+    setSettingStatus('오류: ' + e.message, 'err');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = '저장하고 시작';
+  }
+}
+
+function setSettingStatus(msg, cls) {
+  const el = document.getElementById('s-status');
+  el.textContent = msg;
+  el.className = 's-status' + (cls ? ' ' + cls : '');
+}
+
+// ── 활성화 / 비활성화 ──────────────────────────────────────────
+function activate(autoMic = false) {
+  if (isActive) {
+    if (autoMic && !isRec && !busy) setTimeout(() => startMic(), 150);
+    return;
+  }
+  isActive = true;
+  document.getElementById('card').classList.add('active');
+  window.pluiz.resizeActive();
+  setState('ready');
+  if (autoMic) setTimeout(() => startMic(), 300);
+  else         setTimeout(() => document.getElementById('txt').focus(), 200);
+}
+
+function deactivate() {
+  stopCd();
+  if (isRec) stopMic(false);
+  isActive = false; busy = false; streamEl = null;
+  document.getElementById('card').classList.remove('active');
+  document.getElementById('settings-overlay').classList.remove('show');
+  window.pluiz.resizeIdle();
+  setWf('');
+}
+
+// ── 상태 ──────────────────────────────────────────────────────
+function setState(s) {
+  const el = document.getElementById('slbl');
+  const L  = { ready:'말씀하세요...', recording:'🔴 듣는 중...', processing:'⏳ 처리 중...' };
+  el.textContent = L[s] || '';
+  el.className = 'state-lbl' + ({ recording:' rec', processing:' proc' }[s] || '');
+}
+function setWf(m)    { document.getElementById('wf').className = 'waveform' + (m ? ' wf-' + m : ''); }
+function setBusy(v)  { busy = v; document.getElementById('send-btn').disabled = v; }
+function showTyping(v){ document.getElementById('typing').className = 'typing' + (v ? ' show' : ''); }
+function scrollChat(){ const c = document.getElementById('chat'); c.scrollTop = c.scrollHeight; }
+
+// ── 카운트다운 링 ──────────────────────────────────────────────
+function startCd() {
+  cdRemain = REC_SEC;
+  const ring = document.getElementById('cdring');
+  const prog = document.getElementById('cdprog');
+  const num  = document.getElementById('cdnum');
+  ring.classList.add('show');
+  prog.style.strokeDashoffset = '0';
+  num.textContent = cdRemain;
+  cdInterval = setInterval(() => {
+    cdRemain -= 0.1;
+    prog.style.strokeDashoffset = String(CIRCUM * (1 - cdRemain / REC_SEC));
+    num.textContent = Math.ceil(cdRemain);
+    if (cdRemain <= 0) { stopCd(); stopMic(true); }
+  }, 100);
+}
+function stopCd() {
+  clearInterval(cdInterval); cdInterval = null;
+  document.getElementById('cdring').classList.remove('show');
+}
+
+// ── 음성 녹음 ─────────────────────────────────────────────────
+function toggleMic() {
+  if (busy) return;
+  if (isRec) stopMic(true);
+  else startMic();
+}
+
+async function startMic() {
+  if (isRec) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    chunks = [];
+    mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      if (chunks.length > 0) await sendVoice(new Blob(chunks, { type: 'audio/webm' }));
+    };
+    mr.start(100);
+    isRec = true;
+    setState('recording'); setWf('rec');
+    document.getElementById('mic-btn').classList.add('rec');
+    document.getElementById('mic-btn').textContent = '⏹️';
+    startCd();
+  } catch(err) {
+    addMsg('a', '⚠️ 마이크 접근 실패: ' + err.message);
+  }
+}
+
+function stopMic(send = true) {
+  stopCd();
+  if (!send) chunks = [];
+  if (mr && isRec) mr.stop();
+  isRec = false;
+  document.getElementById('mic-btn').classList.remove('rec');
+  document.getElementById('mic-btn').textContent = '🎙️';
+  setWf('');
+}
+
+async function sendVoice(blob) {
+  if (!blob || blob.size < 500) { setState('ready'); return; }
+  setBusy(true); setState('processing'); setWf('proc');
+  try {
+    const fd = new FormData();
+    fd.append('audio', blob, 'voice.webm');
+    fd.append('thread_id', threadId);
+    fd.append('use_tts', 'true');
+    const res  = await fetch(`${API}/voice`, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.error) {
+      addMsg('a', '⚠️ ' + data.error);
+    } else {
+      if (data.text) addMsg('u', '🎤 ' + data.text);
+      addMsg('a', data.response);
+      if (data.audio_base64) playAudio(data.audio_base64);
+    }
+  } catch(err) {
+    addMsg('a', '⚠️ ' + err.message);
+  } finally {
+    setBusy(false); setState('ready'); setWf('');
+  }
+}
+
+// ── 텍스트 전송 (TTS 활성화) ──────────────────────────────────
+function sendText() {
+  const el = document.getElementById('txt');
+  const text = el.value.trim();
+  if (!text || busy) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) { addMsg('a', '⚠️ 서버 연결 없음'); return; }
+  addMsg('u', text);
+  el.value = ''; el.style.height = 'auto';
+  setBusy(true); showTyping(true); setState('processing');
+  ws.send(JSON.stringify({ text, thread_id: threadId, use_tts: true }));
+}
+function onKey(e)     { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); } }
+function resizeTxt(el){ el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 60) + 'px'; }
+
+// ── 채팅 ──────────────────────────────────────────────────────
+function addMsg(role, text) {
+  const chat   = document.getElementById('chat');
+  const typing = document.getElementById('typing');
+  const el = document.createElement('div');
+  el.className = 'msg ' + role;
+  el.innerHTML = `<div class="av ${role}">${role === 'u' ? '👤' : '🤖'}</div><div class="bbl">${esc(text)}</div>`;
+  chat.insertBefore(el, typing);
+  scrollChat();
+  return el;
+}
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+// ── TTS 재생 ──────────────────────────────────────────────────
+function playAudio(b64) {
+  try {
+    const raw = atob(b64);
+    const arr = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([arr], { type: 'audio/mpeg' }));
+    const a = new Audio(url);
+    a.volume = 1.0;
+    a.play().catch(e => console.error('[TTS]', e));
+    a.onended = () => URL.revokeObjectURL(url);
+  } catch(e) { console.error('[TTS] error', e); }
+}
+
+// ── IPC ───────────────────────────────────────────────────────
+window.pluiz.onWakeDetected(() => {
+  const ring = document.getElementById('logo-ring');
+  ring.classList.remove('listening');
+  ring.classList.add('awake');
+  ring.addEventListener('animationend', () => {
+    ring.classList.remove('awake');
+    if (!isActive) ring.classList.add('listening');
+  }, { once: true });
+  activate(true);
+});
+
+window.pluiz.onWakewordStatus(s => {
+  document.getElementById('idle-hint').textContent =
+    s === 'ready' ? '더블클릭 · 🎙️' : '더블클릭 · 🎙️';
+});
+
+window.pluiz.onToggleActive(() => {
+  if (isActive) deactivate();
+  else activate(true);
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && isActive) deactivate();
+});
+
+connect();
+</script>
+</body>
+</html>
