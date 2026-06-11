@@ -43,6 +43,10 @@ def get_all_tools() -> List[BaseTool]:
         get_current_time,
         get_running_apps,
     )
+    from tools.input_control import (
+        type_text,
+        press_key,
+    )
 
     return [
         # 앱 제어
@@ -73,4 +77,7 @@ def get_all_tools() -> List[BaseTool]:
         get_battery_status,
         get_current_time,
         get_running_apps,
+        # 키보드 입력
+        type_text,
+        press_key,
     ]

@@ -1,0 +1,652 @@
+{
+  "메모장 열어줘": {
+    "pattern": "메모장 열어줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "메모장"
+        }
+      }
+    ],
+    "response_template": "✓ 메모장을 실행했습니다.",
+    "hit_count": 15,
+    "is_seed": true
+  },
+  "메모장 켜줘": {
+    "pattern": "메모장 켜줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "메모장"
+        }
+      }
+    ],
+    "response_template": "✓ 메모장을 실행했습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "메모장 꺼줘": {
+    "pattern": "메모장 꺼줘",
+    "tool_calls": [
+      {
+        "name": "close_app",
+        "args": {
+          "app": "메모장"
+        }
+      }
+    ],
+    "response_template": "✓ 메모장을 종료했습니다.",
+    "hit_count": 3,
+    "is_seed": true
+  },
+  "계산기 열어줘": {
+    "pattern": "계산기 열어줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "계산기"
+        }
+      }
+    ],
+    "response_template": "✓ 계산기를 실행했습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "계산기 켜줘": {
+    "pattern": "계산기 켜줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "계산기"
+        }
+      }
+    ],
+    "response_template": "✓ 계산기를 실행했습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "크롬 열어줘": {
+    "pattern": "크롬 열어줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "크롬"
+        }
+      }
+    ],
+    "response_template": "✓ Chrome을 실행했습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "크롬 켜줘": {
+    "pattern": "크롬 켜줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "크롬"
+        }
+      }
+    ],
+    "response_template": "✓ Chrome을 실행했습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "탐색기 열어줘": {
+    "pattern": "탐색기 열어줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "탐색기"
+        }
+      }
+    ],
+    "response_template": "✓ 파일 탐색기를 열었습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "파일 탐색기 열어줘": {
+    "pattern": "파일 탐색기 열어줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "파일탐색기"
+        }
+      }
+    ],
+    "response_template": "✓ 파일 탐색기를 열었습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "바탕화면 보여줘": {
+    "pattern": "바탕화면 보여줘",
+    "tool_calls": [
+      {
+        "name": "show_desktop",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 바탕화면을 표시했습니다.",
+    "hit_count": 3,
+    "is_seed": true
+  },
+  "창 최대화해줘": {
+    "pattern": "창 최대화해줘",
+    "tool_calls": [
+      {
+        "name": "maximize_window",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 창을 최대화했습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "창 최소화해줘": {
+    "pattern": "창 최소화해줘",
+    "tool_calls": [
+      {
+        "name": "minimize_window",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 창을 최소화했습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "설정 열어줘": {
+    "pattern": "설정 열어줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "설정"
+        }
+      }
+    ],
+    "response_template": "✓ 설정을 열었습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "카카오톡 열어줘": {
+    "pattern": "카카오톡 열어줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "카카오톡"
+        }
+      }
+    ],
+    "response_template": "✓ 카카오톡을 실행했습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "볼륨 올려줘": {
+    "pattern": "볼륨 올려줘",
+    "tool_calls": [
+      {
+        "name": "volume_up",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 볼륨을 높였습니다.",
+    "hit_count": 3,
+    "is_seed": true
+  },
+  "소리 올려줘": {
+    "pattern": "소리 올려줘",
+    "tool_calls": [
+      {
+        "name": "volume_up",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 볼륨을 높였습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "볼륨 내려줘": {
+    "pattern": "볼륨 내려줘",
+    "tool_calls": [
+      {
+        "name": "volume_down",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 볼륨을 낮췄습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "소리 내려줘": {
+    "pattern": "소리 내려줘",
+    "tool_calls": [
+      {
+        "name": "volume_down",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 볼륨을 낮췄습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "음소거해줘": {
+    "pattern": "음소거해줘",
+    "tool_calls": [
+      {
+        "name": "mute_toggle",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 음소거 상태를 변경했습니다.",
+    "hit_count": 3,
+    "is_seed": true
+  },
+  "음소거 해줘": {
+    "pattern": "음소거 해줘",
+    "tool_calls": [
+      {
+        "name": "mute_toggle",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 음소거 상태를 변경했습니다.",
+    "hit_count": 3,
+    "is_seed": true
+  },
+  "밝기 올려줘": {
+    "pattern": "밝기 올려줘",
+    "tool_calls": [
+      {
+        "name": "brightness_up",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 화면 밝기를 높였습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "화면 밝게 해줘": {
+    "pattern": "화면 밝게 해줘",
+    "tool_calls": [
+      {
+        "name": "brightness_up",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 화면 밝기를 높였습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "밝기 내려줘": {
+    "pattern": "밝기 내려줘",
+    "tool_calls": [
+      {
+        "name": "brightness_down",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 화면 밝기를 낮췄습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "화면 어둡게 해줘": {
+    "pattern": "화면 어둡게 해줘",
+    "tool_calls": [
+      {
+        "name": "brightness_down",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 화면 밝기를 낮췄습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "스크린샷 찍어줘": {
+    "pattern": "스크린샷 찍어줘",
+    "tool_calls": [
+      {
+        "name": "take_screenshot",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 스크린샷을 저장했습니다.",
+    "hit_count": 3,
+    "is_seed": true
+  },
+  "화면 캡처해줘": {
+    "pattern": "화면 캡처해줘",
+    "tool_calls": [
+      {
+        "name": "take_screenshot",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 스크린샷을 저장했습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "지금 몇 시야": {
+    "pattern": "지금 몇 시야",
+    "tool_calls": [
+      {
+        "name": "get_current_time",
+        "args": {}
+      }
+    ],
+    "response_template": "현재 시각을 확인합니다.",
+    "hit_count": 3,
+    "is_seed": true
+  },
+  "배터리 얼마나 남았어": {
+    "pattern": "배터리 얼마나 남았어",
+    "tool_calls": [
+      {
+        "name": "get_battery_status",
+        "args": {}
+      }
+    ],
+    "response_template": "배터리 상태를 확인합니다.",
+    "hit_count": 3,
+    "is_seed": true
+  },
+  "배터리 확인해줘": {
+    "pattern": "배터리 확인해줘",
+    "tool_calls": [
+      {
+        "name": "get_battery_status",
+        "args": {}
+      }
+    ],
+    "response_template": "배터리 상태를 확인합니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "지금 뭐 켜져 있어": {
+    "pattern": "지금 뭐 켜져 있어",
+    "tool_calls": [
+      {
+        "name": "get_running_apps",
+        "args": {}
+      }
+    ],
+    "response_template": "실행 중인 앱 목록을 확인합니다.",
+    "hit_count": 3,
+    "is_seed": true
+  },
+  "실행 중인 앱 알려줘": {
+    "pattern": "실행 중인 앱 알려줘",
+    "tool_calls": [
+      {
+        "name": "get_running_apps",
+        "args": {}
+      }
+    ],
+    "response_template": "실행 중인 앱 목록을 확인합니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "구글 열어줘": {
+    "pattern": "구글 열어줘",
+    "tool_calls": [
+      {
+        "name": "open_url",
+        "args": {
+          "url": "https://www.google.com"
+        }
+      }
+    ],
+    "response_template": "✓ Google을 열었습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "유튜브 열어줘": {
+    "pattern": "유튜브 열어줘",
+    "tool_calls": [
+      {
+        "name": "open_url",
+        "args": {
+          "url": "https://www.youtube.com"
+        }
+      }
+    ],
+    "response_template": "✓ YouTube를 열었습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "네이버 열어줘": {
+    "pattern": "네이버 열어줘",
+    "tool_calls": [
+      {
+        "name": "open_url",
+        "args": {
+          "url": "https://www.naver.com"
+        }
+      }
+    ],
+    "response_template": "✓ Naver를 열었습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "날씨 검색해줘": {
+    "pattern": "날씨 검색해줘",
+    "tool_calls": [
+      {
+        "name": "web_search",
+        "args": {
+          "query": "오늘 날씨"
+        }
+      }
+    ],
+    "response_template": "✓ 날씨를 검색했습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "최근에 열었던 파일 보여줘": {
+    "pattern": "최근에 열었던 파일 보여줘",
+    "tool_calls": [
+      {
+        "name": "open_recent_file",
+        "args": {}
+      }
+    ],
+    "response_template": "최근 파일을 확인합니다.",
+    "hit_count": 3,
+    "is_seed": true
+  },
+  "계산기 실행해줘": {
+    "pattern": "계산기 실행해줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "calculator"
+        }
+      }
+    ],
+    "response_template": "계산기를 실행했습니다.",
+    "hit_count": 2,
+    "is_seed": false
+  },
+  "볼륨 50으로 설정해줘": {
+    "pattern": "볼륨 50으로 설정해줘",
+    "tool_calls": [
+      {
+        "name": "set_volume",
+        "args": {
+          "level": 50
+        }
+      }
+    ],
+    "response_template": "볼륨을 50%로 설정했습니다.",
+    "hit_count": 2,
+    "is_seed": false
+  },
+  "바탕화면에 pluiz_test.txt 파일 만들어줘": {
+    "pattern": "바탕화면에 pluiz_test.txt 파일 만들어줘",
+    "tool_calls": [
+      {
+        "name": "create_file",
+        "args": {
+          "name": "pluiz_test.txt",
+          "location": "desktop"
+        }
+      }
+    ],
+    "response_template": "바탕화면에 'pluiz_test.txt' 파일을 생성했습니다.\n경로: C:\\Users\\byeonsoyun\\Desktop\\pluiz_test.txt",
+    "hit_count": 2,
+    "is_seed": false
+  },
+  "바탕화면에 pluiz_test_folder 폴더 만들어줘": {
+    "pattern": "바탕화면에 pluiz_test_folder 폴더 만들어줘",
+    "tool_calls": [
+      {
+        "name": "create_folder",
+        "args": {
+          "location": "desktop",
+          "name": "pluiz_test_folder"
+        }
+      }
+    ],
+    "response_template": "바탕화면에 'pluiz_test_folder' 폴더를 만들었습니다.",
+    "hit_count": 2,
+    "is_seed": false
+  },
+  "다운로드 폴더에 pdf 파일 있어?": {
+    "pattern": "다운로드 폴더에 pdf 파일 있어?",
+    "tool_calls": [
+      {
+        "name": "find_file",
+        "args": {
+          "location": "downloads",
+          "extension": "pdf"
+        }
+      }
+    ],
+    "response_template": "다운로드 폴더에서 62개의 PDF 파일을 찾았습니다.",
+    "hit_count": 2,
+    "is_seed": false
+  },
+  "구글에서 날씨 검색해줘": {
+    "pattern": "구글에서 날씨 검색해줘",
+    "tool_calls": [
+      {
+        "name": "web_search",
+        "args": {
+          "query": "날씨",
+          "engine": "google"
+        }
+      }
+    ],
+    "response_template": "구글에서 '날씨'를 검색했습니다.",
+    "hit_count": 2,
+    "is_seed": false
+  },
+  "강남역 지도 보여줘": {
+    "pattern": "강남역 지도 보여줘",
+    "tool_calls": [
+      {
+        "name": "map_search",
+        "args": {
+          "destination": "강남역"
+        }
+      }
+    ],
+    "response_template": "강남역 지도를 열었습니다.",
+    "hit_count": 2,
+    "is_seed": false
+  },
+  "지금 몇 시야? 그리고 배터리도 알려줘": {
+    "pattern": "지금 몇 시야? 그리고 배터리도 알려줘",
+    "tool_calls": [
+      {
+        "name": "get_current_time",
+        "args": {}
+      },
+      {
+        "name": "get_battery_status",
+        "args": {}
+      }
+    ],
+    "response_template": "현재 시각은 2026년 6월 11일 목요일 오후 9시 21분입니다. 배터리는 100%이며 충전 중입니다.",
+    "hit_count": 2,
+    "is_seed": false
+  },
+  "바탕화면에 todo.txt 파일 만들고 메모장으로 열어줘": {
+    "pattern": "바탕화면에 todo.txt 파일 만들고 메모장으로 열어줘",
+    "tool_calls": [
+      {
+        "name": "create_file",
+        "args": {
+          "name": "todo.txt",
+          "location": "desktop"
+        }
+      },
+      {
+        "name": "open_file",
+        "args": {
+          "file_path": "바탕화면/todo.txt",
+          "app": "notepad"
+        }
+      }
+    ],
+    "response_template": "바탕화면에 'todo.txt' 파일을 만들고 메모장으로 열었습니다.",
+    "hit_count": 2,
+    "is_seed": false
+  },
+  "메모장에 'pluiz 테스트' 라고 입력해줘": {
+    "pattern": "메모장에 'pluiz 테스트' 라고 입력해줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "notepad"
+        }
+      },
+      {
+        "name": "type_text",
+        "args": {
+          "text": "Pluiz 테스트"
+        }
+      }
+    ],
+    "response_template": "메모장에 'Pluiz 테스트'라고 입력했습니다.",
+    "hit_count": 2,
+    "is_seed": false
+  },
+  "포토샵 열어줘": {
+    "pattern": "포토샵 열어줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "photoshop"
+        }
+      }
+    ],
+    "response_template": "포토샵 앱을 찾을 수 없습니다. 설치되어 있지 않거나 지원하지 않는 앱입니다.",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "엔터 키 눌러줘": {
+    "pattern": "엔터 키 눌러줘",
+    "tool_calls": [
+      {
+        "name": "press_key",
+        "args": {
+          "key": "enter"
+        }
+      }
+    ],
+    "response_template": "엔터 키를 눌렀습니다.",
+    "hit_count": 0,
+    "is_seed": false
+  }
+}

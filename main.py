@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from config.settings import get_settings
 from core.agent import get_agent
+from core.security import check_security
 from services.tts import get_tts
 from services.stt import get_stt
 
@@ -115,6 +116,12 @@ async def chat(req: TextRequest):
     """
     from fastapi.responses import JSONResponse
     try:
+        # ── 보안 필터 (LLM 판단 전 결정론적 차단) ─────────────────
+        blocked, reason = check_security(req.text)
+        if blocked:
+            print(f"[Security] 차단됨: {repr(req.text[:60])}")
+            return {"response": reason, "thread_id": req.thread_id}
+
         agent = get_agent()
         response = await agent.run_async(req.text, thread_id=req.thread_id)
 
@@ -144,6 +151,18 @@ async def voice_input(audio: UploadFile = File(...), thread_id: str = "default",
     text = stt.transcribe_bytes(audio_bytes)
     if not text:
         return {"error": "음성을 인식하지 못했습니다.", "text": "", "response": ""}
+
+    # ── 보안 필터 ─────────────────────────────────────────────────
+    blocked, reason = check_security(text)
+    if blocked:
+        print(f"[Security] 차단됨(voice): {repr(text[:60])}")
+        if use_tts:
+            tts = get_tts()
+            audio_bytes_response = await tts.to_bytes_async(reason)
+            import base64
+            return {"text": text, "response": reason,
+                    "audio_base64": base64.b64encode(audio_bytes_response).decode()}
+        return {"text": text, "response": reason}
 
     # 에이전트
     agent = get_agent()
@@ -202,6 +221,15 @@ async def websocket_endpoint(websocket: WebSocket):
             use_tts = data.get("use_tts", False)
 
             if not text:
+                continue
+
+            # ── 보안 필터 ─────────────────────────────────────────
+            blocked, reason = check_security(text)
+            if blocked:
+                print(f"[Security] 차단됨(ws): {repr(text[:60])}")
+                await websocket.send_json({"type": "start"})
+                await websocket.send_json({"type": "chunk", "content": reason})
+                await websocket.send_json({"type": "end", "full": reason})
                 continue
 
             await websocket.send_json({"type": "start"})

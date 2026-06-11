@@ -42,13 +42,19 @@ C:\pluiz_v2\
 │
 ├── core/
 │   ├── agent.py             # PluizAgent, get_agent(), reset_agent()
-│   └── tool_registry.py     # get_all_tools() — 도구 24개 등록
+│   ├── tool_registry.py     # get_all_tools() — 도구 26개 등록
+│   ├── security.py          # check_security() — 코드 레벨 입력 필터 (LLM 전 차단)
+│   └── command_cache.py     # CommandCache — 오프라인 커맨드 캐시, get_cache()
 │
 ├── tools/
 │   ├── app_control.py       # open_app, close_app, maximize/minimize_window, show_desktop
 │   ├── system.py            # volume_up/down/set/mute, brightness, screenshot, battery, time, running_apps
 │   ├── filesystem.py        # create_file/folder, find_file, open_file, open_recent_file
-│   └── web.py               # open_url, web_search, youtube_search, map_search
+│   ├── web.py               # open_url, web_search, youtube_search, map_search
+│   └── input_control.py     # type_text, press_key — 포그라운드 앱 키보드 입력
+│
+├── cache/
+│   └── command_cache.json   # 캐시 영속 저장 파일 (자동 생성)
 │
 ├── services/
 │   ├── stt.py               # STTService, get_stt() — faster-whisper
@@ -167,17 +173,19 @@ HumanMessage
 - STT: faster-whisper 로컬 (webm 입력)
 - TTS: edge-tts → base64 → 브라우저 재생
 - 음성 입력 + 텍스트 입력 모두 TTS 지원
-- 도구 24개 (앱/시스템/파일/웹)
+- 도구 26개 (앱/시스템/파일/웹/키보드입력)
 - Electron UI (idle pill ↔ active view)
 - API 설정창 (첫 실행 시 자동 표시, ⚙️ 버튼으로 재접근)
 - ✕ 버튼 정상 종료
 - 자동화 테스트 스크립트 (25/25 통과)
+- **보안 레이어** (`core/security.py`) — 위험 명령어 18개 패턴, 시스템 경로 7개, 경로 순회 차단. `/chat`, `/voice`, `/ws` 전 엔드포인트 적용
+- **오프라인 커맨드 캐시** (`core/command_cache.py`) — 시드 37개, 퍼지 매칭(0.80), LLM 전 캐시 hit 시 API 없이 직접 실행. `run_async()`에 통합
+- **키보드 입력 도구** (`tools/input_control.py`) — `type_text`, `press_key`. 클립보드 경유 한국어 안전 처리
 
 ### ❌ 미구현 / 보류
 - 웨이크워드 ("소윤아") — faster-whisper tiny 인식률 낮음, 데모에서 Alt+Space 사용
-- 특정 앱에서 텍스트 타이핑 (메모장에 내용 쓰기 등)
-- 클립보드 제어
-- 윈도우 포커스 후 키입력 도구
+- 클립보드 제어 (복사/붙여넣기 읽기)
+- `stream()` 메서드의 캐시 통합 (현재 `run_async()`에만 적용)
 
 ---
 

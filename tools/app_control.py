@@ -94,12 +94,12 @@ def _normalize(app_name: str) -> str:
 
 
 def _resolve_path(app_key: str) -> str | None:
-    """앱 실행 경로 탐색. 순서: where → fallback → registry → glob."""
+    """앱 실행 경로 탐색. 순서: where → fallback → registry → glob(알려진 앱만)."""
     exe_name = APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])[0]
 
-    # 1. where 명령
+    # 1. where 명령 (PATH에 등록된 앱)
     try:
-        result = subprocess.run(["where", exe_name], capture_output=True, text=True, timeout=5)
+        result = subprocess.run(["where", exe_name], capture_output=True, text=True, timeout=3)
         if result.returncode == 0:
             path = result.stdout.strip().splitlines()[0]
             if os.path.exists(path):
@@ -107,9 +107,13 @@ def _resolve_path(app_key: str) -> str | None:
     except Exception:
         pass
 
-    # 2. fallback 경로
+    # ── 알려지지 않은 앱: where 실패 시 즉시 포기 (느린 glob 탐색 방지) ──
+    if app_key not in APP_FALLBACK_PATHS:
+        return None
+
+    # 2. fallback 경로 (알려진 앱만)
     for path in APP_FALLBACK_PATHS.get(app_key, []):
-        if "*" in path:  # glob 패턴
+        if "*" in path:
             matches = glob.glob(path)
             if matches:
                 return matches[0]
@@ -131,7 +135,7 @@ def _resolve_path(app_key: str) -> str | None:
     except ImportError:
         pass
 
-    # 4. glob 탐색 (5초 제한)
+    # 4. glob 탐색 (알려진 앱, 3초 제한)
     def _glob():
         roots = [
             os.environ.get("PROGRAMFILES", "C:/Program Files"),
@@ -147,7 +151,7 @@ def _resolve_path(app_key: str) -> str | None:
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            return ex.submit(_glob).result(timeout=5)
+            return ex.submit(_glob).result(timeout=3)
     except Exception:
         return None
 
@@ -186,7 +190,10 @@ def open_app(app: str) -> str:
 
     path = _resolve_path(app_key)
     if not path:
-        return f"✗ '{app}' 앱을 찾을 수 없습니다. 설치 여부를 확인하거나 정확한 앱 이름을 알려주세요."
+        return (
+            f"✗ '{app}' 앱을 찾을 수 없습니다. "
+            "설치되어 있지 않거나 지원하지 않는 앱입니다. 다른 방법은 없습니다."
+        )
 
     try:
         subprocess.Popen([path])

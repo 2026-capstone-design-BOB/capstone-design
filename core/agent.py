@@ -6,7 +6,7 @@ LangGraph 기반 ReAct 에이전트.
 """
 
 from typing import AsyncGenerator
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, AIMessageChunk
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, AIMessageChunk, ToolMessage
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -23,10 +23,18 @@ SYSTEM_PROMPT = """당신은 Pluiz입니다. 한국어 음성 명령으로 Windo
 - 명령이 모호하면 짧게 확인 후 실행합니다.
 - 실행 결과를 간결하게 한국어로 보고합니다.
 
-주의:
-- 시스템 파일 삭제, 개인정보 수집 등 위험한 작업은 거부합니다.
-- 불가능한 요청은 이유를 설명합니다.
+보안 지침 (반드시 준수):
+- 파일/폴더 삭제 명령은 반드시 "정말 삭제하시겠습니까?" 확인 후 실행합니다.
+- 휴지통 비우기, 영구 삭제(shift+delete 등) 요청은 구체적으로 재확인합니다.
+- 시스템 설정 변경(레지스트리, 방화벽, 계정 등)은 신중하게 재확인합니다.
+- 여러 파일을 한꺼번에 삭제하는 경우 대상 목록을 사용자에게 먼저 보여줍니다.
+- C:\\Windows, System32 등 시스템 경로 접근은 거부합니다.
+- 절대 실행하지 말 것: rm -rf, del /f /s, format, reg delete, shutdown /f 등 불가역적 명령.
+
+일반 주의:
+- 불가능한 요청은 이유를 간결하게 설명합니다.
 - 응답은 항상 한국어로 합니다.
+- 도구 실행 결과를 그대로 전달하되, 사용자가 이해하기 쉽게 요약합니다.
 """
 
 
@@ -111,7 +119,26 @@ class PluizAgent:
 
     async def run_async(self, user_input: str, thread_id: str = "default") -> str:
         """비동기 실행. FastAPI 엔드포인트에서 사용."""
-        config = {"configurable": {"thread_id": thread_id}}
+        # ── 커맨드 캐시 확인 (API 없이 직접 실행) ─────────────────
+        try:
+            from core.command_cache import get_cache
+            cache = get_cache()
+            hit = cache.find(user_input)
+            if hit:
+                entry, score = hit
+                print(f"[CommandCache] 히트 (유사도 {score:.2f}): {entry.pattern!r}")
+                result_text = await cache.execute(entry)
+                cache.increment_hit(entry.pattern)
+                self.session_memory.save(user_input, result_text)
+                return result_text
+        except Exception as cache_err:
+            print(f"[CommandCache] 캐시 확인 오류 (무시): {cache_err}")
+
+        # ── LLM 실행 ───────────────────────────────────────────────
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": 10,   # 최대 10스텝 (도구 재시도 루프 방지)
+        }
         messages = [HumanMessage(content=user_input)]
 
         try:
@@ -124,7 +151,6 @@ class PluizAgent:
                 self._clear_thread(thread_id)
                 result = await self.graph.ainvoke({"messages": messages}, config=config)
             else:
-                # 그 외 예외: thread 초기화 + 에러 메시지 반환 (서버 크래시 방지)
                 print(f"[PluizAgent] 예외 발생 → thread '{thread_id}' 초기화: {type(e).__name__}: {e}")
                 self._clear_thread(thread_id)
                 return f"명령 처리 중 오류가 발생했습니다: {e}"
@@ -136,7 +162,35 @@ class PluizAgent:
                 block.get("text", "") if isinstance(block, dict) else str(block)
                 for block in response
             ).strip()
+
+        # ── 빈 응답 폴백 (Gemini가 tool 실행 후 빈 content 반환하는 케이스) ──
+        if not response.strip():
+            print("[PluizAgent] 빈 응답 감지 → ToolMessage에서 복원 시도")
+            for msg in reversed(result["messages"]):
+                if isinstance(msg, ToolMessage) and msg.content:
+                    tool_content = msg.content
+                    if isinstance(tool_content, list):
+                        tool_content = " ".join(
+                            b.get("text", "") if isinstance(b, dict) else str(b)
+                            for b in tool_content
+                        ).strip()
+                    if tool_content.strip():
+                        response = tool_content
+                        break
+            if not response.strip():
+                response = "명령을 실행했습니다."
+
         self.session_memory.save(user_input, response)
+
+        # ── 결과 캐싱 (다음 번엔 API 없이 실행 가능) ──────────────
+        try:
+            from core.command_cache import get_cache, extract_tool_calls_from_messages
+            tool_calls = extract_tool_calls_from_messages(result["messages"])
+            if tool_calls:
+                get_cache().save(user_input, tool_calls, response)
+        except Exception as cache_err:
+            print(f"[CommandCache] 저장 오류 (무시): {cache_err}")
+
         return response
 
     def _clear_thread(self, thread_id: str):
@@ -150,9 +204,27 @@ class PluizAgent:
     async def stream(self, user_input: str, thread_id: str = "default") -> AsyncGenerator[str, None]:
         """
         스트리밍 실행. 토큰 단위로 응답을 yield.
-        UI에서 실시간 타이핑 효과를 원할 때 사용.
+        캐시 히트 시 단일 청크로 즉시 반환 (API 미호출).
         """
-        config = {"configurable": {"thread_id": thread_id}}
+        # ── 캐시 확인 ─────────────────────────────────────────────
+        try:
+            from core.command_cache import get_cache
+            cache = get_cache()
+            hit = cache.find(user_input)
+            if hit:
+                entry, score = hit
+                print(f"[CommandCache/ws] 히트 (유사도 {score:.2f}): {entry.pattern!r}")
+                result_text = await cache.execute(entry)
+                cache.increment_hit(entry.pattern)
+                yield result_text
+                return
+        except Exception as cache_err:
+            print(f"[CommandCache/ws] 쿐리 확인 오류 (무시): {cache_err}")
+
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": 10,
+        }
         messages = [HumanMessage(content=user_input)]
 
         async for chunk in self.graph.astream(
@@ -160,7 +232,7 @@ class PluizAgent:
             config=config,
             stream_mode="messages",
         ):
-            # (message_chunk, metadata) 형태 — AI 응답 토큰만 yield (tool 메시지 제외)
+            # (message_chunk, metadata) 혼태 — AI 응답 토큰만 yield (tool 메시지 제외)
             msg, meta = chunk
             if not isinstance(msg, (AIMessage, AIMessageChunk)):
                 continue
@@ -174,12 +246,10 @@ class PluizAgent:
 
     def reset_session(self, thread_id: str = "default"):
         """특정 세션의 대화 히스토리 초기화."""
-        # MemorySaver는 thread_id별로 독립적이므로
-        # 새 thread_id 사용이 사실상 초기화와 동일
         print(f"[PluizAgent] 세션 초기화: {thread_id}")
 
 
-# ── 싱글턴 ────────────────────────────────────────────────────────
+# ── 싱글턴 ──────────────────────────────────────────────────────────────────
 _agent_instance: PluizAgent | None = None
 
 
@@ -192,7 +262,7 @@ def get_agent() -> PluizAgent:
 
 
 def reset_agent():
-    """API 키 변경 시 에이전트 재초기화 (다음 get_agent() 호출에서 새로 생성)."""
+    """API 키 변경 시 에추전트 재초기화 (다음 get_agent() 호출에서 새로 생성)."""
     global _agent_instance
     _agent_instance = None
     print("[PluizAgent] 인스턴스 초기화됨 - 다음 요청 시 재생성")
