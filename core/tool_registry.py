@@ -23,6 +23,7 @@ def get_all_tools() -> List[BaseTool]:
         web_search,
         youtube_search,
         map_search,
+        fetch_web_info,
     )
     from tools.filesystem import (
         create_file,
@@ -60,6 +61,7 @@ def get_all_tools() -> List[BaseTool]:
         web_search,
         youtube_search,
         map_search,
+        fetch_web_info,
         # 파일시스템
         create_file,
         create_folder,

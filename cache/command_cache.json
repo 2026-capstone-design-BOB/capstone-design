@@ -10,7 +10,7 @@
       }
     ],
     "response_template": "✓ 메모장을 실행했습니다.",
-    "hit_count": 15,
+    "hit_count": 22,
     "is_seed": true
   },
   "메모장 켜줘": {
@@ -24,7 +24,7 @@
       }
     ],
     "response_template": "✓ 메모장을 실행했습니다.",
-    "hit_count": 0,
+    "hit_count": 1,
     "is_seed": true
   },
   "메모장 꺼줘": {
@@ -38,7 +38,7 @@
       }
     ],
     "response_template": "✓ 메모장을 종료했습니다.",
-    "hit_count": 3,
+    "hit_count": 4,
     "is_seed": true
   },
   "계산기 열어줘": {
@@ -122,7 +122,7 @@
       }
     ],
     "response_template": "✓ 파일 탐색기를 열었습니다.",
-    "hit_count": 0,
+    "hit_count": 1,
     "is_seed": true
   },
   "바탕화면 보여줘": {
@@ -134,7 +134,7 @@
       }
     ],
     "response_template": "✓ 바탕화면을 표시했습니다.",
-    "hit_count": 3,
+    "hit_count": 4,
     "is_seed": true
   },
   "창 최대화해줘": {
@@ -198,7 +198,7 @@
       }
     ],
     "response_template": "✓ 볼륨을 높였습니다.",
-    "hit_count": 3,
+    "hit_count": 4,
     "is_seed": true
   },
   "소리 올려줘": {
@@ -246,7 +246,7 @@
       }
     ],
     "response_template": "✓ 음소거 상태를 변경했습니다.",
-    "hit_count": 3,
+    "hit_count": 4,
     "is_seed": true
   },
   "음소거 해줘": {
@@ -258,7 +258,7 @@
       }
     ],
     "response_template": "✓ 음소거 상태를 변경했습니다.",
-    "hit_count": 3,
+    "hit_count": 4,
     "is_seed": true
   },
   "밝기 올려줘": {
@@ -318,7 +318,7 @@
       }
     ],
     "response_template": "✓ 스크린샷을 저장했습니다.",
-    "hit_count": 3,
+    "hit_count": 4,
     "is_seed": true
   },
   "화면 캡처해줘": {
@@ -342,7 +342,7 @@
       }
     ],
     "response_template": "현재 시각을 확인합니다.",
-    "hit_count": 3,
+    "hit_count": 4,
     "is_seed": true
   },
   "배터리 얼마나 남았어": {
@@ -354,7 +354,7 @@
       }
     ],
     "response_template": "배터리 상태를 확인합니다.",
-    "hit_count": 3,
+    "hit_count": 4,
     "is_seed": true
   },
   "배터리 확인해줘": {
@@ -378,7 +378,7 @@
       }
     ],
     "response_template": "실행 중인 앱 목록을 확인합니다.",
-    "hit_count": 3,
+    "hit_count": 4,
     "is_seed": true
   },
   "실행 중인 앱 알려줘": {
@@ -458,7 +458,7 @@
       }
     ],
     "response_template": "최근 파일을 확인합니다.",
-    "hit_count": 3,
+    "hit_count": 4,
     "is_seed": true
   },
   "계산기 실행해줘": {
@@ -472,7 +472,7 @@
       }
     ],
     "response_template": "계산기를 실행했습니다.",
-    "hit_count": 2,
+    "hit_count": 3,
     "is_seed": false
   },
   "볼륨 50으로 설정해줘": {
@@ -486,7 +486,7 @@
       }
     ],
     "response_template": "볼륨을 50%로 설정했습니다.",
-    "hit_count": 2,
+    "hit_count": 3,
     "is_seed": false
   },
   "바탕화면에 pluiz_test.txt 파일 만들어줘": {
@@ -501,7 +501,7 @@
       }
     ],
     "response_template": "바탕화면에 'pluiz_test.txt' 파일을 생성했습니다.\n경로: C:\\Users\\byeonsoyun\\Desktop\\pluiz_test.txt",
-    "hit_count": 2,
+    "hit_count": 3,
     "is_seed": false
   },
   "바탕화면에 pluiz_test_folder 폴더 만들어줘": {
@@ -516,7 +516,7 @@
       }
     ],
     "response_template": "바탕화면에 'pluiz_test_folder' 폴더를 만들었습니다.",
-    "hit_count": 2,
+    "hit_count": 3,
     "is_seed": false
   },
   "다운로드 폴더에 pdf 파일 있어?": {
@@ -531,7 +531,7 @@
       }
     ],
     "response_template": "다운로드 폴더에서 62개의 PDF 파일을 찾았습니다.",
-    "hit_count": 2,
+    "hit_count": 3,
     "is_seed": false
   },
   "구글에서 날씨 검색해줘": {
@@ -546,7 +546,7 @@
       }
     ],
     "response_template": "구글에서 '날씨'를 검색했습니다.",
-    "hit_count": 2,
+    "hit_count": 3,
     "is_seed": false
   },
   "강남역 지도 보여줘": {
@@ -560,7 +560,7 @@
       }
     ],
     "response_template": "강남역 지도를 열었습니다.",
-    "hit_count": 2,
+    "hit_count": 3,
     "is_seed": false
   },
   "지금 몇 시야? 그리고 배터리도 알려줘": {
@@ -576,7 +576,7 @@
       }
     ],
     "response_template": "현재 시각은 2026년 6월 11일 목요일 오후 9시 21분입니다. 배터리는 100%이며 충전 중입니다.",
-    "hit_count": 2,
+    "hit_count": 3,
     "is_seed": false
   },
   "바탕화면에 todo.txt 파일 만들고 메모장으로 열어줘": {
@@ -598,7 +598,7 @@
       }
     ],
     "response_template": "바탕화면에 'todo.txt' 파일을 만들고 메모장으로 열었습니다.",
-    "hit_count": 2,
+    "hit_count": 3,
     "is_seed": false
   },
   "메모장에 'pluiz 테스트' 라고 입력해줘": {
@@ -618,7 +618,7 @@
       }
     ],
     "response_template": "메모장에 'Pluiz 테스트'라고 입력했습니다.",
-    "hit_count": 2,
+    "hit_count": 3,
     "is_seed": false
   },
   "포토샵 열어줘": {
@@ -632,7 +632,7 @@
       }
     ],
     "response_template": "포토샵 앱을 찾을 수 없습니다. 설치되어 있지 않거나 지원하지 않는 앱입니다.",
-    "hit_count": 0,
+    "hit_count": 1,
     "is_seed": false
   },
   "엔터 키 눌러줘": {
@@ -646,6 +646,410 @@
       }
     ],
     "response_template": "엔터 키를 눌렀습니다.",
+    "hit_count": 1,
+    "is_seed": false
+  },
+  "윈도우 설정 열어줘": {
+    "pattern": "윈도우 설정 열어줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "settings"
+        }
+      }
+    ],
+    "response_template": "✓ 설정을 열었습니다.",
+    "hit_count": 0,
+    "is_seed": true
+  },
+  "파이썬 최신 버전 검색해서 바탕화면에 python_info.txt로 저장해줘": {
+    "pattern": "파이썬 최신 버전 검색해서 바탕화면에 python_info.txt로 저장해줘",
+    "tool_calls": [
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "파이썬 최신 버전"
+        }
+      },
+      {
+        "name": "create_file",
+        "args": {
+          "content": "2025년 7월 19일 기준, 파이썬은 3.13.5가 최신 안정 버전이며, 이는 6월 11일에 공식 릴리스되었습니다. 파이썬 3.14.4 윈도우 64 비트 다운로드도 가능합니다.",
+          "location": "desktop",
+          "name": "python_info.txt"
+        }
+      }
+    ],
+    "response_template": "파이썬 최신 버전 정보를 바탕화면에 python_info.txt 파일로 저장했습니다.\n2025년 7월 19일 기준, 파이썬은 3.13.5가 최신 안정 버전이며, 3.14.4 윈도우 64 비트 다운로드도 가능합니다.",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "스먹을 영업시간 내 못장에 적어서 저장해줘": {
+    "pattern": "스먹을 영업시간 내 못장에 적어서 저장해줘",
+    "tool_calls": [
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "스먹 영업시간"
+        }
+      }
+    ],
+    "response_template": "\"스먹\"의 영업시간은 일반적으로 오후 8시에서 10시 사이이며, 주말에는 오픈 시간이 늦어지고 마감 시간이 빨라질 수 있습니다. 지점마다 영업시간이 다를 수 있으니 방문 전 확인하는 것이 좋습니다. 이 내용을 바탕화면에 '스먹 영업시간.txt' 파일로 저장해 드릴까요?",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "오늘 날씨 좀 알려줘": {
+    "pattern": "오늘 날씨 좀 알려줘",
+    "tool_calls": [
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "스먹 영업시간"
+        }
+      },
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "오늘 날씨"
+        }
+      }
+    ],
+    "response_template": "오늘 청주 날씨는 현재(21시 기준) 맑고 기온은 22℃입니다. 바람은 북서풍으로 약 2m/s입니다. 낮 12시에는 구름 많고 26℃였으며, 오후 2시에는 82°F(약 28℃)까지 올랐습니다.",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "요새 에어컨 가격은 얼마나 하나 검색해줄래?": {
+    "pattern": "요새 에어컨 가격은 얼마나 하나 검색해줄래?",
+    "tool_calls": [
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "스먹 영업시간"
+        }
+      },
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "오늘 날씨"
+        }
+      },
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 가격"
+        }
+      }
+    ],
+    "response_template": "구글에서 '에어컨 가격'을 검색했습니다. 검색 결과를 확인해 보세요.",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "에어컨 가격 비교해가지고 엘셜 형식으로 저장해 줄 수 있어": {
+    "pattern": "에어컨 가격 비교해가지고 엘셜 형식으로 저장해 줄 수 있어",
+    "tool_calls": [
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "스먹 영업시간"
+        }
+      },
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "오늘 날씨"
+        }
+      },
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 가격"
+        }
+      }
+    ],
+    "response_template": "에어컨 가격 비교 정보를 엑셀 형식으로 저장하려면, 먼저 어떤 에어컨 모델들을 비교하고 싶은지 알려주시면 제가 웹에서 정보를 찾아드릴 수 있습니다.\n\n예를 들어, \"삼성 무풍 에어컨과 LG 휘센 에어컨 가격 비교해 줘\"와 같이 구체적으로 말씀해주시면 더 정확한 정보를 찾아드릴 수 있습니다.",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "내가 에어컨을 잘 몰라서 금액대는 200만 원 안쪽으로 해서 가격비구향 제품 알렸어요.": {
+    "pattern": "내가 에어컨을 잘 몰라서 금액대는 200만 원 안쪽으로 해서 가격비구향 제품 알렸어요.",
+    "tool_calls": [
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "스먹 영업시간"
+        }
+      },
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "오늘 날씨"
+        }
+      },
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 가격"
+        }
+      }
+    ],
+    "response_template": "200만원 이하의 에어컨 중 가격 비교를 위한 제품 정보를 찾아드리겠습니다. 어떤 종류의 에어컨을 선호하시나요? (예: 스탠드형, 벽걸이형, 창문형 등) 또는 특정 브랜드가 있으신가요?",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "일단 이 기업이면 좋겠고 벽걸이 형이 좋아": {
+    "pattern": "일단 이 기업이면 좋겠고 벽걸이 형이 좋아",
+    "tool_calls": [
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "스먹 영업시간"
+        }
+      },
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "오늘 날씨"
+        }
+      },
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 가격"
+        }
+      }
+    ],
+    "response_template": "'이 기업'이 어떤 기업을 말씀하시는지 정확히 알 수 있을까요? 기업 이름을 알려주시면 해당 기업의 200만원 이하 벽걸이 에어컨 제품을 찾아 가격 비교를 해드리겠습니다.",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "기업, 특정 기업은 잘 오려됐고 대기업이 좋다고 대기업.": {
+    "pattern": "기업, 특정 기업은 잘 오려됐고 대기업이 좋다고 대기업.",
+    "tool_calls": [
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "스먹 영업시간"
+        }
+      },
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "오늘 날씨"
+        }
+      },
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 가격"
+        }
+      }
+    ],
+    "response_template": "알겠습니다. 삼성, LG와 같은 대기업의 200만원 이하 벽걸이 에어컨 제품들을 찾아 가격 비교를 해드리겠습니다.\n\n어떤 정보를 엑셀 형식으로 저장해 드릴까요? (예: 모델명, 가격, 에너지 효율 등)",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "어.. 일단 뭐 이름도 있어야 되고 가력 중요하고 에너지 효율도 중요하지": {
+    "pattern": "어.. 일단 뭐 이름도 있어야 되고 가력 중요하고 에너지 효율도 중요하지",
+    "tool_calls": [
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "스먹 영업시간"
+        }
+      },
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "오늘 날씨"
+        }
+      },
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 가격"
+        }
+      }
+    ],
+    "response_template": "알겠습니다. 삼성과 LG의 200만원 이하 벽걸이 에어컨 중 모델명, 가격, 에너지 효율 정보를 찾아 엑셀 형식으로 저장해 드리겠습니다.\n\n정보를 찾아서 '대기업 벽걸이 에어컨 비교.xlsx' 파일로 바탕화면에 저장해 드릴까요?",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "gooding!": {
+    "pattern": "gooding!",
+    "tool_calls": [
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "스먹 영업시간"
+        }
+      },
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "오늘 날씨"
+        }
+      },
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 가격"
+        }
+      },
+      {
+        "name": "web_search",
+        "args": {
+          "query": "삼성 LG 벽걸이 에어컨 200만원 이하 모델명 가격 에너지효율 비교"
+        }
+      }
+    ],
+    "response_template": "구글에서 \"삼성 LG 벽걸이 에어컨 200만원 이하 모델명 가격 에너지효율 비교\"를 검색했습니다.\n\n웹 검색 결과는 텍스트로 직접 제공되지 않기 때문에, 제가 직접 웹 페이지를 분석하여 엑셀 파일을 생성하는 것은 어렵습니다.\n\n혹시 특정 웹사이트에서 정보를 가져와야 한다면 해당 웹사이트 주소를 알려주시면 제가 그 내용을 요약해 드릴 수는 있습니다. 아니면 제가 찾은 검색 결과 페이지를 직접 확인해 보시는 건 어떠신가요?",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "지금까지 대화 내요. 어, 한자도 빠짐없이 전체적으로 정리해 줄 수 있어?": {
+    "pattern": "지금까지 대화 내요. 어, 한자도 빠짐없이 전체적으로 정리해 줄 수 있어?",
+    "tool_calls": [
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "스먹 영업시간"
+        }
+      },
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "오늘 날씨"
+        }
+      },
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 가격"
+        }
+      },
+      {
+        "name": "web_search",
+        "args": {
+          "query": "삼성 LG 벽걸이 에어컨 200만원 이하 모델명 가격 에너지효율 비교"
+        }
+      }
+    ],
+    "response_template": "죄송합니다. 저는 대화 내용을 한자도 빠짐없이 전체적으로 정리하거나 저장하는 기능은 가지고 있지 않습니다. 제가 할 수 있는 것은 사용자의 명령을 이해하고 도구를 사용하여 PC를 제어하는 것입니다.",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "에어컨 가격 비교해줘": {
+    "pattern": "에어컨 가격 비교해줘",
+    "tool_calls": [
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 가격 비교"
+        }
+      }
+    ],
+    "response_template": "에어컨 가격 비교 결과를 웹에서 검색했습니다.",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "네 에어컨을 잘 몰라서 에어컨 가격을 너가 비교해줘": {
+    "pattern": "네 에어컨을 잘 몰라서 에어컨 가격을 너가 비교해줘",
+    "tool_calls": [
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 가격 비교"
+        }
+      }
+    ],
+    "response_template": "어떤 종류의 에어컨을 찾으시는가요? (예: 스탠드 에어컨, 벽걸이 에어컨, 시스템 에어컨 등) 그리고 특별히 선호하는 브랜드나 기능이 있으신가요? 자세한 정보를 알려주시면 더 정확하게 비교해 드릴 수 있습니다.",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "내가 에어컨 종류에 잘 몰라서 전체적으로 비교를 해가지고 정리해 주신..": {
+    "pattern": "내가 에어컨 종류에 잘 몰라서 전체적으로 비교를 해가지고 정리해 주신..",
+    "tool_calls": [
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 가격 비교"
+        }
+      },
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 종류별 특징 및 가격 비교"
+        }
+      }
+    ],
+    "response_template": "에어컨 종류별 특징과 가격 비교 정보를 웹에서 검색했습니다. 잠시만 기다려주시면 내용을 정리해 드릴게요.",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "정리가 된거니?": {
+    "pattern": "정리가 된거니?",
+    "tool_calls": [
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 가격 비교"
+        }
+      },
+      {
+        "name": "web_search",
+        "args": {
+          "query": "에어컨 종류별 특징 및 가격 비교"
+        }
+      }
+    ],
+    "response_template": "죄송합니다. 웹 검색을 통해 정보를 가져왔지만, 현재 저의 기능으로는 검색된 웹 페이지의 내용을 직접 분석하고 요약하여 사용자에게 전달하는 것은 어렵습니다.\n\n대신, 에어컨 종류별 특징과 가격 비교 정보를 직접 찾아보실 수 있도록 검색 결과를 보여드릴 수는 있습니다. 어떤 정보를 원하시는지 구체적으로 말씀해주시면 해당 정보를 찾아서 보여드리겠습니다.",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "에어컨 가격 비교 해줄 수 있어? 삼성 에어컨, lg 에어컨 이렇게 두 가지.": {
+    "pattern": "에어컨 가격 비교 해줄 수 있어? 삼성 에어컨, lg 에어컨 이렇게 두 가지.",
+    "tool_calls": [
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "삼성 에어컨 가격"
+        }
+      },
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "LG 에어컨 가격"
+        }
+      }
+    ],
+    "response_template": "삼성 에어컨과 LG 에어컨의 가격 정보를 검색했습니다.\n\n**삼성 에어컨**의 경우, G마켓에서 삼성 AI Q9000 멀티형 에어컨이 56.9만원 + 18.7만원 (설치비 포함)으로 언급되었고, 다나와에서는 삼성전자 Q9000 모델이 1,020,000원부터 시작하며 기본 설치비는 별도라고 합니다. 벽걸이형은 가격 문의로 표시되어 있습니다.\n\n**LG 에어컨**의 경우, LG전자 공식몰에서 다양한 에어컨 제품을 소개하고 있으며, 제품별 가격, 냉방면적, 소비전력 등을 확인할 수 있다고 안내되어 있습니다. 공식몰 단독으로 최대 50만원 앱 전용 쿠폰도 제공된다고 합니다.\n\n두 브랜드 모두 모델과 옵션에 따라 가격이 매우 다양합니다. 특정 모델이나 종류(예: 스탠드형, 벽걸이형, 멀티형)를 지정해주시면 더 구체적인 가격 비교를 해드릴 수 있습니다. 어떤 종류의 에어컨을 찾으시는지 알려주세요.",
+    "hit_count": 0,
+    "is_seed": false
+  },
+  "선풍기 가격 비교해줘 모델이랑 이런 건 없는 것 없이 그냥 가격 비교만": {
+    "pattern": "선풍기 가격 비교해줘 모델이랑 이런 건 없는 것 없이 그냥 가격 비교만",
+    "tool_calls": [
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "삼성 에어컨 가격"
+        }
+      },
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "LG 에어컨 가격"
+        }
+      },
+      {
+        "name": "fetch_web_info",
+        "args": {
+          "query": "선풍기 가격"
+        }
+      }
+    ],
+    "response_template": "선풍기 가격 정보를 검색했습니다.\n\n다양한 종류의 선풍기가 있으며, 가격대도 폭넓게 형성되어 있습니다.\n\n*   **신일 선풍기 무소음 써큘레이터 스탠드 가정용:** 149,000원 (무료배송)\n*   **케이페이지 리모컨형 발터치 선풍기:** 48,000원 (무료배송)\n*   **매직쉐프 공업용 선풍기 14인치:** 98,000원 (무료배송)\n\n이 외에도 다나와, 에누리, 쿠팡, G마켓 등 여러 쇼핑몰에서 다양한 가격대의 선풍기를 찾아볼 수 있습니다. BLDC 모터, 무선, 날개 없음, 접이식, 리모컨형 등 기능과 형태에 따라 가격이 달라지니, 원하시는 기능이나 예산을 알려주시면 더 자세한 정보를 찾아드릴 수 있습니다.",
     "hit_count": 0,
     "is_seed": false
   }

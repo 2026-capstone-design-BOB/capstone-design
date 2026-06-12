@@ -8,6 +8,8 @@ import subprocess
 import time
 import glob
 import concurrent.futures
+import ctypes
+import ctypes.wintypes
 import psutil
 from langchain_core.tools import tool
 
@@ -19,7 +21,7 @@ APP_ALIASES: dict[str, str] = {
     "엣지": "edge", "마이크로소프트엣지": "edge",
     "메모장": "notepad",
     "계산기": "calculator",
-    "탐색기": "explorer", "파일탐색기": "explorer",
+    "탐색기": "explorer", "파일탐색기": "explorer", "파일 탐색기": "explorer",
     "카카오톡": "kakaotalk", "카톡": "kakaotalk", "카카오": "kakaotalk",
     "워드": "word", "msword": "word",
     "엑셀": "excel", "msexcel": "excel",
@@ -27,9 +29,48 @@ APP_ALIASES: dict[str, str] = {
     "vscode": "vscode", "비주얼스튜디오코드": "vscode",
     "파이어폭스": "firefox",
     "터미널": "terminal", "cmd": "terminal",
+    # 설정
+    "설정": "settings", "윈도우설정": "settings", "windows설정": "settings",
 }
 
+# ── 한국어 표시 이름 ──────────────────────────────────────────────
+
+APP_DISPLAY_NAMES: dict[str, str] = {
+    "notepad":    "메모장",
+    "calculator": "계산기",
+    "chrome":     "Chrome",
+    "edge":       "Edge",
+    "explorer":   "파일 탐색기",
+    "firefox":    "Firefox",
+    "word":       "Word",
+    "excel":      "Excel",
+    "powerpoint": "PowerPoint",
+    "vscode":     "VS Code",
+    "kakaotalk":  "카카오톡",
+    "terminal":   "터미널",
+    "settings":   "설정",
+}
+
+
+def _display_name(app_key: str, original: str) -> str:
+    """앱 표시 이름 반환 (한국어 우선)."""
+    return APP_DISPLAY_NAMES.get(app_key, original)
+
+
+def _korean_particle(name: str, with_batchim: str, without_batchim: str) -> str:
+    """한국어 조사 선택 (을/를, 이/가 등). 마지막 글자 받침 여부로 결정."""
+    if not name:
+        return with_batchim
+    last = name[-1]
+    code = ord(last)
+    if code < 0xAC00 or code > 0xD7A3:
+        # ASCII/특수문자: 받침 없는 것으로 처리
+        return without_batchim
+    has_batchim = (code - 0xAC00) % 28 != 0
+    return with_batchim if has_batchim else without_batchim
+
 APP_PROCESS_MAP: dict[str, list[str]] = {
+    "settings":   ["systemsettings.exe"],
     "notepad":    ["notepad.exe"],
     "calculator": ["calculatorapp.exe", "calculator.exe"],
     "chrome":     ["chrome.exe"],
@@ -91,6 +132,50 @@ def _normalize(app_name: str) -> str:
     """앱 이름 정규화: 한국어/영어 모두 내부 키로 변환."""
     key = app_name.lower().replace(" ", "")
     return APP_ALIASES.get(key, key)
+
+
+def _focus_window(app_key: str) -> bool:
+    """실행 중인 앱 창을 포그라운드로 가져옴. 성공 시 True."""
+    targets = {p.lower() for p in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
+    found_hwnd = None
+
+    def _enum_cb(hwnd, _):
+        nonlocal found_hwnd
+        if not ctypes.windll.user32.IsWindowVisible(hwnd):
+            return True
+        pid_buf = ctypes.wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_buf))
+        try:
+            proc = psutil.Process(pid_buf.value)
+            if proc.name().lower() in targets:
+                found_hwnd = hwnd
+                return False  # 탐색 중단
+        except Exception:
+            pass
+        return True
+
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+    ctypes.windll.user32.EnumWindows(WNDENUMPROC(_enum_cb), 0)
+
+    if not found_hwnd:
+        return False
+
+    # Windows 포그라운드 권한 우회 (AttachThreadInput 트릭)
+    try:
+        SW_RESTORE = 9
+        fg_hwnd = ctypes.windll.user32.GetForegroundWindow()
+        fg_tid  = ctypes.windll.user32.GetWindowThreadProcessId(fg_hwnd, None)
+        my_tid  = ctypes.windll.kernel32.GetCurrentThreadId()
+        if fg_tid and fg_tid != my_tid:
+            ctypes.windll.user32.AttachThreadInput(my_tid, fg_tid, True)
+        ctypes.windll.user32.ShowWindow(found_hwnd, SW_RESTORE)
+        ctypes.windll.user32.BringWindowToTop(found_hwnd)
+        ctypes.windll.user32.SetForegroundWindow(found_hwnd)
+        if fg_tid and fg_tid != my_tid:
+            ctypes.windll.user32.AttachThreadInput(my_tid, fg_tid, False)
+        return True
+    except Exception:
+        return False
 
 
 def _resolve_path(app_key: str) -> str | None:
@@ -167,42 +252,51 @@ def _is_running(app_key: str) -> bool:
 @tool
 def open_app(app: str) -> str:
     """
-    Windows 앱을 실행합니다.
-    app: 앱 이름 (예: chrome, notepad, calculator, kakaotalk, edge, explorer, word, excel, powerpoint, vscode, terminal)
-    한국어도 가능 (크롬, 메모장, 계산기, 카카오톡 등)
+    Windows 앱을 실행하거나 이미 실행 중이면 창을 활성화합니다.
+    app: 앱 이름 (예: chrome, notepad, calculator, kakaotalk, edge, explorer, word, excel, powerpoint, vscode, terminal, 설정)
+    한국어도 가능 (크롬, 메모장, 계산기, 카카오톡, 설정 등)
     """
     app_key = _normalize(app)
+    name = _display_name(app_key, app)
+    eul_reul = _korean_particle(name, "을", "를")
 
-    # UWP 앱 및 내장 앱: 경로 탐색 없이 shell 명령으로 직접 실행
+    # ── 이미 실행 중이면 창 활성화 (새 창 열지 않음) ──────────────
+    if _is_running(app_key):
+        if _focus_window(app_key):
+            return f"✓ {name} 창을 앞으로 가져왔습니다."
+        return f"✓ {name}은(는) 이미 실행 중입니다."
+
+    # ── UWP·내장 앱: shell 명령으로 직접 실행 ───────────────────
     UWP_SHELL_COMMANDS = {
         "calculator": "calc.exe",
         "notepad":    "notepad.exe",
         "explorer":   "explorer.exe",
         "terminal":   "wt.exe",
+        "settings":   "start ms-settings:",
     }
     if app_key in UWP_SHELL_COMMANDS:
         try:
             subprocess.Popen(UWP_SHELL_COMMANDS[app_key], shell=True)
             time.sleep(0.5)
-            return f"✓ {app}을(를) 실행했습니다."
+            return f"✓ {name}{eul_reul} 실행했습니다."
         except Exception as e:
-            return f"✗ {app} 실행 실패: {e}"
+            return f"✗ {name} 실행 실패: {e}"
 
     path = _resolve_path(app_key)
     if not path:
         return (
-            f"✗ '{app}' 앱을 찾을 수 없습니다. "
-            "설치되어 있지 않거나 지원하지 않는 앱입니다. 다른 방법은 없습니다."
+            f"✗ '{name}' 앱을 찾을 수 없습니다. "
+            "설치되어 있지 않거나 지원하지 않는 앱입니다."
         )
 
     try:
         subprocess.Popen([path])
         time.sleep(0.8)
         if _is_running(app_key):
-            return f"✓ {app}을(를) 실행했습니다."
-        return f"✓ {app} 실행 명령을 보냈습니다."
+            return f"✓ {name}{eul_reul} 실행했습니다."
+        return f"✓ {name} 실행 명령을 보냈습니다."
     except Exception as e:
-        return f"✗ {app} 실행 실패: {e}"
+        return f"✗ {name} 실행 실패: {e}"
 
 
 @tool
@@ -223,9 +317,12 @@ def close_app(app: str) -> str:
             except Exception:
                 pass
 
+    name = _display_name(app_key, app)
     if killed:
-        return f"✓ {app}을(를) 종료했습니다."
-    return f"✗ '{app}'이(가) 실행 중이지 않습니다."
+        eul_reul = _korean_particle(name, "을", "를")
+        return f"✓ {name}{eul_reul} 종료했습니다."
+    i_ga = _korean_particle(name, "이", "가")
+    return f"✗ '{name}'{i_ga} 실행 중이지 않습니다."
 
 
 @tool
@@ -234,22 +331,17 @@ def maximize_window(app: str = "") -> str:
     앱 창을 최대화합니다.
     app: 앱 이름 (비워두면 현재 활성 창)
     """
-    import ctypes
     SW_MAXIMIZE = 3
 
     if app:
         app_key = _normalize(app)
         targets = [t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])]
 
-        hwnd = ctypes.windll.user32.FindWindowW(None, None)
         found = False
-        # EnumWindows로 타겟 프로세스의 창 찾기
         for proc in psutil.process_iter(["name", "pid"]):
             if proc.info["name"].lower() in targets:
                 try:
-                    import ctypes.wintypes
                     pid = proc.info["pid"]
-                    # GetWindowThreadProcessId로 일치하는 hwnd 탐색
                     def callback(h, _):
                         nonlocal found
                         buf = ctypes.wintypes.DWORD()
@@ -279,7 +371,6 @@ def minimize_window(app: str = "") -> str:
     앱 창을 최소화합니다.
     app: 앱 이름 (비워두면 현재 활성 창)
     """
-    import ctypes
     SW_MINIMIZE = 6
 
     if app:
@@ -290,7 +381,6 @@ def minimize_window(app: str = "") -> str:
         for proc in psutil.process_iter(["name", "pid"]):
             if proc.info["name"].lower() in targets:
                 try:
-                    import ctypes.wintypes
                     pid = proc.info["pid"]
                     def callback(h, _):
                         nonlocal found
@@ -310,7 +400,6 @@ def minimize_window(app: str = "") -> str:
             return f"✓ {app} 창을 최소화했습니다."
         return f"✗ {app} 창을 찾을 수 없습니다."
     else:
-        import ctypes
         hwnd = ctypes.windll.user32.GetForegroundWindow()
         ctypes.windll.user32.ShowWindow(hwnd, SW_MINIMIZE)
         return "✓ 현재 창을 최소화했습니다."
@@ -319,7 +408,6 @@ def minimize_window(app: str = "") -> str:
 @tool
 def show_desktop() -> str:
     """모든 창을 최소화하여 바탕화면을 표시합니다."""
-    import ctypes
     ctypes.windll.user32.keybd_event(0x5B, 0, 0, 0)  # Win 키
     ctypes.windll.user32.keybd_event(0x44, 0, 0, 0)  # D 키
     ctypes.windll.user32.keybd_event(0x44, 0, 2, 0)

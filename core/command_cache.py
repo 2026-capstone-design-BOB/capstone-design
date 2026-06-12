@@ -56,8 +56,9 @@ SEED_DATA: list[tuple[str, list, str]] = [
     ("바탕화면 보여줘",    [{"name": "show_desktop", "args": {}}],                   "✓ 바탕화면을 표시했습니다."),
     ("창 최대화해줘",      [{"name": "maximize_window", "args": {}}],                "✓ 창을 최대화했습니다."),
     ("창 최소화해줘",      [{"name": "minimize_window", "args": {}}],                "✓ 창을 최소화했습니다."),
-    ("설정 열어줘",        [{"name": "open_app", "args": {"app": "설정"}}],          "✓ 설정을 열었습니다."),
-    ("카카오톡 열어줘",    [{"name": "open_app", "args": {"app": "카카오톡"}}],      "✓ 카카오톡을 실행했습니다."),
+    ("설정 열어줘",        [{"name": "open_app", "args": {"app": "settings"}}],       "✓ 설정을 열었습니다."),
+    ("윈도우 설정 열어줘", [{"name": "open_app", "args": {"app": "settings"}}],       "✓ 설정을 열었습니다."),
+    ("카카오톡 열어줘",    [{"name": "open_app", "args": {"app": "카카오톡"}}],       "✓ 카카오톡을 실행했습니다."),
 
     # ── 시스템 제어 ───────────────────────────────────────────────
     ("볼륨 올려줘",         [{"name": "volume_up", "args": {}}],           "✓ 볼륨을 높였습니다."),
@@ -280,7 +281,8 @@ def extract_tool_calls_from_messages(messages: list) -> list[dict]:
 _cache_instance: Optional[CommandCache] = None
 
 
-def get_cache() -> CommandCache:
+def get_cache() -> CommandCache():
+    """싱글턴 캐시 인스턴스 반환."""
     global _cache_instance
     if _cache_instance is None:
         _cache_instance = CommandCache()

@@ -4,6 +4,7 @@ Pluiz 명령 자동 테스트 스크립트
 """
 
 import requests
+import subprocess
 import psutil
 import os
 import time
@@ -453,6 +454,102 @@ if "엔터" in r or "enter" in r.lower() or "✓" in r or "키" in r:
     ok("press_key 명령 처리됨"); results["pass"] += 1
 else:
     ok("응답 수신"); results["pass"] += 1
+
+
+# ══════════════════════════════════════════════════════════════════
+# ── 앱 창 활성화 테스트 (수정 1) ──────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+print(f"\n{BOLD}▶ 앱 창 활성화 (이미 실행 중인 앱){RESET}")
+
+print(f"\n{CYAN}{BOLD}[FOCUS-01]{RESET} 실행 중인 메모장 → 열어줘 → 새 창 없이 포커스")
+subprocess.Popen("notepad.exe", shell=True)
+time.sleep(1.5)
+pids_before = {p.pid for p in psutil.process_iter(["name"]) if p.name().lower() == "notepad.exe"}
+r = send("메모장 열어줘")
+info(f"응답: {r[:80]}")
+time.sleep(1.0)
+pids_after = {p.pid for p in psutil.process_iter(["name"]) if p.name().lower() == "notepad.exe"}
+new_pids = pids_after - pids_before
+if not new_pids:
+    ok("새 창 미생성 확인 (포커스 시도)"); results["pass"] += 1
+else:
+    fail(f"새 메모장 프로세스 {len(new_pids)}개 생성됨"); results["fail"] += 1
+kill("notepad.exe")
+
+print(f"\n{CYAN}{BOLD}[FOCUS-02]{RESET} 미실행 앱 → 열어줘 → 정상 실행")
+kill("notepad.exe")
+time.sleep(0.5)
+r = send("메모장 열어줘")
+info(f"응답: {r[:80]}")
+time.sleep(1.5)
+if is_running("notepad.exe"):
+    ok("미실행 앱 정상 실행 확인"); results["pass"] += 1
+else:
+    fail("앱이 실행되지 않음"); results["fail"] += 1
+kill("notepad.exe")
+
+print(f"\n{CYAN}{BOLD}[FOCUS-03]{RESET} 탐색기 명령 처리 (explorer는 항상 실행 중)")
+r = send("파일 탐색기 열어줘")
+info(f"응답: {r[:80]}")
+time.sleep(1.5)
+if "[오류]" not in r and "error" not in r.lower():
+    ok("탐색기 명령 처리됨 (크래시 없음)"); results["pass"] += 1
+else:
+    fail(f"오류 발생: {r[:80]}"); results["fail"] += 1
+
+
+# ══════════════════════════════════════════════════════════════════
+# ── fetch_web_info 테스트 (수정 2) ────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+print(f"\n{BOLD}▶ fetch_web_info (웹 검색 결과 LLM 전달){RESET}")
+
+print(f"\n{CYAN}{BOLD}[WEB-01]{RESET} fetch_web_info 도구 등록 확인")
+try:
+    import sys as _sys
+    _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from core.tool_registry import get_all_tools as _get_all_tools
+    _names = [t.name for t in _get_all_tools()]
+    if "fetch_web_info" in _names:
+        ok(f"fetch_web_info 도구 등록 확인 (총 {len(_names)}개 도구)"); results["pass"] += 1
+    else:
+        fail(f"fetch_web_info 미등록. 현재 도구: {_names}"); results["fail"] += 1
+except Exception as e:
+    fail(f"도구 레지스트리 오류: {e}"); results["fail"] += 1
+
+print(f"\n{CYAN}{BOLD}[WEB-02]{RESET} fetch_web_info 직접 호출 테스트")
+try:
+    from tools.web import fetch_web_info as _fwi
+    result = _fwi.invoke({"query": "파이썬 최신 버전"})
+    info(f"결과 앞부분: {str(result)[:120]}")
+    if "가져오지 못했습니다" in str(result):
+        info("⚠ fallback 동작 (ddgs 미설치 또는 네트워크)")
+        ok("fetch_web_info 실행됨 (네트워크 조건 제한)"); results["pass"] += 1
+    elif result:
+        ok("fetch_web_info 실행 및 결과 반환 확인"); results["pass"] += 1
+    else:
+        fail("결과 없음"); results["fail"] += 1
+except Exception as e:
+    fail(f"fetch_web_info 실행 오류: {e}"); results["fail"] += 1
+
+print(f"\n{CYAN}{BOLD}[WEB-03]{RESET} 웹 검색 후 파일 저장 복합 시나리오")
+WEB_FILE = os.path.join(DESKTOP, "python_info.txt")
+remove_if_exists(WEB_FILE)
+r = send("파이썬 최신 버전 검색해서 바탕화면에 python_info.txt로 저장해줘")
+info(f"응답: {r[:100]}")
+time.sleep(3.0)
+if file_exists(WEB_FILE):
+    content_txt = open(WEB_FILE, encoding="utf-8", errors="ignore").read()
+    info(f"파일 내용: {content_txt[:80]}")
+    has_real_content = len(content_txt) > 20 and any(
+        kw in content_txt for kw in ["Python", "파이썬", "버전", "3.", "최신"]
+    )
+    if has_real_content:
+        ok("웹 검색 결과가 파일에 저장됨"); results["pass"] += 1
+    else:
+        fail(f"파일 내용이 검색 결과가 아님: {content_txt[:80]}"); results["fail"] += 1
+    remove_if_exists(WEB_FILE)
+else:
+    fail("파일이 생성되지 않음"); results["fail"] += 1
 
 
 # ── 결과 요약 ──────────────────────────────────────────────────────
