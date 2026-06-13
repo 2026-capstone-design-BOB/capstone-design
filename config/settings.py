@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     claude_api_key: str = ""
     openai_api_key: str = ""
 
+    # YouTube Data API v3
+    youtube_api_key: str = ""
+
     # 모델 (비워두면 provider별 기본값 사용)
     gemini_model: str = "gemini-2.5-flash"
     claude_model: str = "claude-haiku-4-5-20251001"

@@ -63,17 +63,42 @@ def web_search(query: str, engine: str = "google") -> str:
 @tool
 def youtube_search(query: str) -> str:
     """
-    유튜브(YouTube)에서 동영상을 검색합니다.
+    유튜브(YouTube)에서 동영상을 검색하고 첫 번째 영상을 재생합니다.
     "유튜브에서 X 검색해줘", "유튜브로 X 찾아줘", "유튜브 X 틀어줘" 패턴에 사용합니다.
     일반 웹 검색(web_search)과 달리 유튜브 전용입니다. 유튜브 관련 명령은 항상 이 도구를 사용하세요.
     query: 검색어 (예: 아이유, BTS, 파이썬 강의)
     """
-    import urllib.parse
+    import urllib.parse, urllib.request, json
+
+    # YouTube Data API v3로 첫 번째 영상 ID 가져오기
+    try:
+        from config.settings import get_settings
+        api_key = get_settings().youtube_api_key
+        if api_key:
+            encoded = urllib.parse.quote(query)
+            api_url = (
+                f"https://www.googleapis.com/youtube/v3/search"
+                f"?part=snippet&q={encoded}&type=video&maxResults=1&key={api_key}"
+            )
+            req = urllib.request.Request(api_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+            items = data.get("items", [])
+            if items:
+                video_id = items[0]["id"]["videoId"]
+                title = items[0]["snippet"]["title"]
+                url = f"https://www.youtube.com/watch?v={video_id}"
+                _open_with_browser(url)
+                return f"✓ '{title}' 재생합니다."
+    except Exception as e:
+        print(f"[youtube_search] API 오류, 검색 페이지로 fallback: {e}")
+
+    # fallback: 검색 결과 페이지 열기
     encoded = urllib.parse.quote(query)
     url = f"https://www.youtube.com/results?search_query={encoded}"
     try:
         _open_with_browser(url)
-        return f"✓ 유튜브에서 '{query}'를 검색했습니다."
+        return f"✓ 유튜브에서 '{query}' 검색했어요."
     except Exception as e:
         return f"x 유튜브 검색 실패: {e}"
 
