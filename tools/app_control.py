@@ -57,6 +57,29 @@ def _display_name(app_key: str, original: str) -> str:
     return APP_DISPLAY_NAMES.get(app_key, original)
 
 
+def _find_hwnd_by_title(keywords: list[str]) -> int:
+    """창 제목으로 HWND 검색. UWP 앱(Calculator 등) PID 매칭 실패 시 fallback.
+    keywords 중 하나라도 포함된 visible 창의 HWND 반환. 없으면 0.
+    """
+    found = ctypes.c_void_p(0)
+    kws_lower = [k.lower() for k in keywords if k]
+
+    def callback(h, _):
+        if not ctypes.windll.user32.IsWindowVisible(h):
+            return True
+        buf = ctypes.create_unicode_buffer(256)
+        ctypes.windll.user32.GetWindowTextW(h, buf, 256)
+        title = buf.value.lower()
+        if any(kw in title for kw in kws_lower):
+            found.value = h
+            return False
+        return True
+
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+    ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), 0)
+    return found.value or 0
+
+
 def _korean_particle(name: str, with_batchim: str, without_batchim: str) -> str:
     """한국어 조사 선택 (을/를, 이/가 등). 마지막 글자 받침 여부로 결정."""
     if not name:
@@ -374,6 +397,14 @@ def maximize_window(app: str = "") -> str:
 
         if found:
             return f"✓ {app} 창을 최대화했습니다."
+
+        # UWP 앱 fallback: 창 제목으로 검색 (ApplicationFrameHost 등)
+        display = APP_DISPLAY_NAMES.get(app_key, app)
+        hwnd = _find_hwnd_by_title([display, app, app_key])
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, SW_MAXIMIZE)
+            return f"✓ {app} 창을 최대화했습니다."
+
         return f"✗ {app} 창을 찾을 수 없습니다. 앱이 실행 중인지 확인하세요."
     else:
         hwnd = ctypes.windll.user32.GetForegroundWindow()
@@ -420,6 +451,14 @@ def minimize_window(app: str = "") -> str:
 
         if found:
             return f"✓ {app} 창을 최소화했습니다."
+
+        # UWP 앱 fallback: 창 제목으로 검색
+        display = APP_DISPLAY_NAMES.get(app_key, app)
+        hwnd = _find_hwnd_by_title([display, app, app_key])
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, SW_MINIMIZE)
+            return f"✓ {app} 창을 최소화했습니다."
+
         return f"✗ {app} 창을 찾을 수 없습니다."
     else:
         hwnd = ctypes.windll.user32.GetForegroundWindow()

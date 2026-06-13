@@ -40,7 +40,9 @@ class TTSService:
         asyncio.run(self.speak_async(text))
 
     async def to_bytes_async(self, text: str) -> bytes:
-        """텍스트 → MP3 바이트 반환 (클라이언트 전송용)."""
+        """텍스트 → MP3 바이트 반환 (클라이언트 전송용).
+        오프라인 또는 edge-tts 실패 시 빈 bytes 반환 (TTS 없이 텍스트만 전달).
+        """
         import edge_tts
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
             tmp_path = f.name
@@ -49,6 +51,9 @@ class TTSService:
             await communicate.save(tmp_path)
             with open(tmp_path, "rb") as f:
                 return f.read()
+        except Exception as e:
+            print(f"[TTS] 오류 (오프라인 또는 네트워크 문제) → 음성 없이 텍스트만 반환: {e}")
+            return b""
         finally:
             try:
                 os.unlink(tmp_path)

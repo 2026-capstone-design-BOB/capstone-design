@@ -10,6 +10,7 @@ playwright>=1.47.0
 # ── 음성 입출력 ────────────────────────────────────────────────────
 faster-whisper>=1.0.0
 edge-tts>=6.1.0
+SpeechRecognition>=3.10.0   # Google STT (온라인 우선, 오프라인 시 Whisper 폴백)
 sounddevice>=0.4.6          # wake word 상시 감지용 마이크 스트림
 numpy>=1.24.0
 

@@ -16,35 +16,31 @@ from core.tool_registry import get_all_tools
 from memory.session import SessionMemory
 
 
-SYSTEM_PROMPT = """당신은 Pluiz입니다. 한국어 음성 명령으로 Windows PC를 제어하는 AI 에이전트입니다.
+SYSTEM_PROMPT = """당신은 소윤이입니다. 한국어 음성 명령으로 Windows PC를 제어해주는 AI 에이전트예요.
+
+응답 스타일 (반드시 준수):
+- 응답은 1~2문장으로 짧고 간결하게. 긴 설명, 목록, 부가 설명 절대 금지.
+- 말투는 친근한 구어체로. "~했습니다" 대신 "~했어요", "~할게요", "~됐어요" 사용.
+- 도구 실행 결과는 핵심만 한 문장으로 요약. 경로나 기술적 세부사항 생략.
+- 예시: "메모장 켰어요!", "볼륨 50%로 맞췄어요.", "강남역 지도 열었어요!"
 
 핵심 규칙 (반드시 준수):
-- PC 제어 명령(앱 실행/종료, 볼륨, 닫기, 파일 생성, 웹 검색 등)은 반드시 해당 도구를 호출하여 실행합니다.
-- 도구 호출 없이 "실행했습니다"라고만 응답하는 것은 절대 금지입니다.
-- 앱 실행, 볼륨 조절, 파일 생성, 웹 열기 등 모든 PC 조작은 도구를 통해서만 수행합니다.
-- 명령이 점진적으로 명확하다면 확인 없이 바로 도구를 호출합니다.
-- "유튜브에서/유튜브에/유튜브로 X 검색해줘", "유튜브 X 틀어줘" 명령은 반드시 youtube_search 도구를 호출합니다. (web_search 사용 금지)
-- "지도에서 X 찾아줘" / "X 가는 길 알려줘" / "X 어디야" 명령은 반드시 map_search 도구를 호출합니다.
-
-역할:
-- 사용자의 자연어 명령을 이해하고 적절한 도구를 호출하여 PC를 제어합니다.
-- 한국어 구어체 및 줄임말을 자연스럽게 처리합니다.
-- 명령이 모호하면 짧게 확인 후 실행합니다.
-- 실행 결과를 간결하게 한국어로 보고합니다.
+- PC 제어 명령(앱 실행/종료, 볼륨, 파일 생성, 웹 검색 등)은 반드시 해당 도구를 호출해서 실행해요.
+- 도구 호출 없이 "실행했어요"라고만 응답하는 건 절대 안 돼요.
+- 명령이 충분히 명확하면 확인 없이 바로 도구를 호출해요.
+- "유튜브에서/유튜브에/유튜브로 X 검색해줘", "유튜브 X 틀어줘" → 반드시 youtube_search 도구 사용. (web_search 금지)
+- "지도에서 X 찾아줘" / "X 가는 길 알려줘" / "X 어디야" → 반드시 map_search 도구 사용.
 
 보안 지침 (반드시 준수):
-- 파일/폴더 삭제 명령은 반드시 "정말 삭제하시겠습니까?" 확인 후 실행합니다.
-- 휴지통 비우기, 영구 삭제(shift+delete 등) 요청은 구체적으로 재확인합니다.
-- 시스템 설정 변경(레지스트리, 방화벽, 계정 등)은 신중하게 재확인합니다.
-- 여러 파일을 한꺼번에 삭제하는 경우 대상 목록을 사용자에게 먼저 보여줍니다.
-- C:\\Windows, System32 등 시스템 경로 접근은 거부합니다.
-- 절대 실행하지 말 것: rm -rf, del /f /s, format, reg delete, shutdown /f 등 불가역적 명령.
+- 파일/폴더 삭제 명령은 "정말 삭제할까요?" 확인 후 실행해요.
+- 휴지통 비우기, 영구 삭제 요청은 다시 한번 확인해요.
+- C:\\Windows, System32 등 시스템 경로 접근은 거부해요.
+- 절대 실행하지 않을 것: rm -rf, del /f /s, format, reg delete, shutdown /f 등.
 
-일반 주의:
-- 날씨, 뉴스, 검색 결과 등 실시간 정보 요청은 fetch_web_info 도구로 가져와 파일 저장 또는 답변합니다.
-- 불가능한 요청은 이유를 간결하게 설명합니다.
-- 응답은 항상 한국어로 합니다.
-- 도구 실행 결과를 그대로 전달하되, 사용자가 이해하기 쉽게 요약합니다.
+일반:
+- 날씨, 뉴스 등 실시간 정보는 fetch_web_info 도구로 가져와서 답해요.
+- 불가능한 요청은 이유를 한 문장으로 설명해요.
+- 응답은 항상 한국어로 해요.
 """
 
 RETRY_PROMPT = """이전 응답에서 도구를 호출하지 않았습니다.
@@ -81,6 +77,18 @@ _ROUTER_FOLDER = re.compile(
 _ROUTER_VOLUME = re.compile(
     r'볼륨\s*(\d+)\s*(?:%로|%|퍼센트|으로|로)?\s*(?:설정해줘|설정해|맞춰줘|맞춰|해줘)?\s*$'
 )
+_ROUTER_VOL_UP = re.compile(
+    r'볼륨\s*(\d+)?\s*(?:정도만?|만큼|씩|만)?\s*(?:올려|높여|크게)\s*(?:줘|달라고|줄래|해줘)?'
+)
+_ROUTER_VOL_DOWN = re.compile(
+    r'볼륨\s*(\d+)?\s*(?:정도만?|만큼|씩|만)?\s*(?:내려|줄여|작게)\s*(?:줘|달라고|줄래|해줘)?'
+)
+_ROUTER_MAXIMIZE = re.compile(
+    r'^(.+?)\s+최대화\s*(?:해줘|해달라고|해|줄래)?\s*$'
+)
+_ROUTER_MINIMIZE = re.compile(
+    r'^(.+?)\s+최소화\s*(?:해줘|해달라고|해|줄래)?\s*$'
+)
 
 # PC 제어 명령으로 판단하는 키워드 집합
 # 이 키워드가 포함된 입력에서 도구가 호출되지 않으면 재시도 트리거
@@ -96,6 +104,15 @@ _CONTROL_KEYWORDS = frozenset([
     "배터리", "최대화", "최소화", "바탕화면",
     "입력", "타이핑", "붙여", "복사",
 ])
+
+
+def _is_network_error(e: Exception) -> bool:
+    """LLM API 호출 실패가 네트워크 오류(오프라인)인지 판단."""
+    msg = str(e)
+    return any(kw in msg for kw in [
+        "getaddrinfo failed", "ClientConnector", "Cannot connect",
+        "Network is unreachable", "ConnectionRefusedError", "TimeoutError",
+    ])
 
 
 def _build_llm(settings=None):
@@ -221,11 +238,15 @@ class PluizAgent:
                 except Exception as retry_err:
                     print(f"[PluizAgent] 히스토리 오염 재시도도 실패: {type(retry_err).__name__}: {retry_err}")
                     self._clear_thread(effective_thread)
-                    return f"명령 처리 중 오류가 발생했습니다: {retry_err}"
+                    if _is_network_error(retry_err):
+                        return "인터넷 연결이 없어서 이 명령은 처리하기 어려워요. 앱 실행, 볼륨 조절 같은 기본 명령은 오프라인에서도 쓸 수 있어요!"
+                    return f"명령 처리 중 오류가 발생했어요: {retry_err}"
             else:
                 print(f"[PluizAgent] 예외 발생 → thread '{effective_thread}' 초기화: {type(e).__name__}: {e}")
                 self._clear_thread(effective_thread)
-                return f"명령 처리 중 오류가 발생했습니다: {e}"
+                if _is_network_error(e):
+                    return "인터넷 연결이 없어서 이 명령은 처리하기 어려워요. 앱 실행, 볼륨 조절 같은 기본 명령은 오프라인에서도 쓸 수 있어요!"
+                return f"명령 처리 중 오류가 발생했어요: {e}"
 
         response = self._extract_response(result)
 
@@ -365,6 +386,56 @@ class PluizAgent:
                 except Exception as e:
                     print(f"[Router] set_volume 오류: {e}")
 
+        # 6. volume_up with amount: "볼륨 10 올려줘", "볼륨 20정도 올려줘"
+        m = _ROUTER_VOL_UP.search(text)
+        if m:
+            amount = int(m.group(1)) if m.group(1) else 10
+            try:
+                from tools.system import volume_up
+                result = await volume_up.ainvoke({"amount": amount})
+                print(f"[Router] volume_up({amount})")
+                return str(result)
+            except Exception as e:
+                print(f"[Router] volume_up 오류: {e}")
+
+        # 7. volume_down with amount: "볼륨 10 내려줘", "볼륨 20정도 줄여줘"
+        m = _ROUTER_VOL_DOWN.search(text)
+        if m:
+            amount = int(m.group(1)) if m.group(1) else 10
+            try:
+                from tools.system import volume_down
+                result = await volume_down.ainvoke({"amount": amount})
+                print(f"[Router] volume_down({amount})")
+                return str(result)
+            except Exception as e:
+                print(f"[Router] volume_down 오류: {e}")
+
+        # 8. maximize_window: "계산기 최대화", "메모장 최대화 해줘"
+        m = _ROUTER_MAXIMIZE.search(text)
+        if m:
+            app = m.group(1).strip()
+            if app:
+                try:
+                    from tools.app_control import maximize_window
+                    result = await maximize_window.ainvoke({"app": app})
+                    print(f"[Router] maximize_window({app!r})")
+                    return str(result)
+                except Exception as e:
+                    print(f"[Router] maximize_window 오류: {e}")
+
+        # 9. minimize_window: "계산기 최소화", "메모장 최소화 해줘"
+        m = _ROUTER_MINIMIZE.search(text)
+        if m:
+            app = m.group(1).strip()
+            if app:
+                try:
+                    from tools.app_control import minimize_window
+                    result = await minimize_window.ainvoke({"app": app})
+                    print(f"[Router] minimize_window({app!r})")
+                    return str(result)
+                except Exception as e:
+                    print(f"[Router] minimize_window 오류: {e}")
+
         return None
 
     def _is_control_command(self, text: str) -> bool:
@@ -446,22 +517,38 @@ class PluizAgent:
 
         # BUG-01: 대화형 astream 경로에서 session_memory 저장을 위해 응답을 누적
         collected: list[str] = []
-        async for chunk in self.graph.astream(
-            {"messages": messages},
-            config=config,
-            stream_mode="messages",
-        ):
-            msg, meta = chunk
-            if not isinstance(msg, (AIMessage, AIMessageChunk)):
-                continue
-            content = msg.content
-            if isinstance(content, list):
-                content = " ".join(
-                    b.get("text", "") if isinstance(b, dict) else str(b) for b in content
-                ).strip()
-            if content:
-                collected.append(content)
-                yield content
+        try:
+            async for chunk in self.graph.astream(
+                {"messages": messages},
+                config=config,
+                stream_mode="messages",
+            ):
+                msg, meta = chunk
+                # AIMessageChunk만 처리 — AIMessage는 청크 조합본이라 중복 출력됨
+                # 청크가 하나도 없으면(비스트리밍 응답) AIMessage도 허용
+                if isinstance(msg, AIMessageChunk):
+                    pass  # 스트리밍 청크: 항상 처리
+                elif isinstance(msg, AIMessage) and not collected:
+                    pass  # 비스트리밍 폴백: 청크가 없을 때만 처리
+                else:
+                    continue
+                content = msg.content
+                if isinstance(content, list):
+                    content = " ".join(
+                        b.get("text", "") if isinstance(b, dict) else str(b) for b in content
+                    ).strip()
+                if content:
+                    collected.append(content)
+                    yield content
+        except Exception as stream_err:
+            if _is_network_error(stream_err):
+                msg = "인터넷 연결이 없어서 이 명령은 처리하기 어려워요. 앱 실행, 볼륨 조절 같은 기본 명령은 오프라인에서도 쓸 수 있어요!"
+                print(f"[PluizAgent/ws] 네트워크 오류 → 친절 메시지 반환: {stream_err}")
+            else:
+                msg = f"명령 처리 중 오류가 발생했어요: {stream_err}"
+                print(f"[PluizAgent/ws] astream 오류: {type(stream_err).__name__}: {stream_err}")
+            collected.append(msg)
+            yield msg
 
         # BUG-01: 대화형 경로 — astream 완료 후 session_memory 저장
         full = "".join(collected)

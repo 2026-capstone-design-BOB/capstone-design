@@ -1200,6 +1200,7 @@
 
     async function startMic() {
       if (isRec) return;
+      stopCurrentAudio(); // 마이크 시작 시 TTS 중단
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
@@ -1284,8 +1285,19 @@
     }
 
     // ── TTS 재생 ──────────────────────────────────────────────────
+    let currentAudio = null;
+
+    function stopCurrentAudio() {
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.src = '';
+        currentAudio = null;
+      }
+    }
+
     function playAudio(b64) {
       try {
+        stopCurrentAudio(); // 기존 TTS 중단 후 새 TTS 재생
         const raw = atob(b64);
         const arr = new Uint8Array(raw.length);
         for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
@@ -1293,7 +1305,8 @@
         const a = new Audio(url);
         a.volume = 1.0;
         a.play().catch(e => console.error('[TTS]', e));
-        a.onended = () => URL.revokeObjectURL(url);
+        a.onended = () => { URL.revokeObjectURL(url); currentAudio = null; };
+        currentAudio = a;
       } catch (e) { console.error('[TTS] error', e); }
     }
 
