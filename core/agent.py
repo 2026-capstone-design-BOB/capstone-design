@@ -16,7 +16,17 @@ from core.tool_registry import get_all_tools
 from memory.session import SessionMemory
 
 
-SYSTEM_PROMPT = """당신은 소윤이입니다. 한국어 음성 명령으로 Windows PC를 제어해주는 AI 에이전트예요.
+def _build_system_prompt() -> str:
+    """현재 날짜/시간을 포함한 시스템 프롬프트 생성."""
+    from datetime import datetime
+    now = datetime.now()
+    weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+    date_str = f"{now.year}년 {now.month}월 {now.day}일 ({weekdays[now.weekday()]})"
+    time_str = f"{now.hour:02d}:{now.minute:02d}"
+    return f"""당신은 소윤이입니다. 한국어 음성 명령으로 Windows PC를 제어해주는 AI 에이전트예요.
+
+현재 날짜/시간: {date_str} {time_str}
+(일정 추가 등 날짜 계산이 필요할 때 이 정보를 기준으로 사용하세요. "내일"은 {now.month}월 {now.day + 1}일, "다음 주"는 7일 후입니다.)
 
 응답 스타일 (반드시 준수):
 - 응답은 1~2문장으로 짧고 간결하게. 긴 설명, 목록, 부가 설명 절대 금지.
@@ -30,6 +40,7 @@ SYSTEM_PROMPT = """당신은 소윤이입니다. 한국어 음성 명령으로 W
 - 명령이 충분히 명확하면 확인 없이 바로 도구를 호출해요.
 - "유튜브에서/유튜브에/유튜브로 X 검색해줘", "유튜브 X 틀어줘" → 반드시 youtube_search 도구 사용. (web_search 금지)
 - "지도에서 X 찾아줘" / "X 가는 길 알려줘" / "X 어디야" → 반드시 map_search 도구 사용.
+- 일정 추가 요청 → 반드시 create_calendar_event 도구 사용. 날짜는 위 현재 날짜 기준으로 계산해서 YYYY-MM-DD 형식으로 전달.
 
 보안 지침 (반드시 준수):
 - 파일/폴더 삭제 명령은 "정말 삭제할까요?" 확인 후 실행해요.
@@ -42,6 +53,8 @@ SYSTEM_PROMPT = """당신은 소윤이입니다. 한국어 음성 명령으로 W
 - 불가능한 요청은 이유를 한 문장으로 설명해요.
 - 응답은 항상 한국어로 해요.
 """
+
+SYSTEM_PROMPT = _build_system_prompt()
 
 RETRY_PROMPT = """이전 응답에서 도구를 호출하지 않았습니다.
 PC 제어 명령입니다. 반드시 적절한 도구를 호출하여 실행해주세요.
@@ -166,12 +179,12 @@ class PluizAgent:
         self.checkpointer = MemorySaver()
         self.session_memory = SessionMemory()
 
-        # LangGraph ReAct 에이전트 생성
+        # LangGraph ReAct 에이전트 생성 (초기화 시점 날짜로 프롬프트 생성)
         self.graph = create_react_agent(
             model=self.llm,
             tools=self.tools,
             checkpointer=self.checkpointer,
-            prompt=SYSTEM_PROMPT,
+            prompt=_build_system_prompt(),
         )
 
         print(f"[PluizAgent] 초기화 완료 | provider={settings.llm_provider} | tools={len(self.tools)}개")

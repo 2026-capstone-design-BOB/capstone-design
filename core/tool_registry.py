@@ -48,6 +48,9 @@ def get_all_tools() -> List[BaseTool]:
         type_text,
         press_key,
     )
+    from tools.calendar import (
+        create_calendar_event,
+    )
 
     return [
         # 앱 제어
@@ -82,4 +85,6 @@ def get_all_tools() -> List[BaseTool]:
         # 키보드 입력
         type_text,
         press_key,
+        # 캘린더
+        create_calendar_event,
     ]
