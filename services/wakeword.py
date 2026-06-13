@@ -88,7 +88,12 @@ def main():
         if len(audio) >= space:
             buf[buf_pos:] = audio[:space]
             chunk = buf.copy()
+            # BUG-12: 버퍼를 채우고 남은 잔여 샘플을 다음 버퍼 시작으로 이월
+            remainder = audio[space:]
             buf_pos = 0
+            if len(remainder) > 0:
+                buf[:len(remainder)] = remainder
+                buf_pos = len(remainder)
 
             energy = rms(chunk)
             if energy < ENERGY_THRESHOLD:

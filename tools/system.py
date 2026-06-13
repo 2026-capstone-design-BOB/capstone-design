@@ -43,19 +43,15 @@ def _set_volume_level(level: int):
     except Exception:
         pass
 
-    # PowerShell fallback (pycaw 실패 시)
-    try:
-        ps = (
-            f"$wsh = New-Object -ComObject WScript.Shell; "
-            f"1..50 | ForEach-Object {{ $wsh.SendKeys([char]174) }}; "   # 볼륨 0으로
-            f"1..{level // 2} | ForEach-Object {{ $wsh.SendKeys([char]175) }}"  # 목표치까지 올리기
-        )
-        subprocess.run(["powershell", "-Command", ps], capture_output=True, timeout=8)
-        return True
-    except Exception:
-        pass
-
-    return False
+    # keybd_event fallback: 0으로 내린 후 목표까지 올리기 (volume_up/down과 동일 방식)
+    # WScript.Shell SendKeys는 미디어 키를 지원하지 않으므로 직접 keybd_event 사용
+    for _ in range(50):
+        ctypes.windll.user32.keybd_event(0xAE, 0, 0, 0)  # VK_VOLUME_DOWN
+        ctypes.windll.user32.keybd_event(0xAE, 0, 2, 0)
+    for _ in range(level // 2):
+        ctypes.windll.user32.keybd_event(0xAF, 0, 0, 0)  # VK_VOLUME_UP
+        ctypes.windll.user32.keybd_event(0xAF, 0, 2, 0)
+    return True
 
 
 @tool

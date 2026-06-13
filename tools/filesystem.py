@@ -26,14 +26,25 @@ LOCATION_MAP: dict[str, str] = {
 
 
 def _resolve_location(location: str) -> str | None:
-    """위치 문자열을 실제 경로로 변환."""
+    """위치 문자열을 실제 경로로 변환.
+    지원 형식:
+    - "바탕화면", "desktop" 등 키워드
+    - "C:/..." 절대 경로 (존재 여부 무관)
+    - "바탕화면/서브폴더", "desktop/subfolder" 형식
+    """
     key = location.lower().strip()
     path = LOCATION_MAP.get(key)
-    if path and os.path.exists(path):
+    if path:
         return path
-    # 절대 경로면 그대로 사용
-    if os.path.isabs(location) and os.path.exists(location):
+    # 절대 경로면 그대로 사용 (존재하지 않아도 반환 — create_file/folder가 생성)
+    if os.path.isabs(location):
         return location
+    # "바탕화면/서브폴더" 형식 처리
+    parts = location.replace("\\", "/").split("/", 1)
+    if len(parts) == 2:
+        base = LOCATION_MAP.get(parts[0].lower().strip())
+        if base:
+            return os.path.join(base, parts[1])
     return None
 
 
@@ -42,7 +53,9 @@ def create_file(name: str, location: str = "desktop", content: str = "") -> str:
     """
     파일을 생성합니다.
     name: 파일명 (확장자 포함, 예: 메모.txt, 보고서.docx)
-    location: 저장 위치 (desktop/바탕화면, downloads/다운로드, documents/문서) — 기본 바탕화면
+    location: 저장 위치 — 기본 바탕화면
+      · 키워드: desktop/바탕화면, downloads/다운로드, documents/문서
+      · 서브폴더: "바탕화면/폴더명" 형식 가능 (예: "바탕화면/프로젝트", "downloads/새폴더")
     content: 파일 내용 (선택, 기본 빈 파일)
     """
     base = _resolve_location(location)
@@ -51,6 +64,7 @@ def create_file(name: str, location: str = "desktop", content: str = "") -> str:
 
     path = os.path.join(base, name)
     try:
+        os.makedirs(os.path.dirname(path) or base, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
         return f"✓ '{name}' 파일을 {location}에 생성했습니다.\n경로: {path}"
@@ -99,9 +113,8 @@ def find_file(name: str = "", extension: str = "", location: str = "downloads") 
     else:
         return "✗ 파일명 또는 확장자를 지정해주세요."
 
-    matches = glob.glob(os.path.join(base, pattern), recursive=False)
-    matches += glob.glob(os.path.join(base, "**", pattern), recursive=True)
-    matches = list(dict.fromkeys(matches))  # 중복 제거
+    # recursive=True로 한 번만 검색 (하위 폴더 포함, 중복 없음)
+    matches = glob.glob(os.path.join(base, "**", pattern), recursive=True)
 
     if not matches:
         return f"✗ '{location}'에서 조건에 맞는 파일을 찾지 못했습니다."
@@ -135,6 +148,9 @@ def open_recent_file() -> str:
 def open_file(file_path: str, app: str = "") -> str:
     """
     파일을 기본 앱 또는 지정한 앱으로 엽니다.
+    파일 경로가 있을 때 사용합니다. 앱만 실행(파일 없이)할 때는 open_app을 사용하세요.
+    "파일 만들고 메모장으로 열어줘" → create_file() 후 open_file(file_path="파일명", app="notepad")
+    "todo.txt를 메모장으로 열어줘" → open_file(file_path="todo.txt", app="notepad")
     file_path: 파일 경로 또는 파일명 (바탕화면·문서·다운로드 상대경로 가능)
                예: "메모.txt", "바탕화면/보고서.docx", "C:/Users/user/Desktop/todo.txt"
     app: 열 앱 이름 (예: notepad, chrome, excel). 비워두면 기본 앱으로 열기.
@@ -172,18 +188,15 @@ def open_file(file_path: str, app: str = "") -> str:
 
 def _resolve_location_in_path(file_path: str) -> str:
     """경로 문자열을 실제 경로로 변환. 상대 위치명(바탕화면 등) 처리."""
-    # 이미 절대경로면 그대로
     if os.path.isabs(file_path):
         return file_path
 
-    # "위치/파일명" 형식 분리
     parts = file_path.replace("\\", "/").split("/", 1)
     if len(parts) == 2:
         base = _resolve_location(parts[0])
         if base:
             return os.path.join(base, parts[1])
 
-    # 파일명만 있을 때 — 주요 위치에서 탐색
     for loc in ["바탕화면", "문서", "다운로드"]:
         base = _resolve_location(loc)
         if base:
@@ -191,5 +204,4 @@ def _resolve_location_in_path(file_path: str) -> str:
             if os.path.exists(candidate):
                 return candidate
 
-    # 그대로 반환 (절대경로로 취급)
     return file_path

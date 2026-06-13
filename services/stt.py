@@ -44,7 +44,7 @@ class STTService:
 
     def transcribe_bytes(self, audio_bytes: bytes) -> str:
         """바이트 오디오 데이터 → 텍스트 (WebSocket/API용)."""
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
             f.write(audio_bytes)
             tmp_path = f.name
         try:

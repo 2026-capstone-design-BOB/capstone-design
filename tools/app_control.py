@@ -306,6 +306,15 @@ def close_app(app: str) -> str:
     app: 앱 이름 (예: chrome, notepad, calculator 등)
     """
     app_key = _normalize(app)
+
+    # BUG-11: explorer.exe는 Windows 셸 프로세스 — 종료 시 바탕화면·작업표시줄 전체 소멸
+    if app_key == "explorer":
+        return (
+            "⚠️ 파일 탐색기(explorer.exe)는 Windows 셸 프로세스입니다. "
+            "종료하면 바탕화면과 작업 표시줄이 사라집니다. "
+            "탐색기 창을 닫으려면 해당 창의 ✕ 버튼을 직접 눌러주세요."
+        )
+
     targets = APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])
 
     killed = []
@@ -335,26 +344,33 @@ def maximize_window(app: str = "") -> str:
 
     if app:
         app_key = _normalize(app)
-        targets = [t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])]
+        targets = {t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
 
-        found = False
+        # 매칭 프로세스 PID 전체 수집 (Chrome 등 멀티 프로세스 대응)
+        target_pids: set[int] = set()
         for proc in psutil.process_iter(["name", "pid"]):
             if proc.info["name"].lower() in targets:
-                try:
-                    pid = proc.info["pid"]
-                    def callback(h, _):
-                        nonlocal found
-                        buf = ctypes.wintypes.DWORD()
-                        ctypes.windll.user32.GetWindowThreadProcessId(h, ctypes.byref(buf))
-                        if buf.value == pid and ctypes.windll.user32.IsWindowVisible(h):
-                            ctypes.windll.user32.ShowWindow(h, SW_MAXIMIZE)
-                            found = True
-                        return True
-                    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
-                    ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), 0)
-                except Exception:
-                    pass
-                break
+                target_pids.add(proc.info["pid"])
+
+        if not target_pids:
+            return f"✗ {app}이(가) 실행 중이지 않습니다."
+
+        found = False
+        def callback(h, _):
+            nonlocal found
+            if found:
+                return False  # 첫 번째 창 찾으면 중단
+            if not ctypes.windll.user32.IsWindowVisible(h):
+                return True
+            buf = ctypes.wintypes.DWORD()
+            ctypes.windll.user32.GetWindowThreadProcessId(h, ctypes.byref(buf))
+            if buf.value in target_pids:
+                ctypes.windll.user32.ShowWindow(h, SW_MAXIMIZE)
+                found = True
+                return False
+            return True
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+        ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), 0)
 
         if found:
             return f"✓ {app} 창을 최대화했습니다."
@@ -375,26 +391,32 @@ def minimize_window(app: str = "") -> str:
 
     if app:
         app_key = _normalize(app)
-        targets = [t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])]
-        found = False
+        targets = {t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
 
+        target_pids: set[int] = set()
         for proc in psutil.process_iter(["name", "pid"]):
             if proc.info["name"].lower() in targets:
-                try:
-                    pid = proc.info["pid"]
-                    def callback(h, _):
-                        nonlocal found
-                        buf = ctypes.wintypes.DWORD()
-                        ctypes.windll.user32.GetWindowThreadProcessId(h, ctypes.byref(buf))
-                        if buf.value == pid and ctypes.windll.user32.IsWindowVisible(h):
-                            ctypes.windll.user32.ShowWindow(h, SW_MINIMIZE)
-                            found = True
-                        return True
-                    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
-                    ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), 0)
-                except Exception:
-                    pass
-                break
+                target_pids.add(proc.info["pid"])
+
+        if not target_pids:
+            return f"✗ {app}이(가) 실행 중이지 않습니다."
+
+        found = False
+        def callback(h, _):
+            nonlocal found
+            if found:
+                return False
+            if not ctypes.windll.user32.IsWindowVisible(h):
+                return True
+            buf = ctypes.wintypes.DWORD()
+            ctypes.windll.user32.GetWindowThreadProcessId(h, ctypes.byref(buf))
+            if buf.value in target_pids:
+                ctypes.windll.user32.ShowWindow(h, SW_MINIMIZE)
+                found = True
+                return False
+            return True
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+        ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), 0)
 
         if found:
             return f"✓ {app} 창을 최소화했습니다."
@@ -408,8 +430,8 @@ def minimize_window(app: str = "") -> str:
 @tool
 def show_desktop() -> str:
     """모든 창을 최소화하여 바탕화면을 표시합니다."""
-    ctypes.windll.user32.keybd_event(0x5B, 0, 0, 0)  # Win 키
-    ctypes.windll.user32.keybd_event(0x44, 0, 0, 0)  # D 키
+    ctypes.windll.user32.keybd_event(0x5B, 0, 0, 0)  # Win
+    ctypes.windll.user32.keybd_event(0x44, 0, 0, 0)  # D
     ctypes.windll.user32.keybd_event(0x44, 0, 2, 0)
     ctypes.windll.user32.keybd_event(0x5B, 0, 2, 0)
-    return "✓ 바탕화면을 표시했습니다."
+    return "\u2713 \ubc14\ud0d5\ud654\uba74\uc744 \ud45c\uc2dc\ud588\uc2b5\ub2c8\ub2e4."

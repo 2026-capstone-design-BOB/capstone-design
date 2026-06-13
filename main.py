@@ -10,6 +10,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+# BUG-02: create_task 참조 손실 방지용 백그라운드 태스크 집합
+_bg_tasks: set = set()
+
 from config.settings import get_settings
 from core.agent import get_agent
 from core.security import check_security
@@ -127,7 +130,10 @@ async def chat(req: TextRequest):
 
         if req.use_tts:
             tts = get_tts()
-            asyncio.create_task(tts.speak_async(response))
+            # BUG-02: 참조를 _bg_tasks에 보관해 GC로 인한 태스크 중단 방지
+            _task = asyncio.create_task(tts.speak_async(response))
+            _bg_tasks.add(_task)
+            _task.add_done_callback(_bg_tasks.discard)
 
         return {"response": response, "thread_id": req.thread_id}
     except Exception as e:
@@ -238,6 +244,9 @@ async def websocket_endpoint(websocket: WebSocket):
             async for chunk in agent.stream(text, thread_id=thread_id):
                 full_response += chunk
                 await websocket.send_json({"type": "chunk", "content": chunk})
+
+            # BUG-01: session_memory 저장은 stream() 내부에서 경로별로 처리.
+            # 여기서 중복 저장하지 않음 (캐시/제어명령 경로에서 이중 저장되던 버그 수정).
 
             # TTS 요청 시 MP3를 base64로 함께 전송
             end_payload: dict = {"type": "end", "full": full_response}

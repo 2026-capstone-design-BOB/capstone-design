@@ -42,6 +42,11 @@ _DANGEROUS_CMD_PATTERNS: list[Tuple[str, str]] = [
     (r"\bcipher\s+/[wdWD]\b",                       "cipher /w /d"),
     (r"\bsc\s+(delete|stop|create)\b",              "sc delete/stop/create"),
     (r"\bschtasks\s+/delete\b",                     "schtasks /delete"),
+    # PowerShell 단축 플래그 (인코딩/우회 시도)
+    (r"powershell[^\n]*-ec\b",                           "PowerShell -ec (EncodedCommand 단축)"),
+    (r"powershell[^\n]*-ep\s+bypass",                   "PowerShell -ep bypass"),
+    (r"powershell[^\n]*-nop\b",                         "PowerShell -NoProfile"),
+    (r"powershell[^\n]*-w(?:indowstyle)?\s+hid",        "PowerShell -WindowStyle Hidden"),
 ]
 
 # 경로 순회 패턴

@@ -63,7 +63,9 @@ def web_search(query: str, engine: str = "google") -> str:
 @tool
 def youtube_search(query: str) -> str:
     """
-    유튜브에서 검색합니다.
+    유튜브(YouTube)에서 동영상을 검색합니다.
+    "유튜브에서 X 검색해줘", "유튜브로 X 찾아줘", "유튜브 X 틀어줘" 패턴에 사용합니다.
+    일반 웹 검색(web_search)과 달리 유튜브 전용입니다. 유튜브 관련 명령은 항상 이 도구를 사용하세요.
     query: 검색어 (예: 아이유, BTS, 파이썬 강의)
     """
     import urllib.parse
@@ -85,7 +87,7 @@ def map_search(destination: str, origin: str = "") -> str:
     """
     import urllib.parse
     if origin:
-        url = f"https://map.kakao.com/?sName={urllib.parse.quote(origin)}&eName={urllib.parse.quote(destination)}"
+        url = f"https://www.google.com/maps/dir/{urllib.parse.quote(origin)}/{urllib.parse.quote(destination)}"
         label = f"'{origin}' -> '{destination}' 경로"
     else:
         url = f"https://map.kakao.com/?q={urllib.parse.quote(destination)}"
