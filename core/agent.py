@@ -76,32 +76,53 @@ PC 제어 명령입니다. 반드시 적절한 도구를 호출하여 실행해�
 # 캐시 시드는 고정 패턴만 커버하므로 동적 파라미터는 여기서 처리
 
 _ROUTER_YT = re.compile(
-    r'유튜브(?:에서|에|로)?\s+(.+?)\s*(?:검색해줘|검색해|틀어줘|틀어|찾아줘|찾아)\s*$'
+    r'유튜브(?:에서|에|로)?\s+(.+?)\s*(?:검색\s*해\s*줘|검색해|틀어\s*줘|틀어|찾아\s*줘|찾아)\s*$'
 )
 _ROUTER_MAP_ROUTE = re.compile(
-    r'^(.+?)에서\s+(.+?)\s+(?:가는\s*길|경로)\s*(?:알려줘|찾아줘)?\s*$'
+    r'^(.+?)에서\s+(.+?)\s+(?:가는\s*길|경로)\s*(?:알려\s*줘|찾아\s*줘)?\s*$'
 )
 _ROUTER_MAP_SIMPLE = re.compile(
-    r'^(.+?)\s+(?:지도\s*(?:찾아줘|보여줘|열어줘|검색해줘|알려줘)?|어디야|어디에\s*있어|어디에요)\s*$'
+    r'^(.+?)\s+(?:지도\s*(?:찾아\s*줘|보여\s*줘|열어\s*줘|검색\s*해\s*줘|알려\s*줘)?|어디야|어디에\s*있어|어디에요)\s*$'
 )
 _ROUTER_FOLDER = re.compile(
-    r'^(?:(바탕화면|데스크탑|다운로드|문서|사진)에\s+)?(.+?)\s+(?:폴더|디렉토리)\s+(?:만들어줘|만들어|생성해줘|생성해)\s*$'
+    r'^(?:(바탕화면|데스크탑|다운로드|문서|사진)에\s+)?(.+?)\s+(?:폴더|디렉토리)\s+(?:만들어\s*줘|만들어|생성\s*해\s*줘|생성해)\s*$'
 )
 _ROUTER_VOLUME = re.compile(
-    r'볼륨\s*(\d+)\s*(?:%로|%|퍼센트|으로|로)?\s*(?:설정해줘|설정해|맞춰줘|맞춰|해줘)?\s*$'
+    r'볼륨\s*(\d+)\s*(?:%로|%|퍼센트|으로|로)?\s*(?:설정\s*해\s*줘|설정해|맞춰\s*줘|맞춰|해\s*줘)?\s*$'
 )
 _ROUTER_VOL_UP = re.compile(
-    r'볼륨\s*(\d+)?\s*(?:정도만?|만큼|씩|만)?\s*(?:올려|높여|크게)\s*(?:줘|달라고|줄래|해줘)?'
+    r'^볼륨\s*(\d+)?\s*(?:정도만?|만큼|씩|만)?\s*(?:올려|높여|크게)\s*(?:줘|달라고|줄래|해\s*줘)?\s*$'
 )
 _ROUTER_VOL_DOWN = re.compile(
-    r'볼륨\s*(\d+)?\s*(?:정도만?|만큼|씩|만)?\s*(?:내려|줄여|작게)\s*(?:줘|달라고|줄래|해줘)?'
+    r'^볼륨\s*(\d+)?\s*(?:정도만?|만큼|씩|만)?\s*(?:내려|줄여|작게)\s*(?:줘|달라고|줄래|해\s*줘)?\s*$'
 )
 _ROUTER_MAXIMIZE = re.compile(
-    r'^(.+?)\s+최대화\s*(?:해줘|해달라고|해|줄래)?\s*$'
+    r'^(.+?)\s+최대화\s*(?:해\s*줘|해달라고|해|줄래)?\s*$'
 )
 _ROUTER_MINIMIZE = re.compile(
-    r'^(.+?)\s+최소화\s*(?:해줘|해달라고|해|줄래)?\s*$'
+    r'^(.+?)\s+최소화\s*(?:해\s*줘|해달라고|해|줄래)?\s*$'
 )
+
+# 복합 명령 감지 패턴 — 캐시 바이패스 후 LLM으로 전달
+# "닫고/열고/켜고/끄고" 등 동사 연결형 + 문맥 참조형("방금", "빼고" 등)도 포함
+_COMPOUND_CMD = re.compile(
+    r'이랑|랑\s|하고\s|그리고\s|그리고$|,\s*그리고|,\s*그다음|다음에\s'
+    r'|닫고\s|열고\s|켜고\s|끄고\s|보내고\s|저장하고\s|검색하고\s|만들고\s'
+    r'|방금|아까|빼고|제외하고|것들|이것|그것|다\s*닫|전부\s*닫|모두\s*닫'
+)
+
+# 단어 하나짜리 앱 이름 집합 — 2개 이상 등장하면 다중 앱 명령으로 판단
+_MULTI_APP_NAMES = frozenset([
+    '크롬', '메모장', '계산기', '탐색기', '카카오', '엣지', '스팀',
+    '디스코드', '슬랙', '노트패드', '워드', '엑셀', '파워포인트',
+])
+
+
+def _is_multi_app_command(text: str) -> bool:
+    """두 개 이상의 앱 이름이 포함된 다중 앱 명령 감지."""
+    count = sum(1 for app in _MULTI_APP_NAMES if app in text)
+    return count >= 2
+
 
 # PC 제어 명령으로 판단하는 키워드 집합
 # 이 키워드가 포함된 입력에서 도구가 호출되지 않으면 재시도 트리거
@@ -197,6 +218,12 @@ class PluizAgent:
                      stream()에서 이미 캐시 미스 확인 후 이 메서드를 호출할 때 사용
                      (BUG-06: 이중 캐시 조회 방지).
         """
+        # 복합 명령("이랑", "랑", "닫고" 등 / 다중 앱 나열) 감지 → 캐시 바이패스
+        is_compound = bool(_COMPOUND_CMD.search(user_input)) or _is_multi_app_command(user_input)
+        if is_compound:
+            print(f"[CommandCache] 복합 명령 감지 → 캐시 바이패스: {user_input!r}")
+            _skip_cache = True
+
         # 커맨드 캐시 확인 (API 없이 직접 실행)
         if not _skip_cache:
             try:
@@ -223,11 +250,11 @@ class PluizAgent:
             print(f"[Router] 라우팅 오류 (무시): {route_err}")
 
         # LLM 실행
-        # 제어 명령: 매 호출마다 고유 스레드 사용 → 이전 실패 attempt가 다음 명령 컨텍스트 오염 방지
-        import time as _time
+        # 제어 명령: 고정 ctrl thread 사용 → 맥락 유지 (예: "크롬 닫아줘" → "다시 열어줄래")
+        # tool_calls 오염 발생 시에만 _clear_thread로 초기화 (아래 except 블록)
         is_ctrl = self._is_control_command(user_input)
         if is_ctrl:
-            effective_thread = f"{thread_id}_cmd_{int(_time.time()*1000)}"
+            effective_thread = f"{thread_id}_ctrl"
         else:
             effective_thread = thread_id
 
@@ -299,11 +326,10 @@ class PluizAgent:
             if not response.strip():
                 response = "명령을 실행했습니다."
 
-        # BUG-05: 제어 명령용 임시 thread는 결과 확보 후 즉시 MemorySaver에서 정리
-        if is_ctrl:
-            self._clear_thread(effective_thread)
-            if retry_thread:
-                self._clear_thread(retry_thread)
+        # ctrl thread는 맥락 유지를 위해 보존 (오염 오류 시에만 위 except에서 초기화)
+        # 재시도용 임시 thread만 정리
+        if retry_thread:
+            self._clear_thread(retry_thread)
 
         self.session_memory.save(user_input, response)
         return response
@@ -424,10 +450,11 @@ class PluizAgent:
                 print(f"[Router] volume_down 오류: {e}")
 
         # 8. maximize_window: "계산기 최대화", "메모장 최대화 해줘"
+        # 앱 이름에 복합 연결어 포함 시 → 복합 명령으로 판단해 스킵 (LLM이 처리)
         m = _ROUTER_MAXIMIZE.search(text)
         if m:
             app = m.group(1).strip()
-            if app:
+            if app and not _COMPOUND_CMD.search(app):
                 try:
                     from tools.app_control import maximize_window
                     result = await maximize_window.ainvoke({"app": app})
@@ -440,7 +467,7 @@ class PluizAgent:
         m = _ROUTER_MINIMIZE.search(text)
         if m:
             app = m.group(1).strip()
-            if app:
+            if app and not _COMPOUND_CMD.search(app):
                 try:
                     from tools.app_control import minimize_window
                     result = await minimize_window.ainvoke({"app": app})
@@ -474,7 +501,7 @@ class PluizAgent:
                 model=self.llm,
                 tools=self.tools,
                 checkpointer=self.checkpointer,
-                prompt=SYSTEM_PROMPT,
+                prompt=_build_system_prompt(),
             )
             return
 
@@ -496,23 +523,29 @@ class PluizAgent:
           - 대화형 경로:     astream 완료 후 이 메서드 내에서 저장
           ws 핸들러에서는 저장하지 않음 (BUG-01 수정).
         """
+        # 복합 명령 감지 → 캐시 바이패스
+        is_compound = bool(_COMPOUND_CMD.search(user_input)) or _is_multi_app_command(user_input)
         cache_miss = False
-        try:
-            from core.command_cache import get_cache
-            cache = get_cache()
-            hit = cache.find(user_input)
-            if hit:
-                entry, score = hit
-                print(f"[CommandCache/ws] 히트 (유사도 {score:.2f}): {entry.pattern!r}")
-                result_text = await cache.execute(entry)
-                cache.increment_hit(entry.pattern)
-                self.session_memory.save(user_input, result_text)
-                yield result_text
-                return
+        if is_compound:
+            print(f"[CommandCache/ws] 복합 명령 감지 → 캐시 바이패스: {user_input!r}")
             cache_miss = True
-        except Exception as cache_err:
-            print(f"[CommandCache/ws] 캐시 확인 오류 (무시): {cache_err}")
-            cache_miss = True
+        else:
+            try:
+                from core.command_cache import get_cache
+                cache = get_cache()
+                hit = cache.find(user_input)
+                if hit:
+                    entry, score = hit
+                    print(f"[CommandCache/ws] 히트 (유사도 {score:.2f}): {entry.pattern!r}")
+                    result_text = await cache.execute(entry)
+                    cache.increment_hit(entry.pattern)
+                    self.session_memory.save(user_input, result_text)
+                    yield result_text
+                    return
+                cache_miss = True
+            except Exception as cache_err:
+                print(f"[CommandCache/ws] 캐시 확인 오류 (무시): {cache_err}")
+                cache_miss = True
 
         # PC 제어 명령: run_async() 경유 (retry + ToolMessage fallback 포함)
         # BUG-06: 이미 캐시 미스 확인 완료 → _skip_cache=True로 이중 캐시 조회 방지

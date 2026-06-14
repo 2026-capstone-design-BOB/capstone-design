@@ -270,6 +270,40 @@ def _is_running(app_key: str) -> bool:
     return bool(targets & running)
 
 
+def find_hwnd_for_app(app_name: str) -> int:
+    """
+    앱 이름(한국어 포함)으로 최상위 가시 HWND 반환. 0이면 창 없음.
+    system.py의 창별 스크린샷 등 외부 모듈에서 재사용 가능.
+    """
+    app_key = _normalize(app_name)
+    targets = {p.lower() for p in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
+
+    found = [0]
+
+    def _cb(hwnd, _):
+        if not ctypes.windll.user32.IsWindowVisible(hwnd):
+            return True
+        pid_buf = ctypes.wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_buf))
+        try:
+            if psutil.Process(pid_buf.value).name().lower() in targets:
+                found[0] = hwnd
+                return False
+        except Exception:
+            pass
+        return True
+
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+    ctypes.windll.user32.EnumWindows(WNDENUMPROC(_cb), 0)
+
+    # 프로세스 기반으로 못 찾으면 제목 기반 fallback (explorer 등)
+    if not found[0]:
+        display = APP_DISPLAY_NAMES.get(app_key, app_name)
+        found[0] = _find_hwnd_by_title([display, app_name, app_key])
+
+    return found[0]
+
+
 # ── 도구 정의 ─────────────────────────────────────────────────────
 
 @tool
@@ -283,17 +317,36 @@ def open_app(app: str) -> str:
     name = _display_name(app_key, app)
     eul_reul = _korean_particle(name, "을", "를")
 
+    # ── explorer 전용: 셸 프로세스로 항상 떠 있어서 _is_running이 항상 True
+    # _is_running 체크 전에 별도 처리 → 항상 새 탐색기 창 열기
+    if app_key == "explorer":
+        try:
+            subprocess.Popen("explorer.exe", shell=True)
+            time.sleep(0.5)
+            return f"✓ {name}{eul_reul} 열었습니다."
+        except Exception as e:
+            return f"✗ {name} 실행 실패: {e}"
+
     # ── 이미 실행 중이면 창 활성화 (새 창 열지 않음) ──────────────
     if _is_running(app_key):
         if _focus_window(app_key):
             return f"✓ {name} 창을 앞으로 가져왔습니다."
-        return f"✓ {name}은(는) 이미 실행 중입니다."
+        # 프로세스는 살아있지만 visible 창이 없음 (트레이 앱 등)
+        # → exe 재실행하면 트레이 앱은 메인 창을 올려줌
+        path = _resolve_path(app_key)
+        if path:
+            try:
+                subprocess.Popen([path])
+                time.sleep(0.8)
+                return f"✓ {name} 창을 열었습니다."
+            except Exception:
+                pass
+        return f"⚠️ {name}은(는) 실행 중이지만 창을 열지 못했습니다. 트레이 아이콘을 클릭해 주세요."
 
     # ── UWP·내장 앱: shell 명령으로 직접 실행 ───────────────────
     UWP_SHELL_COMMANDS = {
         "calculator": "calc.exe",
         "notepad":    "notepad.exe",
-        "explorer":   "explorer.exe",
         "terminal":   "wt.exe",
         "settings":   "start ms-settings:",
     }
@@ -333,9 +386,9 @@ def close_app(app: str) -> str:
     # BUG-11: explorer.exe는 Windows 셸 프로세스 — 종료 시 바탕화면·작업표시줄 전체 소멸
     if app_key == "explorer":
         return (
-            "⚠️ 파일 탐색기(explorer.exe)는 Windows 셸 프로세스입니다. "
-            "종료하면 바탕화면과 작업 표시줄이 사라집니다. "
-            "탐색기 창을 닫으려면 해당 창의 ✕ 버튼을 직접 눌러주세요."
+            "⚠️ 파일 탐색기는 Windows 시스템 프로세스라 프로그램으로 닫을 수 없어요. "
+            "창 우측 상단 ✕ 버튼으로 직접 닫아주세요. "
+            "(열기는 가능합니다 — open_app 도구를 사용하세요)"
         )
 
     targets = APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])

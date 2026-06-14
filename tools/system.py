@@ -173,24 +173,132 @@ def brightness_down(amount: int = 10) -> str:
 
 # ── 시스템 정보 ───────────────────────────────────────────────────
 
+def _capture_hwnd(hwnd: int):
+    """
+    PrintWindow API로 HWND 창 픽셀만 캡처. PIL Image(RGB) 반환.
+    - DWM 그림자/배경 없이 창 내용만 정확히 추출
+    - PW_RENDERFULLCONTENT(=2) 플래그로 Chrome 등 GPU 렌더링 앱도 지원
+    """
+    import ctypes, ctypes.wintypes
+    from PIL import Image
+
+    # DWM 실제 표시 영역 (그림자 제외) — DWMWA_EXTENDED_FRAME_BOUNDS = 9
+    rect = ctypes.wintypes.RECT()
+    if ctypes.windll.dwmapi.DwmGetWindowAttribute(
+        hwnd, 9, ctypes.byref(rect), ctypes.sizeof(rect)
+    ) != 0:
+        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+
+    w = rect.right  - rect.left
+    h = rect.bottom - rect.top
+    if w <= 0 or h <= 0:
+        raise ValueError("창 크기가 유효하지 않습니다")
+
+    # GDI DC + 비트맵 생성
+    hdc_src = ctypes.windll.user32.GetWindowDC(hwnd)
+    hdc_mem = ctypes.windll.gdi32.CreateCompatibleDC(hdc_src)
+    hbmp    = ctypes.windll.gdi32.CreateCompatibleBitmap(hdc_src, w, h)
+    ctypes.windll.gdi32.SelectObject(hdc_mem, hbmp)
+
+    # PrintWindow (PW_RENDERFULLCONTENT = 2)
+    ctypes.windll.user32.PrintWindow(hwnd, hdc_mem, 2)
+
+    # BITMAPINFOHEADER 설정
+    class _BIH(ctypes.Structure):
+        _fields_ = [
+            ('biSize',          ctypes.c_uint32),
+            ('biWidth',         ctypes.c_int32),
+            ('biHeight',        ctypes.c_int32),
+            ('biPlanes',        ctypes.c_uint16),
+            ('biBitCount',      ctypes.c_uint16),
+            ('biCompression',   ctypes.c_uint32),
+            ('biSizeImage',     ctypes.c_uint32),
+            ('biXPelsPerMeter', ctypes.c_int32),
+            ('biYPelsPerMeter', ctypes.c_int32),
+            ('biClrUsed',       ctypes.c_uint32),
+            ('biClrImportant',  ctypes.c_uint32),
+        ]
+
+    bih = _BIH()
+    bih.biSize     = ctypes.sizeof(_BIH)
+    bih.biWidth    = w
+    bih.biHeight   = -h   # top-down
+    bih.biPlanes   = 1
+    bih.biBitCount = 32
+    bih.biCompression = 0  # BI_RGB
+
+    buf = (ctypes.c_byte * (4 * w * h))()
+    ctypes.windll.gdi32.GetDIBits(hdc_mem, hbmp, 0, h, buf, ctypes.byref(bih), 0)
+
+    # GDI 자원 해제
+    ctypes.windll.gdi32.DeleteObject(hbmp)
+    ctypes.windll.gdi32.DeleteDC(hdc_mem)
+    ctypes.windll.user32.ReleaseDC(hwnd, hdc_src)
+
+    # BGRA → RGB PIL Image
+    return Image.frombuffer('RGBA', (w, h), bytes(buf), 'raw', 'BGRA', 0, 1).convert('RGB')
+
+
 @tool
-def take_screenshot(save_path: str = "") -> str:
+def take_screenshot(save_path: str = "", window: str = "") -> str:
     """
-    화면을 캡처합니다.
+    화면을 캡처하여 저장합니다.
     save_path: 저장 경로 (비워두면 바탕화면에 자동 저장)
+    window: 캡처 대상 — 비워두면 전체 화면 / "활성창"이면 현재 포커스 창 / 앱 이름이면 해당 창만
+            예: window="chrome", window="메모장", window="활성창"
     """
+    import ctypes
+    import ctypes.wintypes
+
     if not save_path:
         desktop = os.path.join(os.path.expanduser("~"), "Desktop")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = os.path.join(desktop, f"screenshot_{timestamp}.png")
+        suffix = f"_{window.replace(' ', '_')}" if window else ""
+        save_path = os.path.join(desktop, f"screenshot{suffix}_{timestamp}.png")
 
     try:
         import PIL.ImageGrab
-        img = PIL.ImageGrab.grab()
+
+        # ── 전체 화면 ────────────────────────────────────────────
+        if not window:
+            img = PIL.ImageGrab.grab()
+            img.save(save_path)
+            return f"✓ 전체 화면 스크린샷을 저장했습니다.\n경로: {save_path}"
+
+        # ── HWND 획득 ────────────────────────────────────────────
+        _ACTIVE = {"활성창", "현재창", "지금창", "포커스", "active"}
+        if window.lower() in _ACTIVE:
+            hwnd = ctypes.windll.user32.GetForegroundWindow()
+            label = "활성 창"
+        else:
+            try:
+                from tools.app_control import find_hwnd_for_app
+                hwnd = find_hwnd_for_app(window)
+            except Exception as import_err:
+                return f"✗ 앱 창 조회 실패: {import_err}"
+            label = window
+
+        if not hwnd:
+            return f"✗ '{window}' 창을 찾을 수 없습니다. 앱이 실행 중인지 확인해주세요."
+
+        # ── 최소화 상태면 잠깐 복원 후 캡처, 이후 재최소화 ────────
+        was_minimized = bool(ctypes.windll.user32.IsIconic(hwnd))
+        if was_minimized:
+            ctypes.windll.user32.ShowWindow(hwnd, 9)   # SW_RESTORE
+            import time; time.sleep(0.4)
+
+        img = _capture_hwnd(hwnd)
         img.save(save_path)
-        return f"✓ 스크린샷을 저장했습니다.\n경로: {save_path}"
+
+        if was_minimized:
+            ctypes.windll.user32.ShowWindow(hwnd, 6)   # SW_MINIMIZE
+
+        note = " (최소화 상태에서 잠깐 복원 후 촬영)" if was_minimized else ""
+        return f"✓ '{label}' 창 스크린샷을 저장했습니다{note}.\n경로: {save_path}"
+
     except ImportError:
-        # Pillow 없을 때 PowerShell fallback
+        if window:
+            return "✗ 창별 스크린샷은 Pillow가 필요합니다. (pip install pillow)"
         ps_cmd = (
             f'Add-Type -AssemblyName System.Windows.Forms; '
             f'$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; '
