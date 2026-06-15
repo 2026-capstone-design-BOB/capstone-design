@@ -24,6 +24,7 @@ def get_all_tools() -> List[BaseTool]:
         youtube_search,
         map_search,
         fetch_web_info,
+        crawl_page,
     )
     from tools.filesystem import (
         create_file,
@@ -31,6 +32,7 @@ def get_all_tools() -> List[BaseTool]:
         find_file,
         open_recent_file,
         open_file,
+        write_excel,
     )
     from tools.system import (
         volume_up,
@@ -65,12 +67,14 @@ def get_all_tools() -> List[BaseTool]:
         youtube_search,
         map_search,
         fetch_web_info,
+        crawl_page,
         # 파일시스템
         create_file,
         create_folder,
         find_file,
         open_recent_file,
         open_file,
+        write_excel,
         # 시스템
         volume_up,
         volume_down,

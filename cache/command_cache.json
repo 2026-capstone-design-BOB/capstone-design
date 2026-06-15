@@ -10,7 +10,7 @@
       }
     ],
     "response_template": "✓ 메모장을 실행했습니다.",
-    "hit_count": 42,
+    "hit_count": 43,
     "is_seed": true
   },
   "메모장 켜줘": {
@@ -80,7 +80,7 @@
       }
     ],
     "response_template": "✓ Chrome을 실행했습니다.",
-    "hit_count": 9,
+    "hit_count": 10,
     "is_seed": true
   },
   "크롬 켜줘": {
@@ -236,7 +236,7 @@
       }
     ],
     "response_template": "✓ 볼륨을 낮췄습니다.",
-    "hit_count": 3,
+    "hit_count": 4,
     "is_seed": true
   },
   "소리 내려줘": {
@@ -404,7 +404,7 @@
       }
     ],
     "response_template": "실행 중인 앱 목록을 확인합니다.",
-    "hit_count": 0,
+    "hit_count": 1,
     "is_seed": true
   },
   "구글 열어줘": {
@@ -460,7 +460,7 @@
       }
     ],
     "response_template": "✓ 날씨를 검색했습니다.",
-    "hit_count": 0,
+    "hit_count": 2,
     "is_seed": true
   },
   "최근에 열었던 파일 보여줘": {

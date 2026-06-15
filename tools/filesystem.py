@@ -205,3 +205,61 @@ def _resolve_location_in_path(file_path: str) -> str:
                 return candidate
 
     return file_path
+
+
+@tool
+def write_excel(filename: str, headers: str, rows: str, location: str = "desktop") -> str:
+    """
+    엑셀(.xlsx) 파일을 생성합니다. 검색·비교 데이터를 표 형식으로 저장할 때 사용합니다.
+    filename: 파일명 (예: 에어컨비교.xlsx)
+    headers: 열 제목, 쉼표로 구분 (예: "모델명,가격,용량,에너지효율등급")
+    rows: 행 데이터. 행은 줄바꿈(\\n)으로, 열은 쉼표로 구분.
+          (예: "삼성 무풍 에어컨,1200000원,18평형,1등급\\nLG 휘센,1100000원,16평형,1등급")
+    location: 저장 위치 (desktop/바탕화면, downloads/다운로드, documents/문서)
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        return "✗ write_excel 사용을 위해 openpyxl이 필요합니다. (pip install openpyxl)"
+
+    base = _resolve_location(location)
+    if not base:
+        return f"✗ '{location}'은(는) 지원하지 않는 위치입니다."
+
+    if not filename.endswith(".xlsx"):
+        filename += ".xlsx"
+    path = os.path.join(base, filename)
+
+    try:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "데이터"
+
+        # 헤더 행
+        header_list = [h.strip() for h in headers.split(",")]
+        ws.append(header_list)
+
+        # 헤더 스타일 (파란 배경 + 흰 글씨)
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        for cell in ws[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+
+        # 데이터 행
+        for line in rows.strip().splitlines():
+            if line.strip():
+                ws.append([col.strip() for col in line.split(",")])
+
+        # 열 너비 자동 조정
+        for col in ws.columns:
+            max_len = max((len(str(cell.value or "")) for cell in col), default=10)
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
+
+        os.makedirs(base, exist_ok=True)
+        wb.save(path)
+        return f"✓ '{filename}' 엑셀 파일을 저장했습니다.\n경로: {path}"
+
+    except Exception as e:
+        return f"✗ 엑셀 파일 생성 실패: {e}"

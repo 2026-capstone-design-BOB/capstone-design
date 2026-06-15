@@ -49,12 +49,58 @@ def _build_system_prompt() -> str:
 - 절대 실행하지 않을 것: rm -rf, del /f /s, format, reg delete, shutdown /f 등.
 
 일반:
-- 날씨, 뉴스 등 실시간 정보는 fetch_web_info 도구로 가져와서 답해요.
+- "X 알려줘", "X 어때", "X 뭐야" → fetch_web_info로 정보 가져와서 답해요. 지역·조건이 불명확해도 묻지 말고 바로 검색해요. (예: "날씨 알려줘" → fetch_web_info("오늘 날씨"))
+- "X 검색해줘", "X 찾아줘" → web_search로 브라우저 열어요. 지역·조건 불명확해도 묻지 말고 바로 검색해요. (예: "날씨 검색해줘" → web_search("오늘 날씨"))
+- "X 검색해서 파일/메모장에 저장해줘" 등 검색+저장 작업은 반드시 이 순서로:
+  1. fetch_web_info(query="X") → 검색 결과 및 URL 확보
+  2. crawl_page(url) → 필요하면 실제 페이지 본문 읽기 (선택)
+  3. create_file(name="파일명.txt", content=정리된내용) → 파일에 직접 저장
+  브라우저를 열거나 사용자에게 내용을 직접 붙여넣으라고 하면 절대 안 돼요.
+- "비교표/스펙표를 엑셀로 저장해줘" 작업:
+  1. fetch_web_info()로 관련 URL 확보
+  2. crawl_page(url)로 실제 페이지 본문 읽기
+  3. 수집한 웹 데이터를 write_excel로 저장
+  웹 데이터 수집이 실패하면 "페이지를 읽어오지 못했어요"라고 솔직하게 말해요. 근거 없는 정보로 파일을 만들지 마세요.
+- type_text 도구는 사용자가 "타이핑해줘", "입력해줘"라고 명시적으로 요청할 때만 써요.
+  검색 결과를 채팅창이나 다른 앱 입력창에 타이핑하는 용도로 절대 쓰지 마세요.
 - 불가능한 요청은 이유를 한 문장으로 설명해요.
 - 응답은 항상 한국어로 해요.
 """
 
 SYSTEM_PROMPT = _build_system_prompt()
+
+# 히스토리 최대 메시지 수 (시스템 메시지 제외). ~10턴에 해당.
+_MAX_HISTORY_MSGS = 20
+
+
+def _build_prompt_modifier(state: dict) -> list:
+    """
+    LangGraph prompt callable — 매 LLM 호출 시 실행.
+    - 시스템 프롬프트: 현재 날짜/시간으로 매번 갱신
+    - 히스토리: 최근 _MAX_HISTORY_MSGS개만 LLM에 전달 (오래된 맥락 자동 드롭)
+    """
+    from langchain_core.messages import SystemMessage, trim_messages
+
+    system_msg = SystemMessage(content=_build_system_prompt())
+
+    # 시스템 메시지 제외한 대화 히스토리
+    history = [m for m in state["messages"] if not isinstance(m, SystemMessage)]
+
+    try:
+        trimmed = trim_messages(
+            history,
+            max_tokens=_MAX_HISTORY_MSGS,
+            strategy="last",
+            token_counter=len,   # 메시지 개수 기준 (토큰 수 아님)
+            allow_partial=False,
+            start_on="human",    # HumanMessage로 시작 보장
+        )
+    except Exception:
+        # trim 실패 시 단순 슬라이싱 fallback
+        trimmed = history[-_MAX_HISTORY_MSGS:]
+
+    return [system_msg] + trimmed
+
 
 RETRY_PROMPT = """이전 응답에서 도구를 호출하지 않았습니다.
 PC 제어 명령입니다. 반드시 적절한 도구를 호출하여 실행해주세요.
@@ -205,7 +251,7 @@ class PluizAgent:
             model=self.llm,
             tools=self.tools,
             checkpointer=self.checkpointer,
-            prompt=_build_system_prompt(),
+            prompt=_build_prompt_modifier,   # trim + 날짜 갱신 포함 callable
         )
 
         print(f"[PluizAgent] 초기화 완료 | provider={settings.llm_provider} | tools={len(self.tools)}개")
@@ -250,13 +296,10 @@ class PluizAgent:
             print(f"[Router] 라우팅 오류 (무시): {route_err}")
 
         # LLM 실행
-        # 제어 명령: 고정 ctrl thread 사용 → 맥락 유지 (예: "크롬 닫아줘" → "다시 열어줄래")
-        # tool_calls 오염 발생 시에만 _clear_thread로 초기화 (아래 except 블록)
+        # 단일 thread: 정보 조회·제어 명령 모두 같은 맥락 공유
+        # trim (_build_prompt_modifier)이 최근 20개 메시지만 LLM에 전달해 컨텍스트 범람 방지
         is_ctrl = self._is_control_command(user_input)
-        if is_ctrl:
-            effective_thread = f"{thread_id}_ctrl"
-        else:
-            effective_thread = thread_id
+        effective_thread = thread_id
 
         config = {
             "configurable": {"thread_id": effective_thread},
@@ -501,7 +544,7 @@ class PluizAgent:
                 model=self.llm,
                 tools=self.tools,
                 checkpointer=self.checkpointer,
-                prompt=_build_system_prompt(),
+                prompt=_build_prompt_modifier,
             )
             return
 

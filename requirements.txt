@@ -37,3 +37,6 @@ ddgs>=7.0.0                  # fetch_web_info - LLM에게 검색 결과 텍스�
 # pycaw>=20181226          # 볼륨 정밀 제어 (없으면 키보드 시뮬레이션 fallback)
 # wmi                      # 밝기 제어 (없으면 PowerShell fallback)
 Pillow>=10.0.0            # 스크린샷 (전체/창별 캡처)
+httpx>=0.27.0             # crawl_page — 웹 페이지 본문 크롤링
+beautifulsoup4>=4.12.0    # crawl_page — HTML 파싱
+openpyxl>=3.1.0           # write_excel — 엑셀 파일 생성
