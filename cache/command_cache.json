@@ -10,7 +10,7 @@
       }
     ],
     "response_template": "✓ 메모장을 실행했습니다.",
-    "hit_count": 43,
+    "hit_count": 50,
     "is_seed": true
   },
   "메모장 켜줘": {
@@ -38,7 +38,7 @@
       }
     ],
     "response_template": "✓ 메모장을 종료했습니다.",
-    "hit_count": 5,
+    "hit_count": 6,
     "is_seed": true
   },
   "계산기 열어줘": {
@@ -52,7 +52,7 @@
       }
     ],
     "response_template": "✓ 계산기를 실행했습니다.",
-    "hit_count": 11,
+    "hit_count": 12,
     "is_seed": true
   },
   "계산기 켜줘": {
@@ -108,7 +108,7 @@
       }
     ],
     "response_template": "✓ 파일 탐색기를 열었습니다.",
-    "hit_count": 4,
+    "hit_count": 5,
     "is_seed": true
   },
   "파일 탐색기 열어줘": {
@@ -134,7 +134,7 @@
       }
     ],
     "response_template": "✓ 바탕화면을 표시했습니다.",
-    "hit_count": 4,
+    "hit_count": 5,
     "is_seed": true
   },
   "창 최대화해줘": {
@@ -212,7 +212,7 @@
       }
     ],
     "response_template": "✓ 볼륨을 높였습니다.",
-    "hit_count": 9,
+    "hit_count": 10,
     "is_seed": true
   },
   "소리 올려줘": {
@@ -260,7 +260,7 @@
       }
     ],
     "response_template": "✓ 음소거 상태를 변경했습니다.",
-    "hit_count": 8,
+    "hit_count": 10,
     "is_seed": true
   },
   "음소거 해줘": {
@@ -332,7 +332,7 @@
       }
     ],
     "response_template": "✓ 스크린샷을 저장했습니다.",
-    "hit_count": 5,
+    "hit_count": 6,
     "is_seed": true
   },
   "화면 캡처해줘": {
@@ -356,7 +356,7 @@
       }
     ],
     "response_template": "현재 시각을 확인합니다.",
-    "hit_count": 24,
+    "hit_count": 25,
     "is_seed": true
   },
   "배터리 얼마나 남았어": {
@@ -368,7 +368,7 @@
       }
     ],
     "response_template": "배터리 상태를 확인합니다.",
-    "hit_count": 4,
+    "hit_count": 5,
     "is_seed": true
   },
   "배터리 확인해줘": {
@@ -392,7 +392,7 @@
       }
     ],
     "response_template": "실행 중인 앱 목록을 확인합니다.",
-    "hit_count": 4,
+    "hit_count": 5,
     "is_seed": true
   },
   "실행 중인 앱 알려줘": {
@@ -472,7 +472,7 @@
       }
     ],
     "response_template": "최근 파일을 확인합니다.",
-    "hit_count": 4,
+    "hit_count": 5,
     "is_seed": true
   }
 }

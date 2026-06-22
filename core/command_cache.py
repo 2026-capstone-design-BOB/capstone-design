@@ -26,6 +26,32 @@ CACHE_FILE = os.path.join(_BASE_DIR, "cache", "command_cache.json")
 SIMILARITY_THRESHOLD = 0.80
 
 
+# ── 한국어 조사 선택 헬퍼 ─────────────────────────────────────────
+
+def _select_particle(word: str, jong_form: str, no_jong_form: str) -> str:
+    """마지막 글자의 받침 유무에 따라 한국어 조사를 선택한다.
+
+    한글 음절 범위(U+AC00~U+D7A3):
+      (ord(char) - 0xAC00) % 28 != 0 이면 받침 있음 → jong_form
+      0 이면 받침 없음                              → no_jong_form
+    비한글 문자(영어 등)는 no_jong_form 반환.
+
+    예:
+      _select_particle("메모장", "을", "를") → "을"  (장: 받침 ㅇ)
+      _select_particle("계산기", "을", "를") → "를"  (기: 받침 없음)
+      _select_particle("크롬",   "을", "를") → "을"  (롬: 받침 ㅁ)
+      _select_particle("엣지",   "을", "를") → "를"  (지: 받침 없음)
+      _select_particle("VS Code","을", "를") → "를"  (비한글 → 기본형)
+    """
+    if not word:
+        return no_jong_form
+    last_char = word[-1]
+    code = ord(last_char) - 0xAC00
+    if 0 <= code <= 11171:               # 한글 음절 범위
+        return jong_form if (code % 28 != 0) else no_jong_form
+    return no_jong_form                  # 영어·숫자 등 → 기본형
+
+
 # ── 데이터 구조 ───────────────────────────────────────────────────
 
 @dataclass
@@ -244,19 +270,21 @@ class CommandCache:
         for app_key, display_name in _APP_DISPLAY.items():
             # open 합성
             if (app_key, "open") not in self._intent_index:
+                eul_reul = _select_particle(display_name, "을", "를")
                 self._intent_index[(app_key, "open")] = CacheEntry(
                     pattern=f"{display_name} 열어줘",
                     tool_calls=[{"name": "open_app", "args": {"app": display_name}}],
-                    response_template=f"✓ {display_name}을(를) 실행했습니다.",
+                    response_template=f"✓ {display_name}{eul_reul} 실행했습니다.",
                     is_seed=True,
                 )
                 synthesized += 1
             # close 합성
             if (app_key, "close") not in self._intent_index:
+                eul_reul = _select_particle(display_name, "을", "를")
                 self._intent_index[(app_key, "close")] = CacheEntry(
                     pattern=f"{display_name} 꺼줘",
                     tool_calls=[{"name": "close_app", "args": {"app": display_name}}],
-                    response_template=f"✓ {display_name}을(를) 종료했습니다.",
+                    response_template=f"✓ {display_name}{eul_reul} 종료했습니다.",
                     is_seed=True,
                 )
                 synthesized += 1

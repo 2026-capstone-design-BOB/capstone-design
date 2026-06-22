@@ -116,6 +116,21 @@ PC 제어 명령입니다. 반드시 적절한 도구를 호출하여 실행해�
 
 지금 즉시 위 형식으로 도구를 호출하세요."""
 
+# ── T04: 도구 오류 감지 패턴 ─────────────────────────────────────
+# ToolMessage.content가 아래 패턴으로 시작하면 도구 실행 실패로 판단
+_TOOL_ERROR_RE = re.compile(
+    r'^\[(?:오류|error|[가-힣a-zA-Z_]+ 오류)\]'  # [오류], [type_text 오류], [Error] 등
+    r'|^오류\s*:'                                   # "오류: ..."
+    r'|^Error\s*:',                                 # "Error: ..."
+    re.IGNORECASE,
+)
+
+# LLM 응답이 "성공처럼" 보이는 패턴 — 도구 오류와 함께 감지되면 보정 대상
+# "못했어요", "하지 못했어요" 같은 부정형은 제외 (negative lookbehind)
+_SUCCESS_LIKE_RE = re.compile(
+    r'(?<!못)(?:했어요|켰어요|열었어요|닫았어요|실행했어요|설정했어요|만들었어요|저장했어요|됐어요|완료했어요|완료)[!.]?\s*$'
+)
+
 
 # ── 결정론적 라우터 패턴 ────────────────────────────────────────────
 # LLM 없이 처리 가능한 파라미터형 명령 패턴 (youtube_search, map_search, create_folder)
@@ -183,6 +198,7 @@ _CONTROL_KEYWORDS = frozenset([
     "크롬", "엣지", "메모장", "계산기", "카카오",
     "배터리", "최대화", "최소화", "바탕화면",
     "입력", "타이핑", "붙여", "복사",
+    "클립보드",
 ])
 
 
@@ -369,6 +385,12 @@ class PluizAgent:
             if not response.strip():
                 response = "명령을 실행했습니다."
 
+        # ── T04: 도구 실행 결과 검증 ─────────────────────────────────
+        # ToolMessage에 오류가 있는데 LLM이 성공처럼 응답했으면 보정
+        tool_errors = self._extract_tool_errors(result)
+        if tool_errors:
+            response = self._patch_response_on_error(response, tool_errors)
+
         # ctrl thread는 맥락 유지를 위해 보존 (오염 오류 시에만 위 except에서 초기화)
         # 재시도용 임시 thread만 정리
         if retry_thread:
@@ -390,6 +412,42 @@ class PluizAgent:
     def _has_tool_message(self, result: dict) -> bool:
         """ToolMessage가 하나라도 있는지 확인."""
         return any(isinstance(msg, ToolMessage) for msg in result["messages"])
+
+    def _extract_tool_errors(self, result: dict) -> list[str]:
+        """
+        result의 ToolMessage에서 오류 메시지 목록을 추출한다.
+        _TOOL_ERROR_RE 패턴으로 시작하는 content만 오류로 분류.
+        """
+        errors: list[str] = []
+        for msg in result.get("messages", []):
+            if not isinstance(msg, ToolMessage):
+                continue
+            content = msg.content
+            if isinstance(content, list):
+                content = " ".join(
+                    b.get("text", "") if isinstance(b, dict) else str(b)
+                    for b in content
+                ).strip()
+            content = str(content).strip()
+            if _TOOL_ERROR_RE.match(content):
+                errors.append(content)
+        return errors
+
+    def _patch_response_on_error(self, response: str, errors: list[str]) -> str:
+        """
+        도구 오류가 있는데 LLM이 성공처럼 응답했으면 오류 내용으로 교체.
+        LLM이 이미 실패를 인지한 응답이면 그대로 반환.
+        """
+        first_error = errors[0]
+        if _SUCCESS_LIKE_RE.search(response):
+            # 오류 메시지에서 접두 태그([...]) 제거하고 핵심만 추출
+            clean = re.sub(r'^\[[^\]]+\]\s*', '', first_error).strip() or first_error
+            print(f"[T04] 도구 오류 감지, LLM 응답 보정 → {clean!r}")
+            return f"실행 중 문제가 생겼어요: {clean}"
+        else:
+            # LLM이 이미 오류를 인지해 응답함 — 유지
+            print(f"[T04] 도구 오류 감지, LLM이 이미 처리 완료: {first_error!r}")
+            return response
 
     async def _route_deterministic(self, user_input: str) -> str | None:
         """

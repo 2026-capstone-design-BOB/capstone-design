@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" font-family="Segoe UI, Arial, sans-serif">
+  <rect width="900" height="420" fill="#ffffff" />
+
+  
+  <text x="450" y="36" text-anchor="middle" fill="#0277bd" font-size="17" font-weight="bold">Pluiz v2 — 핵심 개념</text>
+  <text x="450" y="58" text-anchor="middle" fill="#667" font-size="12">말하면 PC가 움직인다</text>
+
+  
+  
+  <circle cx="120" cy="145" r="28" fill="#e8f0f8" stroke="#0277bd" stroke-width="2" />
+  <text x="120" y="153" text-anchor="middle" font-size="28">🧑</text>
+  <rect x="90" y="175" width="60" height="55" rx="10" fill="#e8f0f8" stroke="#0277bd" stroke-width="2" />
+  <line x1="90" y1="230" x2="72" y2="270" stroke="#0277bd" stroke-width="2" stroke-linecap="round" />
+  <line x1="150" y1="230" x2="168" y2="270" stroke="#0277bd" stroke-width="2" stroke-linecap="round" />
+
+  
+  <rect x="109" y="183" width="22" height="30" rx="11" fill="none" stroke="#0277bd" stroke-width="2" />
+  <path d="M103 208 Q103 225 120 225 Q137 225 137 208" stroke="#0277bd" stroke-width="2" fill="none" />
+  <line x1="120" y1="225" x2="120" y2="235" stroke="#0277bd" stroke-width="2" />
+
+  
+  <text x="120" y="310" text-anchor="middle" fill="#0277bd" font-size="13">사용자</text>
+
+  
+  <rect x="160" y="100" width="170" height="44" rx="8" fill="#e8f0f8" stroke="#0277bd" stroke-width="1.5" />
+  <polygon points="160,122 148,118 160,132" fill="#e8f0f8" stroke="#0277bd" stroke-width="1.5" stroke-linejoin="round" />
+  <text x="245" y="118" text-anchor="middle" fill="#777777" font-size="12">"메모장 열어줘"</text>
+  <text x="245" y="136" text-anchor="middle" fill="#778" font-size="10">한국어 음성 / 텍스트</text>
+
+  
+  <path d="M158 185 Q165 178 158 171" stroke="#0277bd" stroke-width="1.5" fill="none" opacity="0.5" />
+  <path d="M164 189 Q175 178 164 167" stroke="#0277bd" stroke-width="1.5" fill="none" opacity="0.4" />
+  <path d="M170 193 Q185 178 170 163" stroke="#0277bd" stroke-width="1.5" fill="none" opacity="0.3" />
+
+  
+  
+  <circle cx="450" cy="200" r="72" fill="#f0f2f8" stroke="#0277bd" stroke-width="2.5" />
+  <circle cx="450" cy="200" r="60" fill="#ffffff" stroke="#253040" stroke-width="1" />
+  
+  <path d="M 450 132 A 68 68 0 0 1 518 200" stroke="#0277bd" stroke-width="1.5" fill="none" stroke-dasharray="8,5" opacity="0.4" />
+  <path d="M 450 268 A 68 68 0 0 1 382 200" stroke="#0277bd" stroke-width="1.5" fill="none" stroke-dasharray="8,5" opacity="0.4" />
+
+  <text x="450" y="193" text-anchor="middle" fill="#0277bd" font-size="22" font-weight="bold">Pluiz</text>
+  <text x="450" y="213" text-anchor="middle" fill="#667" font-size="10">AI Agent</text>
+  
+  <text x="450" y="233" text-anchor="middle" fill="#334455" font-size="8.5">Security → Cache → LLM</text>
+
+  
+  <line x1="338" y1="200" x2="374" y2="200" stroke="#0277bd" stroke-width="2" marker-end="url(#arr-b)" />
+  <text x="356" y="193" text-anchor="middle" fill="#445" font-size="9">음성/텍스트</text>
+
+  
+  <line x1="526" y1="200" x2="562" y2="200" stroke="#66bb6a" stroke-width="2" marker-end="url(#arr-g)" />
+  <text x="544" y="193" text-anchor="middle" fill="#445" font-size="9">도구 실행</text>
+
+  
+  
+  <rect x="570" y="110" width="240" height="160" rx="10" fill="#f0f2f8" stroke="#66bb6a" stroke-width="2" />
+  <rect x="582" y="122" width="216" height="126" rx="6" fill="#ffffff" />
+  
+  <rect x="674" y="270" width="12" height="25" fill="#f0f2f8" />
+  <rect x="650" y="293" width="60" height="8" rx="3" fill="#f0f2f8" stroke="#66bb6a" stroke-width="1" />
+
+  
+  
+  <rect x="592" y="132" width="62" height="50" rx="4" fill="#e8f0f8" stroke="#0277bd" stroke-width="1" />
+  <rect x="592" y="132" width="62" height="14" rx="4" fill="#dce8f5" />
+  <text x="623" y="143" text-anchor="middle" fill="#666666" font-size="8">메모장</text>
+  <line x1="598" y1="154" x2="648" y2="154" stroke="#334" stroke-width="1" />
+  <line x1="598" y1="161" x2="648" y2="161" stroke="#334" stroke-width="1" />
+  <line x1="598" y1="168" x2="635" y2="168" stroke="#334" stroke-width="1" />
+
+  
+  <rect x="662" y="132" width="62" height="50" rx="4" fill="#e8f0f8" stroke="#66bb6a" stroke-width="1" />
+  <rect x="662" y="132" width="62" height="14" rx="4" fill="#e8f5ec" />
+  <text x="693" y="143" text-anchor="middle" fill="#666666" font-size="8">볼륨</text>
+  <text x="693" y="167" text-anchor="middle" fill="#2d6a30" font-size="18">🔊</text>
+  <rect x="670" y="174" width="46" height="5" rx="2" fill="#e8f5ec" />
+  <rect x="670" y="174" width="34" height="5" rx="2" fill="#66bb6a" />
+
+  
+  <rect x="732" y="132" width="62" height="50" rx="4" fill="#e8f0f8" stroke="#ff7043" stroke-width="1" />
+  <rect x="732" y="132" width="62" height="14" rx="4" fill="#f5ece8" />
+  <text x="763" y="143" text-anchor="middle" fill="#666666" font-size="8">YouTube</text>
+  <rect x="742" y="152" width="42" height="24" rx="3" fill="#ff0000" opacity="0.8" />
+  <polygon points="754,158 754,170 767,164" fill="white" />
+
+  
+  <rect x="592" y="190" width="62" height="50" rx="4" fill="#e8f0f8" stroke="#b45309" stroke-width="1" />
+  <rect x="592" y="190" width="62" height="14" rx="4" fill="#fefcee" />
+  <text x="623" y="201" text-anchor="middle" fill="#666666" font-size="8">파일 탐색기</text>
+  <text x="623" y="228" text-anchor="middle" fill="#b45309" font-size="18">📁</text>
+
+  
+  <rect x="662" y="190" width="62" height="50" rx="4" fill="#e8f0f8" stroke="#9c27b0" stroke-width="1" />
+  <rect x="662" y="190" width="62" height="14" rx="4" fill="#f2ecf8" />
+  <text x="693" y="201" text-anchor="middle" fill="#666666" font-size="8">스크린샷</text>
+  <text x="693" y="228" text-anchor="middle" fill="#7b1fa2" font-size="18">📷</text>
+
+  
+  <rect x="732" y="190" width="62" height="50" rx="4" fill="#e8f0f8" stroke="#4caf50" stroke-width="1" />
+  <rect x="732" y="190" width="62" height="14" rx="4" fill="#eef7ee" />
+  <text x="763" y="201" text-anchor="middle" fill="#666666" font-size="8">지도</text>
+  <text x="763" y="228" text-anchor="middle" fill="#2d6a30" font-size="18">🗺️</text>
+
+  <text x="690" y="335" text-anchor="middle" fill="#2d6a30" font-size="13">Windows PC</text>
+
+  
+  
+  <path d="M 450 275 Q 450 370 120 370 Q 120 330 120 300" stroke="#666666" stroke-width="1.5" fill="none" stroke-dasharray="6,4" marker-end="url(#arr-gray)" />
+  <rect x="260" y="358" width="180" height="26" rx="5" fill="#f0f2f8" stroke="#555" stroke-width="1" />
+  <text x="350" y="375" text-anchor="middle" fill="#666666" font-size="11">🔊 "메모장을 열었습니다"</text>
+  <text x="350" y="395" text-anchor="middle" fill="#445" font-size="9">TTS 음성 응답 (edge-tts)</text>
+
+  
+  <text x="450" y="390" text-anchor="middle" fill="#334" font-size="9">도구 27종 · 한국어 특화 · 오프라인 핵심 동작 · always-on-top 오버레이</text>
+
+  
+  <defs>
+    <marker id="arr-b" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#4fc3f7" />
+    </marker>
+    <marker id="arr-g" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#66bb6a" />
+    </marker>
+    <marker id="arr-gray" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#9e9e9e" />
+    </marker>
+  </defs>
+</svg>

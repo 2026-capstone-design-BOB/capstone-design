@@ -49,6 +49,7 @@ def get_all_tools() -> List[BaseTool]:
     from tools.input_control import (
         type_text,
         press_key,
+        get_clipboard_text,
     )
     from tools.calendar import (
         create_calendar_event,
@@ -86,9 +87,10 @@ def get_all_tools() -> List[BaseTool]:
         get_battery_status,
         get_current_time,
         get_running_apps,
-        # 키보드 입력
+        # 키보드/클립보드 입력
         type_text,
         press_key,
+        get_clipboard_text,
         # 캘린더
         create_calendar_event,
     ]

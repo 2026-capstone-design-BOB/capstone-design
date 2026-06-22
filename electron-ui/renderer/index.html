@@ -851,6 +851,258 @@
     .card.active .active-view {
       display: flex;
     }
+
+    /* ── HISTORY VIEW ───────────────────────────────────────── */
+    .history-view {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 8px 10px;
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+      -webkit-app-region: no-drag;
+    }
+
+    .history-view.show {
+      display: flex;
+    }
+
+    .history-view::-webkit-scrollbar { width: 3px; }
+    .history-view::-webkit-scrollbar-thumb { background: var(--surf); border-radius: 3px; }
+
+    .hist-hdr {
+      font-size: 11px;
+      color: var(--muted);
+      padding: 2px 0 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .hist-hdr span { font-weight: 600; }
+
+    .hist-clear-btn {
+      font-size: 11px;
+      color: var(--danger);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 5px;
+      -webkit-app-region: no-drag;
+    }
+    .hist-clear-btn:hover { background: rgba(248,113,113,.15); }
+
+    .hist-empty {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 12px;
+      opacity: 0.7;
+    }
+
+    .hist-item {
+      background: var(--surf);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      cursor: pointer;
+      transition: border-color .15s;
+      -webkit-app-region: no-drag;
+      flex-shrink: 0;
+    }
+
+    .hist-item:hover { border-color: var(--accent); }
+
+    .hist-user {
+      font-size: 12px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hist-agent {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hist-time {
+      font-size: 10px;
+      color: var(--muted);
+      opacity: 0.6;
+      margin-top: 4px;
+    }
+
+    /* 히스토리 버튼 활성 상태 */
+    .hbtn.hist-active {
+      color: var(--accent);
+    }
+
+
+    /* ── FAVORITES VIEW ─────────────────────────────────────── */
+    .fav-view {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 8px 10px;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      -webkit-app-region: no-drag;
+    }
+
+    .fav-view.show { display: flex; }
+    .fav-view::-webkit-scrollbar { width: 3px; }
+    .fav-view::-webkit-scrollbar-thumb { background: var(--surf); border-radius: 3px; }
+
+    .fav-hdr {
+      font-size: 11px;
+      color: var(--muted);
+      padding: 2px 0 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .fav-hdr span { font-weight: 600; }
+
+    .fav-add-btn {
+      font-size: 11px;
+      color: var(--accent);
+      background: none;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      padding: 3px 8px;
+      border-radius: 6px;
+      -webkit-app-region: no-drag;
+    }
+    .fav-add-btn:hover { border-color: var(--accent); }
+
+    .fav-empty {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 12px;
+      opacity: 0.7;
+      text-align: center;
+    }
+
+    .fav-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surf);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 7px 10px;
+      cursor: pointer;
+      transition: border-color .15s;
+      -webkit-app-region: no-drag;
+      flex-shrink: 0;
+    }
+    .fav-item:hover { border-color: var(--accent); }
+
+    .fav-info { flex: 1; overflow: hidden; }
+
+    .fav-label {
+      font-size: 12px;
+      color: var(--text);
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .fav-cmd {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .fav-del-btn {
+      width: 20px;
+      height: 20px;
+      border: none;
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      -webkit-app-region: no-drag;
+    }
+    .fav-del-btn:hover { color: var(--danger); background: rgba(248,113,113,.1); }
+
+    .fav-add-form {
+      background: var(--surf);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .fav-add-form.show { display: flex; }
+
+    .fav-input {
+      background: rgba(14,14,22,.9);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 5px 8px;
+      color: var(--text);
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+    }
+    .fav-input:focus { border-color: var(--accent); }
+
+    .fav-form-row {
+      display: flex;
+      gap: 5px;
+    }
+
+    .fav-save-btn {
+      flex: 1;
+      padding: 5px;
+      background: var(--accent);
+      border: none;
+      border-radius: 7px;
+      color: #fff;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .fav-save-btn:hover { background: #5b51d8; }
+
+    .fav-cancel-btn {
+      padding: 5px 10px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .hbtn.fav-active { color: var(--warn); }
+
   </style>
 </head>
 
@@ -916,6 +1168,10 @@
           Pluiz
           <span class="sdot spin" id="sdot2"></span>
         </div>
+        <button class="hbtn" id="fav-btn" onclick="event.stopPropagation(); toggleFavorites()" ondblclick="event.stopPropagation()"
+          title="즐겨찾기">⭐</button>
+        <button class="hbtn" id="hist-btn" onclick="event.stopPropagation(); toggleHistory()" ondblclick="event.stopPropagation()"
+          title="히스토리">📋</button>
         <button class="hbtn" onclick="event.stopPropagation(); showSettings()" ondblclick="event.stopPropagation()"
           title="설정">⚙️</button>
         <button class="hbtn close" onclick="event.stopPropagation(); window.pluiz.quit()"
@@ -956,6 +1212,32 @@
         </div>
       </div>
 
+      <!-- ── HISTORY VIEW ──────────────────────────────────── -->
+      <div class="history-view" id="history-view">
+        <div class="hist-hdr">
+          <span>📋 최근 대화 기록</span>
+          <button class="hist-clear-btn" onclick="clearHistory()">전체 삭제</button>
+        </div>
+        <div id="hist-list"></div>
+      </div>
+
+      <!-- ── FAVORITES VIEW ──────────────────────────────────── -->
+      <div class="fav-view" id="fav-view">
+        <div class="fav-hdr">
+          <span>⭐ 즐겨찾기</span>
+          <button class="fav-add-btn" onclick="showFavAddForm()">+ 추가</button>
+        </div>
+        <div class="fav-add-form" id="fav-add-form">
+          <input class="fav-input" id="fav-label-in" placeholder="이름 (예: 크롬 열기)" />
+          <input class="fav-input" id="fav-cmd-in" placeholder="명령 (예: 크롬 열어줘)" />
+          <div class="fav-form-row">
+            <button class="fav-save-btn" onclick="saveFavorite()">저장</button>
+            <button class="fav-cancel-btn" onclick="hideFavAddForm()">취소</button>
+          </div>
+        </div>
+        <div id="fav-list"></div>
+      </div>
+
       <div class="input-row">
         <textarea id="txt" placeholder="텍스트로 입력..." rows="1" onkeydown="onKey(event)"
           oninput="resizeTxt(this)"></textarea>
@@ -988,6 +1270,191 @@
     const REC_SEC = 8;
     const CIRCUM = 2 * Math.PI * 19;
     let cdInterval = null, cdRemain = REC_SEC;
+
+
+
+    // ── 즐겨찾기 ──────────────────────────────────────────────────
+    let favOpen = false;
+
+    function toggleFavorites() {
+      favOpen ? hideFavorites() : showFavorites();
+    }
+
+    async function showFavorites() {
+      // 히스토리가 열려있으면 닫기
+      if (historyOpen) hideHistory();
+      favOpen = true;
+      document.getElementById('fav-btn').classList.add('fav-active');
+      document.getElementById('fav-view').classList.add('show');
+      document.getElementById('chat').style.display = 'none';
+      document.getElementById('typing').style.display = 'none';
+      document.querySelector('.input-row').style.display = 'none';
+      await loadFavorites();
+    }
+
+    function hideFavorites() {
+      favOpen = false;
+      document.getElementById('fav-btn').classList.remove('fav-active');
+      document.getElementById('fav-view').classList.remove('show');
+      document.getElementById('chat').style.display = '';
+      document.getElementById('typing').style.display = '';
+      document.querySelector('.input-row').style.display = '';
+      hideFavAddForm();
+    }
+
+    async function loadFavorites() {
+      const listEl = document.getElementById('fav-list');
+      listEl.innerHTML = '';
+      try {
+        const res = await fetch(`${API}/favorites`);
+        const data = await res.json();
+        const favs = data.favorites || [];
+        if (favs.length === 0) {
+          listEl.innerHTML = '<div class="fav-empty">즐겨찾기가 없어요.<br>자주 쓰는 명령을 추가해보세요!</div>';
+          return;
+        }
+        favs.forEach((fav, idx) => {
+          const el = document.createElement('div');
+          el.className = 'fav-item';
+          el.innerHTML =
+            `<div class="fav-info">` +
+            `<div class="fav-label">${esc(fav.label)}</div>` +
+            `<div class="fav-cmd">${esc(fav.command)}</div>` +
+            `</div>` +
+            `<button class="fav-del-btn" onclick="event.stopPropagation(); deleteFavorite(${idx})" title="삭제">✕</button>`;
+          el.onclick = () => runFavorite(fav.command);
+          listEl.appendChild(el);
+        });
+      } catch (e) {
+        listEl.innerHTML = '<div class="fav-empty">즐겨찾기를 불러오지 못했어요.</div>';
+      }
+    }
+
+    function showFavAddForm() {
+      document.getElementById('fav-add-form').classList.add('show');
+      document.getElementById('fav-label-in').focus();
+    }
+
+    function hideFavAddForm() {
+      document.getElementById('fav-add-form').classList.remove('show');
+      document.getElementById('fav-label-in').value = '';
+      document.getElementById('fav-cmd-in').value = '';
+    }
+
+    async function saveFavorite() {
+      const label = document.getElementById('fav-label-in').value.trim();
+      const command = document.getElementById('fav-cmd-in').value.trim();
+      if (!label || !command) return;
+      try {
+        const res = await fetch(`${API}/favorites`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label, command }),
+        });
+        const data = await res.json();
+        if (data.status === 'ok' || data.status === 'exists') {
+          hideFavAddForm();
+          await loadFavorites();
+        }
+      } catch (e) {
+        console.error('[saveFavorite]', e);
+      }
+    }
+
+    async function deleteFavorite(idx) {
+      try {
+        await fetch(`${API}/favorites/${idx}`, { method: 'DELETE' });
+        await loadFavorites();
+      } catch (e) {
+        console.error('[deleteFavorite]', e);
+      }
+    }
+
+    function runFavorite(command) {
+      hideFavorites();
+      const el = document.getElementById('txt');
+      el.value = command;
+      resizeTxt(el);
+      sendText();
+    }
+
+    // ── 히스토리 ──────────────────────────────────────────────────
+    let historyOpen = false;
+
+    function toggleHistory() {
+      historyOpen ? hideHistory() : showHistory();
+    }
+
+    async function showHistory() {
+      if (favOpen) hideFavorites();
+      historyOpen = true;
+      document.getElementById('hist-btn').classList.add('hist-active');
+      document.getElementById('history-view').classList.add('show');
+      document.getElementById('chat').style.display = 'none';
+      document.getElementById('typing').style.display = 'none';
+      // input-row도 숨기기
+      document.querySelector('.input-row').style.display = 'none';
+      await loadHistory();
+    }
+
+    function hideHistory() {
+      historyOpen = false;
+      document.getElementById('hist-btn').classList.remove('hist-active');
+      document.getElementById('history-view').classList.remove('show');
+      document.getElementById('chat').style.display = '';
+      document.getElementById('typing').style.display = '';
+      document.querySelector('.input-row').style.display = '';
+    }
+
+    async function loadHistory() {
+      const listEl = document.getElementById('hist-list');
+      listEl.innerHTML = '<div class="hist-empty">불러오는 중...</div>';
+      try {
+        const res = await fetch(`${API}/history?n=30`);
+        const data = await res.json();
+        const items = data.history || [];
+        if (items.length === 0) {
+          listEl.innerHTML = '<div class="hist-empty">대화 기록이 없어요.</div>';
+          return;
+        }
+        listEl.innerHTML = '';
+        // 최신순 (reversed)
+        for (let i = items.length - 1; i >= 0; i--) {
+          const item = items[i];
+          const el = document.createElement('div');
+          el.className = 'hist-item';
+          const t = item.time ? item.time.replace('T', ' ').slice(0, 16) : '';
+          el.innerHTML =
+            `<div class="hist-user">👤 ${esc(item.user)}</div>` +
+            `<div class="hist-agent">🤖 ${esc(item.agent)}</div>` +
+            (t ? `<div class="hist-time">${t}</div>` : '');
+          el.onclick = () => rerunFromHistory(item.user);
+          listEl.appendChild(el);
+        }
+      } catch (e) {
+        listEl.innerHTML = '<div class="hist-empty">기록을 불러오지 못했어요.</div>';
+      }
+    }
+
+    async function clearHistory() {
+      if (!confirm('대화 기록을 전부 삭제할까요?')) return;
+      try {
+        await fetch(`${API}/history`, { method: 'DELETE' });
+        document.getElementById('hist-list').innerHTML =
+          '<div class="hist-empty">대화 기록이 없어요.</div>';
+      } catch (e) {
+        console.error('[clearHistory]', e);
+      }
+    }
+
+    function rerunFromHistory(text) {
+      hideHistory();
+      const el = document.getElementById('txt');
+      el.value = text;
+      resizeTxt(el);
+      el.focus();
+      // 자동 전송 (선택적 — 일단 입력창에 채워주는 방식)
+    }
 
     // ── WebSocket ──────────────────────────────────────────────────
     function connect() {
@@ -1151,6 +1618,8 @@
     function deactivate() {
       stopCd();
       if (isRec) stopMic(false);
+      if (historyOpen) hideHistory();
+      if (favOpen) hideFavorites();
       isActive = false; busy = false; streamEl = null;
       document.getElementById('card').classList.remove('active');
       document.getElementById('settings-overlay').classList.remove('show');

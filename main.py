@@ -207,6 +207,64 @@ async def clear_history():
     return {"status": "cleared"}
 
 
+
+# ── 즐겨찾기 (커스텀 명령) ─────────────────────────────────────────
+
+import json as _json_module
+
+_FAV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "favorites.json")
+
+
+def _load_favorites() -> list[dict]:
+    if not os.path.exists(_FAV_PATH):
+        return []
+    try:
+        with open(_FAV_PATH, encoding="utf-8") as f:
+            return _json_module.load(f)
+    except Exception:
+        return []
+
+
+def _save_favorites(favs: list[dict]):
+    os.makedirs(os.path.dirname(_FAV_PATH), exist_ok=True)
+    with open(_FAV_PATH, "w", encoding="utf-8") as f:
+        _json_module.dump(favs, f, ensure_ascii=False, indent=2)
+
+
+class FavoriteRequest(BaseModel):
+    label: str    # 표시 이름
+    command: str  # 실행할 명령
+
+
+@app.get("/favorites")
+async def get_favorites():
+    """즐겨찾기 목록 반환."""
+    return {"favorites": _load_favorites()}
+
+
+@app.post("/favorites")
+async def add_favorite(req: FavoriteRequest):
+    """즐겨찾기 추가."""
+    favs = _load_favorites()
+    # 같은 command 중복 방지
+    if any(f["command"] == req.command for f in favs):
+        return {"status": "exists"}
+    favs.append({"label": req.label, "command": req.command})
+    _save_favorites(favs)
+    return {"status": "ok", "count": len(favs)}
+
+
+@app.delete("/favorites/{index}")
+async def delete_favorite(index: int):
+    """인덱스로 즐겨찾기 삭제."""
+    favs = _load_favorites()
+    if 0 <= index < len(favs):
+        removed = favs.pop(index)
+        _save_favorites(favs)
+        return {"status": "ok", "removed": removed}
+    return {"status": "not_found"}
+
+
 # ── WebSocket (실시간 스트리밍) ───────────────────────────────────
 
 @app.websocket("/ws")

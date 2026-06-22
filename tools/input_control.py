@@ -120,6 +120,27 @@ def type_text(text: str) -> str:
 
 
 @tool
+def get_clipboard_text() -> str:
+    """
+    현재 클립보드에 복사된 텍스트를 읽어 반환한다.
+    '클립보드에 뭐 있어?', '복사한 내용 알려줘', '클립보드 내용 보여줘' 같은 요청에 사용.
+    최대 200자까지 미리보기로 반환하고, 초과 시 길이도 함께 알려줌.
+    """
+    try:
+        pyperclip = _get_pyperclip()
+        content = pyperclip.paste()
+        if not content or not content.strip():
+            return "클립보드가 비어있거나 텍스트가 없어요."
+        preview = content[:200]
+        suffix = f"... (총 {len(content)}자)" if len(content) > 200 else ""
+        return f"📋 클립보드 내용:\n{preview}{suffix}"
+    except ImportError as e:
+        return f"[오류] {e}"
+    except Exception as e:
+        return f"[get_clipboard_text 오류] {type(e).__name__}: {e}"
+
+
+@tool
 def press_key(key: str) -> str:
     """
     키보드 키 입력. 단일 키 또는 단축키 지원.
