@@ -33,6 +33,8 @@ def get_all_tools() -> List[BaseTool]:
         open_recent_file,
         open_file,
         write_excel,
+        delete_file,
+        delete_folder,
     )
     from tools.system import (
         volume_up,
@@ -55,7 +57,7 @@ def get_all_tools() -> List[BaseTool]:
         create_calendar_event,
     )
 
-    return [
+    tools = [
         # 앱 제어
         open_app,
         close_app,
@@ -94,3 +96,11 @@ def get_all_tools() -> List[BaseTool]:
         # 캘린더
         create_calendar_event,
     ]
+
+    # 파일 삭제(위험 동작): HITL 승인이 있는 그래프 엔진에서만 노출한다.
+    # → 구 엔진(USE_GRAPH=false)에서는 삭제 도구 자체가 없어 "확인 없는 삭제"가 불가능.
+    from config.settings import get_settings
+    if getattr(get_settings(), "use_graph", False):
+        tools += [delete_file, delete_folder]
+
+    return tools

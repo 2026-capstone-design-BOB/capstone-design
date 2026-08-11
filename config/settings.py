@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # 에이전트
     agent_max_iterations: int = 10   # 무한루프 방지
     agent_timeout: int = 30          # 초
+    use_graph: bool = True           # 그래프 코어(PluizGraphAgent) 기본 사용. False=구 엔진 폴백 (P1.5/P2)
 
     # STT
     whisper_model: str = "base"      # tiny / base / small / medium

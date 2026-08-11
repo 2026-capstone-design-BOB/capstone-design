@@ -6,6 +6,7 @@ LangGraph 기반 ReAct 에이전트.
 """
 
 import re
+import asyncio
 from typing import AsyncGenerator
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, AIMessageChunk, ToolMessage
 from langgraph.prebuilt import create_react_agent
@@ -298,6 +299,8 @@ class PluizAgent:
                     result_text = await cache.execute(entry)
                     cache.increment_hit(entry.pattern)
                     self.session_memory.save(user_input, result_text)
+                    # 맥락 통합: 캐시로 처리한 명령도 LangGraph 기억에 남긴다
+                    self._record_fast_path(thread_id, user_input, result_text)
                     return result_text
             except Exception as cache_err:
                 print(f"[CommandCache] 캐시 확인 오류 (무시): {cache_err}")
@@ -307,6 +310,8 @@ class PluizAgent:
             route_result = await self._route_deterministic(user_input)
             if route_result is not None:
                 self.session_memory.save(user_input, route_result)
+                # 맥락 통합: 라우터로 처리한 명령도 LangGraph 기억에 남긴다
+                self._record_fast_path(thread_id, user_input, route_result)
                 return route_result
         except Exception as route_err:
             print(f"[Router] 라우팅 오류 (무시): {route_err}")
@@ -325,7 +330,12 @@ class PluizAgent:
 
         retry_thread: str | None = None
         try:
-            result = await self.graph.ainvoke({"messages": messages}, config=config)
+            result = await self._ainvoke_with_timeout({"messages": messages}, config)
+        except (asyncio.TimeoutError, TimeoutError):
+            # BL-01: 처리 시간 초과 → 무한 대기 대신 친절 메시지
+            print(f"[PluizAgent] 처리 시간 초과({getattr(self.settings, 'agent_timeout', 30)}초) → thread '{effective_thread}' 초기화")
+            self._clear_thread(effective_thread)
+            return "처리가 너무 오래 걸려서 중단했어요. 조금 더 간단하게 말씀해 주시겠어요?"
         except Exception as e:
             err_msg = str(e)
             if "tool_calls that do not have a corresponding ToolMessage" in err_msg:
@@ -333,7 +343,11 @@ class PluizAgent:
                 self._clear_thread(effective_thread)
                 # BUG-03: 재시도 ainvoke도 try/except로 보호
                 try:
-                    result = await self.graph.ainvoke({"messages": messages}, config=config)
+                    result = await self._ainvoke_with_timeout({"messages": messages}, config)
+                except (asyncio.TimeoutError, TimeoutError):
+                    print(f"[PluizAgent] 재시도 처리 시간 초과 → thread '{effective_thread}' 초기화")
+                    self._clear_thread(effective_thread)
+                    return "처리가 너무 오래 걸려서 중단했어요. 조금 더 간단하게 말씀해 주시겠어요?"
                 except Exception as retry_err:
                     print(f"[PluizAgent] 히스토리 오염 재시도도 실패: {type(retry_err).__name__}: {retry_err}")
                     self._clear_thread(effective_thread)
@@ -363,8 +377,10 @@ class PluizAgent:
             }
             # BUG-03: 재시도 ainvoke도 try/except로 보호
             try:
-                result = await self.graph.ainvoke({"messages": retry_messages}, config=retry_config)
+                result = await self._ainvoke_with_timeout({"messages": retry_messages}, retry_config)
                 response = self._extract_response(result)
+            except (asyncio.TimeoutError, TimeoutError):
+                print(f"[PluizAgent] 도구 미호출 재시도 시간 초과 (무시, 기존 응답 유지)")
             except Exception as e:
                 print(f"[PluizAgent] 재시도 실패: {type(e).__name__}: {e}")
 
@@ -611,6 +627,37 @@ class PluizAgent:
             del storage[k]
         print(f"[PluizAgent] thread '{thread_id}' 초기화 완료 ({len(keys_to_delete)}개 항목)")
 
+    async def _ainvoke_with_timeout(self, payload: dict, config: dict):
+        """graph.ainvoke를 agent_timeout(초)으로 감싼다.
+
+        BL-01: 복잡한 명령에서 LLM 호출이 지연/정지 시 UI가 무한 "처리중"이 되는 문제 방지.
+        초과 시 asyncio.TimeoutError를 발생시켜 호출부에서 친절 메시지로 처리한다.
+        """
+        timeout = getattr(self.settings, "agent_timeout", 30) or 30
+        return await asyncio.wait_for(
+            self.graph.ainvoke(payload, config=config), timeout=timeout
+        )
+
+    def _record_fast_path(self, thread_id: str, user_input: str, result_text: str) -> None:
+        """빠른 경로(캐시/라우터)로 처리한 명령을 LangGraph 대화 기억에 남긴다.
+
+        캐시/라우터는 LLM(graph)을 거치지 않고 즉시 실행하므로, 그대로 두면 해당 명령이
+        MemorySaver 히스토리에 누락된다. 그 결과 다음 턴의 맥락 참조("그거 닫아줘")가
+        기억할 대상이 없어 실패한다. update_state로 (사용자 발화, 실행 결과)를 같은
+        thread_id 히스토리에 append 하여 후속 LLM 턴이 맥락을 참조할 수 있게 한다.
+        """
+        try:
+            config = {"configurable": {"thread_id": thread_id}}
+            self.graph.update_state(
+                config,
+                {"messages": [
+                    HumanMessage(content=user_input),
+                    AIMessage(content=result_text),
+                ]},
+            )
+        except Exception as e:
+            print(f"[PluizAgent] 맥락 기억 저장 실패(무시): {type(e).__name__}: {e}")
+
     async def stream(self, user_input: str, thread_id: str = "default") -> AsyncGenerator[str, None]:
         """
         스트리밍 실행. 토큰 단위로 응답을 yield.
@@ -641,6 +688,8 @@ class PluizAgent:
                     result_text = await cache.execute(entry)
                     cache.increment_hit(entry.pattern)
                     self.session_memory.save(user_input, result_text)
+                    # 맥락 통합: 캐시로 처리한 명령도 LangGraph 기억에 남긴다
+                    self._record_fast_path(thread_id, user_input, result_text)
                     yield result_text
                     return
                 cache_miss = True

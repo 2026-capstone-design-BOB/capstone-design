@@ -358,6 +358,23 @@ class CommandCache:
 
         return "\n".join(results) if results else entry.response_template
 
+    def execute_sync(self, entry: "CacheEntry") -> str:
+        """캐시 엔트리를 동기로 직접 실행 (그래프 sync 경로용, P2).
+        도구가 원래 동기 함수라 .invoke로 호출한다."""
+        tools_map = self._get_tools_map()
+        results: list[str] = []
+        for call in entry.tool_calls:
+            name = call.get("name", "")
+            args = call.get("args", {})
+            if name not in tools_map:
+                continue
+            try:
+                results.append(str(tools_map[name].invoke(args)))
+            except Exception as e:
+                print(f"[CommandCache] 동기 실행 오류 ({name}): {e}")
+                results.append(entry.response_template)
+        return "\n".join(results) if results else entry.response_template
+
     # ── 캐싱 ──────────────────────────────────────────────────────
 
     def save(self, user_input: str, tool_calls: list, response: str):

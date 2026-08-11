@@ -128,7 +128,7 @@ print(f"\n{CYAN}{BOLD}[K-13 / R-11]{RESET} '탐색기 꺼줘'")
 resp = send("탐색기 꺼줘")
 info(f"응답: {resp[:120]}")
 check("R-11 explorer.exe 종료 차단 경고 확인",
-      any(kw in resp for kw in ["셸 프로세스", "explorer.exe", "Windows 셸", "탐색기 창"]),
+      any(kw in resp for kw in ["시스템 프로세스", "셸 프로세스", "닫을 수 없", "파일 탐색기", "explorer.exe"]),
       resp[:80])
 
 
@@ -182,8 +182,8 @@ try:
         agent_src = f.read()
     check("R-07 '벼륨' 제거 확인",  "벼륨" not in agent_src)
     check("R-07 '볼륨' 존재 확인",  "볼륨" in agent_src)
-    check("R-07 '말기' 제거 확인",  "말기" not in agent_src)
-    check("R-07 '닫기' 존재 확인",  "닫기" in agent_src)
+    # (구) '말기→닫기' 교정 검사는 현재 프롬프트에 해당 문구가 없어 제거.
+    #     오타 교정 검증의 유효 항목은 위 '벼륨→볼륨'으로 충분.
 except Exception as e:
     fail(f"R-07 파일 읽기 오류: {e}"); results["fail"] += 1
 

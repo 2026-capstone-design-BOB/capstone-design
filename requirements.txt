@@ -29,6 +29,7 @@ aiofiles>=23.0.0
 # ── 키보드/마우스 입력 제어 ──────────────────────────────────────
 pyautogui>=0.9.54
 pyperclip>=1.8.2
+send2trash>=1.8.0          # delete_file/delete_folder — 안전한 휴지통 이동
 
 # ── 웹 정보 조회 ──────────────────────────────────────────────────
 ddgs>=7.0.0                  # fetch_web_info - LLM에게 검색 결과 텍스트 전달 (구버전: duckduckgo-search)

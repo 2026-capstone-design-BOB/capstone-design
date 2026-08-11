@@ -4,6 +4,7 @@
 """
 
 import os
+import re
 import glob
 import subprocess
 from datetime import datetime
@@ -263,3 +264,84 @@ def write_excel(filename: str, headers: str, rows: str, location: str = "desktop
 
     except Exception as e:
         return f"✗ 엑셀 파일 생성 실패: {e}"
+
+
+# ── 위험 동작: 삭제 (HITL 승인 대상) ──────────────────────────────
+# 이 도구들은 절대 캐시/라우터로 처리하지 않고, 그래프 hitl 노드에서
+# 사용자 승인을 받은 뒤에만 실행된다 (P2).
+
+_PROTECTED_SUBSTR = ("\\windows", "/windows", "system32", "syswow64",
+                     "\\program files", "/program files")
+
+
+_DRIVE_ROOT_RE = re.compile(r'^[a-zA-Z]:[\\/]?$')   # C:  C:\  C:/
+
+
+def _is_protected_path(path: str) -> bool:
+    """시스템/보호 경로 또는 드라이브 루트면 True (삭제 금지)."""
+    raw = (path or "").strip()
+    if _DRIVE_ROOT_RE.match(raw):       # 드라이브 루트 (플랫폼 무관)
+        return True
+    p = os.path.abspath(path)
+    drive, tail = os.path.splitdrive(p)
+    if tail in ("", "\\", "/"):         # 드라이브 루트(Windows)
+        return True
+    low = p.lower()
+    return any(s in low for s in _PROTECTED_SUBSTR)
+
+
+def _to_trash(path: str) -> str:
+    """가능하면 휴지통으로 이동, 실패 시 영구 삭제. 방식('trash'|'permanent') 반환."""
+    try:
+        from send2trash import send2trash as _s2t
+        _s2t(path)
+        return "trash"
+    except Exception:
+        if os.path.isdir(path):
+            import shutil
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
+        return "permanent"
+
+
+@tool
+def delete_file(file_path: str) -> str:
+    """파일을 삭제합니다(가능하면 휴지통으로 이동). 되돌리기 어려운 위험 동작이라
+    반드시 사용자 승인을 받은 뒤 실행됩니다.
+    file_path: 파일 경로 또는 상대경로(바탕화면/문서/다운로드).
+    """
+    resolved = _resolve_location_in_path(file_path)
+    if not os.path.exists(resolved):
+        return f"✗ 파일을 찾을 수 없습니다: {resolved}"
+    if os.path.isdir(resolved):
+        return f"✗ '{os.path.basename(resolved)}'은(는) 폴더예요. 폴더는 delete_folder를 쓰세요."
+    if _is_protected_path(resolved):
+        return "✗ 시스템/보호 경로의 파일은 삭제할 수 없어요."
+    try:
+        how = _to_trash(resolved)
+        where = "휴지통으로 옮겼어요" if how == "trash" else "삭제했어요"
+        return f"✓ '{os.path.basename(resolved)}' {where}."
+    except Exception as e:
+        return f"✗ 삭제 실패: {e}"
+
+
+@tool
+def delete_folder(folder_path: str) -> str:
+    """폴더를 삭제합니다(가능하면 휴지통으로 이동). 되돌리기 어려운 위험 동작이라
+    반드시 사용자 승인을 받은 뒤 실행됩니다.
+    folder_path: 폴더 경로 또는 상대경로(바탕화면/문서/다운로드).
+    """
+    resolved = _resolve_location_in_path(folder_path)
+    if not os.path.exists(resolved):
+        return f"✗ 폴더를 찾을 수 없습니다: {resolved}"
+    if not os.path.isdir(resolved):
+        return f"✗ '{os.path.basename(resolved)}'은(는) 파일이에요. delete_file을 쓰세요."
+    if _is_protected_path(resolved):
+        return "✗ 시스템/보호 경로의 폴더는 삭제할 수 없어요."
+    try:
+        how = _to_trash(resolved)
+        where = "휴지통으로 옮겼어요" if how == "trash" else "삭제했어요"
+        return f"✓ '{os.path.basename(resolved)}' 폴더를 {where}."
+    except Exception as e:
+        return f"✗ 삭제 실패: {e}"
