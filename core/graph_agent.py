@@ -142,6 +142,17 @@ class PluizGraphAgent:
         if self._pending_interrupt(config):
             payload = Command(resume=user_input)
         else:
+            # 하이브리드 가드(P3-4): 규칙 통과했지만 의심스러운 신규 입력만 LLM 판정.
+            # 스레드+타임아웃, 실패 시 skip(규칙 결과만 사용).
+            try:
+                from core.guardrails import hybrid_guard_check
+                blocked, reason = await asyncio.wait_for(
+                    asyncio.to_thread(hybrid_guard_check, user_input, self.llm),
+                    timeout=8)
+                if blocked:
+                    return reason
+            except Exception as e:
+                print(f"[PluizGraphAgent] 하이브리드 가드 skip(무시): {e}")
             payload = {"messages": [HumanMessage(content=user_input)]}
 
         try:
@@ -182,6 +193,13 @@ class PluizGraphAgent:
         response = extract_response(result)
         if not response.strip():
             response = "명령을 실행했습니다."
+
+        # LLM02/05: 출력 최종 마스킹(주민번호·카드번호·API키) — 사용자/TTS/기록 전에 적용
+        try:
+            from core.security import mask_sensitive_output
+            response = mask_sensitive_output(response)
+        except Exception as e:
+            print(f"[PluizGraphAgent] 출력 마스킹 생략(무시): {e}")
 
         try:
             self.session_memory.save(user_input, response)

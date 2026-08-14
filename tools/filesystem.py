@@ -63,6 +63,10 @@ def create_file(name: str, location: str = "desktop", content: str = "") -> str:
     if not base:
         return f"✗ '{location}'은(는) 지원하지 않는 위치입니다. (desktop, downloads, documents 중 선택)"
 
+    # LLM02: 비밀/자격증명 파일명으로 생성(덮어쓰기) 차단
+    if _is_secret_path(name):
+        return _SECRET_REFUSE
+
     path = os.path.join(base, name)
     try:
         os.makedirs(os.path.dirname(path) or base, exist_ok=True)
@@ -117,6 +121,9 @@ def find_file(name: str = "", extension: str = "", location: str = "downloads") 
     # recursive=True로 한 번만 검색 (하위 폴더 포함, 중복 없음)
     matches = glob.glob(os.path.join(base, "**", pattern), recursive=True)
 
+    # LLM02: 비밀/자격증명 파일은 검색 결과에서 제외
+    matches = [m for m in matches if not _is_secret_path(m)]
+
     if not matches:
         return f"✗ '{location}'에서 조건에 맞는 파일을 찾지 못했습니다."
 
@@ -158,6 +165,10 @@ def open_file(file_path: str, app: str = "") -> str:
     """
     # 상대 경로 해석 (바탕화면, 문서, 다운로드)
     resolved = _resolve_location_in_path(file_path)
+
+    # LLM02: 비밀/자격증명 파일 접근 차단
+    if _is_secret_path(resolved):
+        return _SECRET_REFUSE
 
     if not os.path.exists(resolved):
         return f"✗ 파일을 찾을 수 없습니다: {resolved}"
@@ -290,6 +301,21 @@ def _is_protected_path(path: str) -> bool:
     return any(s in low for s in _PROTECTED_SUBSTR)
 
 
+# ── 비밀 파일 접근 차단 (OWASP LLM02) ─────────────────────────────
+_SECRET_NAME_RE = re.compile(
+    r'(^\.env(\.|$)|credential|secret|passwd|password|id_rsa|\.pem$|\.key$|\.pfx$|'
+    r'apikey|api_key|_token\.json$|token\.json$)', re.IGNORECASE)
+
+
+def _is_secret_path(path: str) -> bool:
+    """비밀/자격증명 파일(.env, token.json, credentials 등)이면 True."""
+    base = os.path.basename((path or "").replace("\\", "/")).strip().lower()
+    return bool(_SECRET_NAME_RE.search(base))
+
+
+_SECRET_REFUSE = "✗ 보안상 비밀/설정 파일(.env, 토큰, 자격증명 등)은 접근할 수 없어요."
+
+
 def _to_trash(path: str) -> str:
     """가능하면 휴지통으로 이동, 실패 시 영구 삭제. 방식('trash'|'permanent') 반환."""
     try:
@@ -318,6 +344,8 @@ def delete_file(file_path: str) -> str:
         return f"✗ '{os.path.basename(resolved)}'은(는) 폴더예요. 폴더는 delete_folder를 쓰세요."
     if _is_protected_path(resolved):
         return "✗ 시스템/보호 경로의 파일은 삭제할 수 없어요."
+    if _is_secret_path(resolved):
+        return _SECRET_REFUSE
     try:
         how = _to_trash(resolved)
         where = "휴지통으로 옮겼어요" if how == "trash" else "삭제했어요"

@@ -37,7 +37,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
 from langchain_core.messages import (
-    HumanMessage, AIMessage, SystemMessage, ToolMessage, AnyMessage,
+    HumanMessage, AIMessage, SystemMessage, ToolMessage, AnyMessage, trim_messages,
 )
 
 
@@ -96,6 +96,9 @@ def build_system_prompt() -> str:
         "응답은 1~2문장으로 짧고 친근한 구어체로. 도구 실행 결과는 핵심만 요약.\n"
         "PC 제어 명령은 반드시 도구를 호출해서 실행하고, 도구 없이 '실행했어요'라고만 답하지 마세요.\n"
         "이전 대화 맥락을 활용하세요. '그거', '아까 그거' 같은 지칭은 직전 대화를 참고해 해석하세요.\n"
+        "사용자가 '안 됐어/안 열렸어/실행 안 됨'처럼 실패를 알리면, 같은 답을 반복하지 말고 "
+        "get_running_apps로 실제 실행 여부를 확인한 뒤 다른 방법으로 다시 시도하세요. "
+        "정말 안 되면 솔직하게 '안 됐다'고 말하고, 됐는지 불확실하면 확실한 척하지 마세요.\n"
         "응답은 항상 한국어로 해요."
     )
 
@@ -112,10 +115,33 @@ def _msg_text(m: Any) -> str:
 
 
 def _prepare_messages(history: list[AnyMessage]) -> list[AnyMessage]:
-    """LLM 호출용 메시지 구성: 시스템 프롬프트(매번 갱신) + 최근 N개 히스토리."""
+    """LLM 호출용 메시지 구성: 시스템 프롬프트(매번 갱신) + 최근 N개 히스토리.
+
+    ※ 단순 슬라이스(convo[-N:])는 (도구호출 AIMessage ↔ ToolMessage) 쌍을 중간에서
+      잘라 깨진 시퀀스를 만들 수 있고, Gemini가 이를 400(INVALID_ARGUMENT)으로 거부한다.
+      → trim_messages(start_on="human")으로 항상 사람 발화부터 시작하는 유효 시퀀스 보장.
+    """
     system = SystemMessage(content=build_system_prompt())
     convo = [m for m in history if not isinstance(m, SystemMessage)]
-    trimmed = convo[-_MAX_HISTORY_MSGS:]
+    try:
+        trimmed = trim_messages(
+            convo,
+            max_tokens=_MAX_HISTORY_MSGS,
+            strategy="last",
+            token_counter=len,          # 토큰 수가 아닌 '메시지 개수' 기준
+            start_on="human",           # 항상 HumanMessage로 시작 → 고아 ToolMessage 방지
+            include_system=False,       # 시스템 메시지는 위에서 별도 부착
+            allow_partial=False,
+        )
+    except Exception as e:
+        print(f"[graph._prepare_messages] trim 실패, fallback: {e}")
+        # 최소 방어: 앞쪽의 고아 ToolMessage/도구호출 AIMessage 제거
+        trimmed = convo[-_MAX_HISTORY_MSGS:]
+        while trimmed and (
+            isinstance(trimmed[0], ToolMessage)
+            or (isinstance(trimmed[0], AIMessage) and getattr(trimmed[0], "tool_calls", None))
+        ):
+            trimmed = trimmed[1:]
     return [system] + trimmed
 
 

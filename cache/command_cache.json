@@ -10,7 +10,7 @@
       }
     ],
     "response_template": "✓ 메모장을 실행했습니다.",
-    "hit_count": 61,
+    "hit_count": 63,
     "is_seed": true
   },
   "메모장 켜줘": {
@@ -172,7 +172,7 @@
       }
     ],
     "response_template": "✓ 설정을 열었습니다.",
-    "hit_count": 0,
+    "hit_count": 5,
     "is_seed": true
   },
   "윈도우 설정 열어줘": {

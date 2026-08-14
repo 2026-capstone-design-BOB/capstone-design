@@ -304,6 +304,15 @@ def find_hwnd_for_app(app_name: str) -> int:
     return found[0]
 
 
+# UWP·내장 앱: focus API 신뢰도가 낮아 셸 명령으로 확실히 실행/전면화
+_UWP_SHELL_COMMANDS: dict[str, str] = {
+    "calculator": "calc.exe",
+    "notepad":    "notepad.exe",
+    "terminal":   "wt.exe",
+    "settings":   "start ms-settings:",
+}
+
+
 # ── 도구 정의 ─────────────────────────────────────────────────────
 
 @tool
@@ -329,6 +338,15 @@ def open_app(app: str) -> str:
 
     # ── 이미 실행 중이면 창 활성화 (새 창 열지 않음) ──────────────
     if _is_running(app_key):
+        # A(정직 보고): UWP·셸 앱은 focus API 신뢰도가 낮음(설정 등 실제로 안 떴는데
+        # 성공 반환하던 문제) → 셸 명령으로 확실히 전면화.
+        if app_key in _UWP_SHELL_COMMANDS:
+            try:
+                subprocess.Popen(_UWP_SHELL_COMMANDS[app_key], shell=True)
+                time.sleep(0.5)
+                return f"✓ {name} 창을 앞으로 가져왔습니다."
+            except Exception:
+                pass
         if _focus_window(app_key):
             return f"✓ {name} 창을 앞으로 가져왔습니다."
         # 프로세스는 살아있지만 visible 창이 없음 (트레이 앱 등)
@@ -341,18 +359,12 @@ def open_app(app: str) -> str:
                 return f"✓ {name} 창을 열었습니다."
             except Exception:
                 pass
-        return f"⚠️ {name}은(는) 실행 중이지만 창을 열지 못했습니다. 트레이 아이콘을 클릭해 주세요."
+        return f"⚠️ {name}은(는) 실행 중인데 창을 앞으로 못 가져왔어요. 작업표시줄/트레이에서 직접 클릭해 주세요."
 
     # ── UWP·내장 앱: shell 명령으로 직접 실행 ───────────────────
-    UWP_SHELL_COMMANDS = {
-        "calculator": "calc.exe",
-        "notepad":    "notepad.exe",
-        "terminal":   "wt.exe",
-        "settings":   "start ms-settings:",
-    }
-    if app_key in UWP_SHELL_COMMANDS:
+    if app_key in _UWP_SHELL_COMMANDS:
         try:
-            subprocess.Popen(UWP_SHELL_COMMANDS[app_key], shell=True)
+            subprocess.Popen(_UWP_SHELL_COMMANDS[app_key], shell=True)
             time.sleep(0.5)
             return f"✓ {name}{eul_reul} 실행했습니다."
         except Exception as e:
