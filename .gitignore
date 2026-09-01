@@ -1,6 +1,10 @@
 # 환경변수 / API 키 (절대 커밋 금지)
 .env
 .env.*
+# 단, 템플릿은 저장소에 있어야 한다 — setup.bat이 이걸 복사해 .env를 만들고,
+# 새로 clone한 사람이 어떤 키가 필요한지 알 수 있는 유일한 문서다.
+# ※ 실제 키를 절대 넣지 말 것 (CI의 secret-guard 잡이 검사한다).
+!.env.example
 
 # Python
 __pycache__/
