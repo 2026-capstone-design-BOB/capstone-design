@@ -3,8 +3,8 @@ P3-4 하이브리드 LLM 판정기 검증 (mock judge — API 불필요)
 실행: python test_guardrail_hybrid.py
 """
 import sys, os, asyncio, importlib.util, types
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-base = os.path.join(os.path.dirname(__file__), "core")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core")
 
 core_pkg = types.ModuleType("core"); core_pkg.__path__ = [base]
 sys.modules["core"] = core_pkg

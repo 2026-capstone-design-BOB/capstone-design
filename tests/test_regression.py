@@ -30,7 +30,7 @@ import psutil
 
 API      = "http://127.0.0.1:8765"
 TB       = "reg_" + str(int(time.time()))   # thread base
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DESKTOP  = os.path.join(os.path.expanduser("~"), "Desktop")
 
 # ── 색상 ──────────────────────────────────────────────────────────

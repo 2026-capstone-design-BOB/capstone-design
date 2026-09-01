@@ -3,11 +3,11 @@ P2-1 삭제 도구 검증 (임시 파일 사용, OS 안전)
 실행: python test_delete_tools.py
 """
 import sys, os, tempfile, importlib.util
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # tools.filesystem만 직접 로드
 spec = importlib.util.spec_from_file_location(
-    "tools.filesystem", os.path.join(os.path.dirname(__file__), "tools", "filesystem.py"))
+    "tools.filesystem", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "filesystem.py"))
 # tools 패키지 stub
 import types
 sys.modules.setdefault("tools", types.ModuleType("tools"))
