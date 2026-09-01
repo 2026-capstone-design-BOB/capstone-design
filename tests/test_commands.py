@@ -474,19 +474,40 @@ else:
 # ══════════════════════════════════════════════════════════════════
 print(f"\n{BOLD}▶ 앱 창 활성화 (이미 실행 중인 앱){RESET}")
 
-print(f"\n{CYAN}{BOLD}[FOCUS-01]{RESET} 실행 중인 메모장 → 열어줘 → 새 창 없이 포커스")
+print(f"\n{CYAN}{BOLD}[FOCUS-01]{RESET} 실행 중인 앱 → 열어줘 → 활성화 경로를 타는지")
+# ⚠️ 프로세스 개수로 판정하지 않는다.
+#    P3-3에서 UWP·셸 앱(메모장·계산기·설정·터미널)은 focus API 신뢰도가 낮아
+#    (실제로 안 떴는데 성공 반환) **셸 명령으로 확실히 전면화**하도록 바꿨다.
+#    Windows 11 메모장은 UWP라 이때 런처 프로세스가 새로 뜬다 — 의도된 동작이다.
+#    → tools/app_control.py 의 _UWP_SHELL_COMMANDS, DEVLOG 2026-08-14 P3-3
+#    그래서 여기서는 "새 실행"이 아니라 "활성화 경로를 탔는가"를 본다.
 subprocess.Popen("notepad.exe", shell=True)
 time.sleep(1.5)
-pids_before = {p.pid for p in psutil.process_iter(["name"]) if p.name().lower() == "notepad.exe"}
-r = send("메모장 열어줘")
-info(f"응답: {r[:80]}")
-time.sleep(1.0)
-pids_after = {p.pid for p in psutil.process_iter(["name"]) if p.name().lower() == "notepad.exe"}
-new_pids = pids_after - pids_before
-if not new_pids:
-    ok("새 창 미생성 확인 (포커스 시도)"); results["pass"] += 1
-else:
-    fail(f"새 메모장 프로세스 {len(new_pids)}개 생성됨"); results["fail"] += 1
+try:
+    import sys as _sf
+    _sf.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from core.tool_registry import get_all_tools as _gt_f
+    from tools.app_control import find_hwnd_for_app as _fh
+
+    wins_before = 1 if _fh("메모장") else 0
+    r = send("메모장 열어줘")
+    info(f"응답: {r[:80]}")
+    time.sleep(1.0)
+
+    # ① 활성화 경로를 탔는가 (새로 '실행'했다고 하면 안 됨)
+    activated = ("앞으로 가져왔" in r) or ("창을 열었" in r)
+    if activated:
+        ok("이미 실행 중 → 활성화 응답 확인"); results["pass"] += 1
+    else:
+        fail(f"활성화가 아닌 신규 실행 응답: {r[:60]}"); results["fail"] += 1
+
+    # ② 창을 여전히 찾을 수 있는가 (앱이 죽거나 사라지지 않았는지)
+    if _fh("메모장"):
+        ok("활성화 후에도 메모장 창 존재"); results["pass"] += 1
+    else:
+        fail("활성화 후 메모장 창을 찾을 수 없음"); results["fail"] += 1
+except Exception as e:
+    fail(f"FOCUS-01 오류: {e}"); results["fail"] += 1
 kill("notepad.exe")
 
 print(f"\n{CYAN}{BOLD}[FOCUS-02]{RESET} 미실행 앱 → 열어줘 → 정상 실행")
@@ -667,18 +688,34 @@ except Exception as e:
 print(f"\n{CYAN}{BOLD}[WIN-03]{RESET} 크론+메모장 동시 실행 → 크론만 최대화 (핵심 버그, 캐시 우회)")
 try:
     from tools.app_control import maximize_window as _mw2
-    if is_running("chrome.exe") or is_running("msedge.exe"):
-        _sp3.Popen("notepad.exe", shell=True)
+    from tools.app_control import find_hwnd_for_app as _fh3
+
+    # ⚠️ 프로세스 존재만으로는 부족하다. 크롬은 창을 다 닫아도 백그라운드
+    #    프로세스가 남는다(설정에 따라). 그 상태에서 최대화를 시도하면 당연히
+    #    실패하는데, 그건 코드 버그가 아니라 전제 미충족이다.
+    #    → 실제로 **보이는 창**이 있는지로 전제를 판정한다.
+    _browser_kr = None
+    if _fh3("크롬"):
+        _browser_kr = "크롬"
+    elif _fh3("엣지"):
+        _browser_kr = "엣지"
+
+    if _browser_kr:
+        _sp3.Popen("notepad.exe", shell=True)      # 다른 앱도 띄워 혼동 유발
         time.sleep(1.5)
-        _browser = "chrome" if is_running("chrome.exe") else "edge"
-        _browser_kr = "크롬" if _browser == "chrome" else "엣지"
         _r = _mw2.invoke({"app": _browser_kr})
         info(f"브라우저 최대화 응답: {_r}")
-        if "실행 중이지 않" in _r or "찾을 수 없" in _r:
-            fail(f"브라우저 창 찾기 실패: {_r}"); results["fail"] += 1
+        if "실행 중이지 않" in _r or "찾을 수 없" in _r or "창이 없어요" in _r:
+            fail(f"창이 있는데 못 찾음 (멀티프로세스 매칭 버그 의심): {_r}"); results["fail"] += 1
         else:
-            print(f"  {YELLOW}⚠ MANUAL{RESET}  {_browser_kr} 창 최대화됐는지 시각 확인 필요"); results["manual"] += 1
+            ok(f"{_browser_kr} 창 식별 성공 (메모장과 혼동 없음)"); results["pass"] += 1
+            print(f"  {YELLOW}⚠ MANUAL{RESET}  {_browser_kr} 창이 실제로 최대화됐는지 시각 확인 필요")
+            results["manual"] += 1
         kill("notepad.exe")
+    elif is_running("chrome.exe") or is_running("msedge.exe"):
+        info("⚠ 브라우저 프로세스는 있으나 보이는 창이 없음(백그라운드 잔류)")
+        info("  → 스킵. 테스트하려면 브라우저 창을 하나 열어두세요")
+        results["skip"] += 1
     else:
         info("크롬/엣지 미실행 → 스킵 (테스트시 브라우저 열어두세요)")
         results["skip"] += 1

@@ -10,11 +10,11 @@
       }
     ],
     "response_template": "✓ 메모장을 실행했습니다.",
-    "hit_count": 63,
+    "hit_count": 72,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-01T22:42:12"
   },
   "메모장 켜줘": {
     "pattern": "메모장 켜줘",
@@ -44,11 +44,11 @@
       }
     ],
     "response_template": "✓ 메모장을 종료했습니다.",
-    "hit_count": 7,
+    "hit_count": 8,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-01T22:40:54"
   },
   "계산기 열어줘": {
     "pattern": "계산기 열어줘",
@@ -61,11 +61,11 @@
       }
     ],
     "response_template": "✓ 계산기를 실행했습니다.",
-    "hit_count": 16,
+    "hit_count": 18,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-01T22:40:48"
   },
   "계산기 켜줘": {
     "pattern": "계산기 켜줘",
@@ -129,11 +129,11 @@
       }
     ],
     "response_template": "✓ 파일 탐색기를 열었습니다.",
-    "hit_count": 6,
+    "hit_count": 7,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-01T22:42:14"
   },
   "파일 탐색기 열어줘": {
     "pattern": "파일 탐색기 열어줘",
@@ -161,11 +161,11 @@
       }
     ],
     "response_template": "✓ 바탕화면을 표시했습니다.",
-    "hit_count": 6,
+    "hit_count": 7,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-01T22:40:55"
   },
   "창 최대화해줘": {
     "pattern": "창 최대화해줘",
@@ -257,11 +257,11 @@
       }
     ],
     "response_template": "✓ 볼륨을 높였습니다.",
-    "hit_count": 11,
+    "hit_count": 12,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-01T22:41:02"
   },
   "소리 올려줘": {
     "pattern": "소리 올려줘",
@@ -317,11 +317,11 @@
       }
     ],
     "response_template": "✓ 음소거 상태를 변경했습니다.",
-    "hit_count": 12,
+    "hit_count": 14,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-01T22:41:07"
   },
   "음소거 해줘": {
     "pattern": "음소거 해줘",
@@ -407,11 +407,11 @@
       }
     ],
     "response_template": "✓ 스크린샷을 저장했습니다.",
-    "hit_count": 7,
+    "hit_count": 8,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-01T22:41:00"
   },
   "화면 캡처해줘": {
     "pattern": "화면 캡처해줘",
@@ -437,11 +437,11 @@
       }
     ],
     "response_template": "현재 시각을 확인합니다.",
-    "hit_count": 36,
+    "hit_count": 47,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-01T22:40:56"
   },
   "배터리 얼마나 남았어": {
     "pattern": "배터리 얼마나 남았어",
@@ -452,11 +452,11 @@
       }
     ],
     "response_template": "배터리 상태를 확인합니다.",
-    "hit_count": 6,
+    "hit_count": 7,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-01T22:40:58"
   },
   "배터리 확인해줘": {
     "pattern": "배터리 확인해줘",
@@ -482,11 +482,11 @@
       }
     ],
     "response_template": "실행 중인 앱 목록을 확인합니다.",
-    "hit_count": 6,
+    "hit_count": 7,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-01T22:40:50"
   },
   "실행 중인 앱 알려줘": {
     "pattern": "실행 중인 앱 알려줘",
@@ -580,11 +580,11 @@
       }
     ],
     "response_template": "최근 파일을 확인합니다.",
-    "hit_count": 6,
+    "hit_count": 7,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-01T22:41:19"
   },
   "메모장 띄워봐": {
     "pattern": "메모장 띄워봐",
@@ -602,5 +602,22 @@
     "source": "dynamic",
     "learned_at": "2026-08-19T10:08:00",
     "last_used": "2026-08-19T10:08:00"
+  },
+  "계산기 말고 메모장 열어줘": {
+    "pattern": "계산기 말고 메모장 열어줘",
+    "tool_calls": [
+      {
+        "name": "open_app",
+        "args": {
+          "app": "메모장"
+        }
+      }
+    ],
+    "response_template": "✓ 실행했어요.",
+    "hit_count": 1,
+    "is_seed": false,
+    "source": "dynamic",
+    "learned_at": "2026-09-01T22:40:14",
+    "last_used": "2026-09-01T22:40:14"
   }
 }

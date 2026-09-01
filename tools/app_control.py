@@ -470,7 +470,11 @@ def maximize_window(app: str = "") -> str:
             ctypes.windll.user32.ShowWindow(hwnd, SW_MAXIMIZE)
             return f"✓ {app} 창을 최대화했습니다."
 
-        return f"✗ {app} 창을 찾을 수 없습니다. 앱이 실행 중인지 확인하세요."
+        # 여기 왔다는 건 프로세스는 있는데 보이는 창이 없다는 뜻이다.
+        # (크롬처럼 창을 다 닫아도 백그라운드 프로세스가 남는 앱이 있다)
+        # "실행 중인지 확인하세요"는 사실과 달라 사용자를 헷갈리게 하므로 정확히 말한다. (P3-3 정직 보고)
+        return (f"⚠️ {app}은(는) 실행 중이지만 열려 있는 창이 없어요. "
+                f"먼저 {app}을(를) 열어 주세요.")
     else:
         hwnd = ctypes.windll.user32.GetForegroundWindow()
         ctypes.windll.user32.ShowWindow(hwnd, SW_MAXIMIZE)
@@ -524,7 +528,9 @@ def minimize_window(app: str = "") -> str:
             ctypes.windll.user32.ShowWindow(hwnd, SW_MINIMIZE)
             return f"✓ {app} 창을 최소화했습니다."
 
-        return f"✗ {app} 창을 찾을 수 없습니다."
+        # 프로세스는 있는데 보이는 창이 없는 경우 — 정확히 보고한다. (P3-3 정직 보고)
+        return (f"⚠️ {app}은(는) 실행 중이지만 열려 있는 창이 없어요. "
+                f"먼저 {app}을(를) 열어 주세요.")
     else:
         hwnd = ctypes.windll.user32.GetForegroundWindow()
         ctypes.windll.user32.ShowWindow(hwnd, SW_MINIMIZE)

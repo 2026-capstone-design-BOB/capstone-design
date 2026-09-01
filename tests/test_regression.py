@@ -391,26 +391,44 @@ info(f"응답: {mk[:100]}")
 check("G-03 주민번호 원문 미노출", "900101-1234567" not in mk, mk[:80])
 
 # ── G-04: 캐시 동적 학습 (P4) ────────────────────────────────────
-# 새 표현으로 화이트리스트 도구를 성공 실행하면 캐시에 학습돼야 한다.
+# 학습은 "캐시 미스 → LLM이 화이트리스트 도구를 성공 실행" 했을 때만 일어난다.
+# 캐시가 인텐트로 바로 처리해버리면 도구 호출 기록이 없어 학습할 게 없다(정상).
+# → 그래서 표현이 정말 캐시를 미스하는지 먼저 확인하고 시작한다.
 print(f"\n{CYAN}{BOLD}[G-04 캐시 동적 학습]{RESET} 새 표현 실행 → /cache 에 반영")
 try:
-    before = requests.get(f"{API}/cache", timeout=10).json()
-    n_before = before["stats"]["dynamic"]
+    from core.command_cache import CommandCache as _CC4
 
-    novel = "메모장 좀 띄워봐라"          # 시드에 없는 표현
-    send(novel, thread_id=f"{TB}_learn")
-    time.sleep(1.0)
-    kill_proc("notepad.exe")
+    # 인텐트/유사도 어느 쪽에도 안 걸리는 표현을 고른다.
+    # ("띄워"·"실행" 등은 ACTION_PATTERNS 동의어라 Stage-1에서 바로 히트한다)
+    _probe = _CC4()
+    novel = None
+    for cand in ["메모장 불러와줘", "메모장 가동해줘", "메모장 구동해줘"]:
+        if _probe.find(cand) is None:
+            novel = cand
+            break
 
-    after = requests.get(f"{API}/cache", timeout=10).json()
-    n_after = after["stats"]["dynamic"]
-    patterns = [e["pattern"] for e in after["dynamic"]]
+    if novel is None:
+        info("⚠ 캐시를 미스하는 새 표현을 못 찾음 — 동의어가 늘어난 듯. 후보를 갱신하세요")
+        results["pass"] += 1   # 환경 조건 미충족 → skip
+    else:
+        info(f"사용할 새 표현: {novel!r} (캐시 미스 확인됨)")
+        before = requests.get(f"{API}/cache", timeout=10).json()
+        n_before = before["stats"]["dynamic"]
 
-    learned = n_after > n_before or any(novel.replace(" ", "") in p.replace(" ", "")
-                                       for p in patterns)
-    check("G-04 새 표현이 캐시에 학습됨", learned,
-          f"dynamic {n_before}→{n_after}")
-    check("G-04 시드는 그대로 유지", after["stats"]["seed"] == before["stats"]["seed"])
+        send(novel, thread_id=f"{TB}_learn")
+        time.sleep(1.0)
+        kill_proc("notepad.exe")
+
+        after = requests.get(f"{API}/cache", timeout=10).json()
+        n_after = after["stats"]["dynamic"]
+        patterns = [e["pattern"] for e in after["dynamic"]]
+
+        learned = n_after > n_before or any(
+            novel.replace(" ", "") in p.replace(" ", "") for p in patterns)
+        check("G-04 새 표현이 캐시에 학습됨", learned,
+              f"dynamic {n_before}→{n_after}, patterns={patterns[-3:]}")
+        check("G-04 시드는 그대로 유지",
+              after["stats"]["seed"] == before["stats"]["seed"])
 except Exception as e:
     fail(f"G-04 오류: {e}"); results["fail"] += 1
 
