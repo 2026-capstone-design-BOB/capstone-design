@@ -45,8 +45,9 @@ FastAPI 서버(:8765) + Electron 오버레이 UI + LangGraph `StateGraph` 에이
 5. **`services/`·`electron-ui/`를 `src/` 같은 폴더로 감싸지 말 것** — Electron이
    `../services/wakeword.py`를 직접 참조합니다. → [STRUCTURE.md § 구조적 제약](docs/STRUCTURE.md#구조적-제약--옮기면-깨지는-것들)
 
-6. **`test_*.py`를 `tests/`로 옮기지 말 것** (사전 수정 없이) — 19개 전부
-   `dirname(__file__)`을 프로젝트 루트로 가정합니다.
+6. **테스트에서 소스를 열 땐 `encoding="utf-8"`를 붙일 것** — 한글이 든 소스를
+   Windows 기본 cp949로 읽으면 `UnicodeDecodeError`가 납니다.
+   `tests/`의 테스트는 루트를 `dirname(dirname(abspath(__file__)))`로 계산합니다.
 
 ---
 
@@ -62,9 +63,9 @@ export PYTHONIOENCODING=utf-8
 launch.bat                  # 서버 + Electron UI
 python main.py              # 서버만
 
-python test_graph_agent.py  # 6/6
-python test_cache_learn.py  # 15/15
-python test_hitl_agent.py   # 8/8
+python tests/test_graph_agent.py  # 6/6
+python tests/test_cache_learn.py  # 15/15
+python tests/test_hitl_agent.py   # 8/8
 ```
 
 상세: [docs/WORKFLOW.md](docs/WORKFLOW.md)

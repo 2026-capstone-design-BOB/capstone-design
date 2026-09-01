@@ -57,7 +57,7 @@
 
 ### 테스트 문서 — [testing/](testing/)
 
-자동 검증이 불가능한 UI·음성·시각 확인 항목. 자동 테스트는 루트 `test_*.py` 참조.
+자동 검증이 불가능한 UI·음성·시각 확인 항목. 자동 테스트는 [`../tests/`](../tests/) 참조.
 
 - [TEST_CASES.md](testing/TEST_CASES.md) · [MANUAL_TEST_CASES.md](testing/MANUAL_TEST_CASES.md) · [MANUAL_TESTS.md](testing/MANUAL_TESTS.md)
 

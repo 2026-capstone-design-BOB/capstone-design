@@ -16,7 +16,7 @@ import re
 import time
 import json
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 STATIC_ONLY = "--static" in sys.argv
 API = "http://127.0.0.1:8765"
@@ -76,8 +76,8 @@ else:
     ns = {}
     try:
         exec(src_cc.replace(
-            "_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))",
-            f"_BASE_DIR = {repr(os.path.dirname(os.path.abspath(__file__)))}"
+            "_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))",
+            f"_BASE_DIR = {repr(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))}"
         ), ns)
         _sp = ns["_select_particle"]
         _APP_DISPLAY = ns["_APP_DISPLAY"]
@@ -419,7 +419,7 @@ else:
         fail("삭제 후 목록 이상")
 
     # favorites.json 파일 생성 확인
-    fav_json = os.path.join(os.path.dirname(__file__), "cache", "favorites.json")
+    fav_json = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache", "favorites.json")
     if os.path.exists(fav_json):
         ok(f"favorites.json 파일 생성 확인")
     else:

@@ -8,6 +8,8 @@
 
 `LangGraph` · `Gemini 2.5 Flash` · `FastAPI` · `Electron` · `faster-whisper` · `edge-tts`
 
+[![tests](https://github.com/2026-capstone-design-BOB/capstone-design/actions/workflows/tests.yml/badge.svg)](https://github.com/2026-capstone-design-BOB/capstone-design/actions/workflows/tests.yml)
+
 </div>
 
 ---
@@ -111,10 +113,10 @@ mock으로 검증되기 때문입니다.
 conda activate pluiz
 export PYTHONIOENCODING=utf-8
 
-python test_graph_agent.py      # 그래프 오케스트레이터
-python test_hitl_agent.py       # HITL 승인 흐름
-python test_cache_learn.py      # 캐시 동적 학습
-python test_guardrail_hybrid.py # 하이브리드 가드레일
+python tests/test_graph_agent.py      # 그래프 오케스트레이터
+python tests/test_hitl_agent.py       # HITL 승인 흐름
+python tests/test_cache_learn.py      # 캐시 동적 학습
+python tests/test_guardrail_hybrid.py # 하이브리드 가드레일
 ```
 
 전체 mock 스위트 15파일 158개.
