@@ -68,28 +68,44 @@ start.bat      # 서버만
 export PYTHONIOENCODING=utf-8
 PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 
-"$PY" test_graph_agent.py       # 그래프 오케스트레이터  6/6
-"$PY" test_hitl_agent.py        # HITL 승인            8/8
-"$PY" test_cache_learn.py       # 캐시 동적 학습        15/15
-"$PY" test_guardrail_hybrid.py  # 하이브리드 가드       8/8
-"$PY" test_trim.py              # 히스토리 trim
-"$PY" test_injection.py         # 프롬프트 인젝션
-"$PY" test_sensitive.py         # 민감정보 보호
+"$PY" tests/test_graph_agent.py       # 그래프 오케스트레이터  6/6
+"$PY" tests/test_hitl_agent.py        # HITL 승인            8/8
+"$PY" tests/test_cache_learn.py       # 캐시 동적 학습        15/15
+"$PY" tests/test_guardrail_hybrid.py  # 하이브리드 가드       8/8
+"$PY" tests/test_trim.py              # 히스토리 trim
+"$PY" tests/test_injection.py         # 프롬프트 인젝션
+"$PY" tests/test_sensitive.py         # 민감정보 보호
 ```
 
 전체 mock 스위트는 15파일 158개. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
 
+### CI (GitHub Actions)
+
+`main` · `develop` · `feature/**` 에 push하면 [`.github/workflows/tests.yml`](../.github/workflows/tests.yml)이 자동 실행된다.
+
+| 잡 | 하는 일 |
+|---|---|
+| `mock-suite` | 문법 검사 + mock 테스트 15개 (Ubuntu). 서버 필요한 3개는 제외 |
+| `link-check` | 모든 `.md`의 상대링크·이미지 참조가 실제 존재하는지 |
+| `secret-guard` | `.env` 추적 여부 · 실제 API 키 패턴 · 커밋된 `.pyc` |
+
+mock 테스트는 `langgraph`·`langchain-core`만 설치해서 돈다. `requirements.txt` 전체
+(playwright·faster-whisper·pyautogui)는 헤드리스에서 깨지고 불필요하다.
+
+> **테스트용 더미 키에는 `FAKE`/`DUMMY`/`EXAMPLE`을 넣을 것.**
+> `secret-guard`가 실제 키 형식을 잡되 이 단어가 든 건 통과시킨다.
+
 ### 컴파일 확인
 
 ```bash
-"$PY" -m py_compile main.py core/*.py tools/*.py services/*.py config/*.py
+"$PY" -m py_compile main.py core/*.py tools/*.py services/*.py config/*.py tests/*.py
 ```
 
 ### 라이브 테스트 (서버 실행 필요)
 
 ```bash
-"$PY" test_commands.py     # ⚠️ 구 엔진 기준 (BACKLOG BL-06)
-"$PY" test_regression.py   # ⚠️ 동일
+"$PY" tests/test_commands.py     # ⚠️ 구 엔진 기준 (BACKLOG BL-06)
+"$PY" tests/test_regression.py   # ⚠️ 동일
 ```
 
 ### 수동 테스트
