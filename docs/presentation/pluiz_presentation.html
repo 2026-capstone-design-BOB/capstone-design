@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Pluiz v2 발표자료</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/reveal.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/theme/night.min.css">
+    <style>
+        :root { --accent:#4fc3f7; --ok:#66bb6a; --warn:#ff7043; --dim:#aaaaaa; }
+        .reveal .slides section { text-align:left; }
+        .reveal h1 { font-size:1.9em; }
+        .reveal h2 { font-size:1.25em; color:var(--accent); border-bottom:1px solid #333; padding-bottom:8px; margin-bottom:16px; }
+        .reveal h3 { font-size:0.85em; color:#888; margin:12px 0 6px; }
+        .reveal p  { font-size:0.8em; }
+
+        /* 테이블 */
+        table { width:100%; border-collapse:collapse; font-size:0.65em; }
+        th { background:rgba(79,195,247,.15); padding:7px 10px; border:1px solid #3a3a3a; }
+        td { padding:7px 10px; border:1px solid #2a2a2a; vertical-align:top; }
+        tr:nth-child(even) td { background:rgba(255,255,255,.03); }
+
+        /* 파이프라인 */
+        .pipeline { display:flex; align-items:center; justify-content:center; gap:0; margin:22px 0; }
+        .pipe-box  { padding:14px 18px; border-radius:8px; text-align:center; font-size:0.72em; min-width:110px; line-height:1.5; }
+        .pipe-arrow{ color:#555; font-size:1.4em; padding:0 6px; }
+        .p-sec  { background:rgba(255,112,67,.25); border:1px solid var(--warn); }
+        .p-cache{ background:rgba(102,187,106,.25); border:1px solid var(--ok); }
+        .p-llm  { background:rgba(79,195,247,.25); border:1px solid var(--accent); }
+        .p-neu  { background:rgba(255,255,255,.08); border:1px solid #555; }
+
+        /* 레이어 다이어그램 */
+        .layer { padding:7px 12px; margin:4px 0; border-radius:4px; border-left:3px solid var(--accent);
+                 background:rgba(255,255,255,.04); font-size:0.66em; line-height:1.6; }
+        .layer-label { color:var(--accent); font-weight:bold; display:inline-block; min-width:110px; }
+
+        /* 하이라이트 박스 */
+        .hbox { background:rgba(79,195,247,.08); border-left:3px solid var(--accent);
+                padding:9px 14px; margin:9px 0; font-size:0.68em; line-height:1.7; }
+        .hbox strong { color:var(--accent); }
+
+        /* 두 컬럼 */
+        .two-col { display:grid; grid-template-columns:1fr 1fr; gap:18px; font-size:0.68em; }
+
+        /* progress */
+        .prog-item { display:flex; align-items:center; margin:5px 0; font-size:0.68em; }
+        .prog-bg   { background:#2a2a2a; border-radius:4px; height:11px; flex:1; margin:0 10px; }
+        .prog-fill { height:100%; border-radius:4px; }
+        .fill-ok   { background:var(--ok); }
+        .fill-part { background:#ffc107; }
+
+        /* placeholder */
+        .placeholder { border:2px dashed #3a3a3a; border-radius:8px; padding:50px; text-align:center; color:#444; }
+
+        /* 태그 */
+        .tag-ok   { color:var(--ok); }
+        .tag-warn { color:var(--warn); }
+        .tag-dim  { color:#666; }
+        .badge    { display:inline-block; padding:1px 7px; border-radius:3px; font-size:0.75em; margin-left:5px; }
+        .b-ext    { background:rgba(255,112,67,.3); }
+        .b-us     { background:rgba(79,195,247,.3); }
+
+        /* 버전 박스 */
+        .v-box { padding:10px 14px; border-radius:6px; font-size:0.65em; line-height:1.7; }
+        .v0 { background:rgba(255,255,255,.04); border:1px solid #3a3a3a; }
+        .v1 { background:rgba(255,193,7,.07); border:1px solid #ffc107; }
+        .v2 { background:rgba(79,195,247,.07); border:1px solid var(--accent); }
+
+        /* slide number */
+        .slide-num { position:absolute; bottom:12px; right:18px; font-size:0.55em; color:#444; }
+    </style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ══════════════════════════════════════════════
+     1. 타이틀
+══════════════════════════════════════════════ -->
+<section>
+    <div style="text-align:center; padding-top:55px;">
+        <div style="font-size:0.75em; color:#555; letter-spacing:2px; margin-bottom:12px;">졸업 캡스톤 프로젝트</div>
+        <h1 style="font-size:2.4em; color:var(--accent); margin:0;">Pluiz v2</h1>
+        <p style="font-size:0.95em; color:#ccc; margin:18px 0 0;">
+            한국어 음성 명령으로 Windows PC를 제어하는 AI 에이전트
+        </p>
+        <div style="margin-top:55px; font-size:0.6em; color:#444;">2026.06 | 최종 발표</div>
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     2. 프로젝트 한 줄 소개
+══════════════════════════════════════════════ -->
+<section>
+    <h2>프로젝트 소개</h2>
+    <p style="color:var(--dim); margin-bottom:24px;">"말하면 PC가 움직인다"</p>
+
+    <div class="pipeline">
+        <div class="pipe-box p-neu">🎤<br>음성 / 텍스트<br>입력</div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box p-llm">🤖<br>Pluiz<br>AI 판단</div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box p-neu">💻<br>Windows<br>직접 제어</div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box p-neu">🔊<br>음성<br>응답</div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:10px;">
+        <div class="layer">항상 화면에 떠있는 오버레이 UI<br><span style="color:#555;">(always-on-top pill)</span></div>
+        <div class="layer">한국어 PC 제어 명령 특화 설계</div>
+        <div class="layer">오프라인에서도 핵심 기능 동작</div>
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     3. [팀원] 상용 시스템 분석
+══════════════════════════════════════════════ -->
+<section>
+    <div class="placeholder">
+        <p style="font-size:1.1em; color:#555;">[ 팀원 파트 ]</p>
+        <p style="color:#444; margin-top:8px;">상용 시스템 분석<br>
+        <span style="font-size:0.75em;">Siri · Bixby · Cortana · 클로바 등</span></p>
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     4. [팀원] 우리 vs 상용 비교
+══════════════════════════════════════════════ -->
+<section>
+    <div class="placeholder">
+        <p style="font-size:1.1em; color:#555;">[ 팀원 파트 ]</p>
+        <p style="color:#444; margin-top:8px;">우리 시스템 vs 상용 시스템 비교표</p>
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     5. "그럼 왜 만들었나?" ← 핵심 슬라이드
+══════════════════════════════════════════════ -->
+<section>
+    <h2>"그럼 왜 굳이 만들었나?"</h2>
+    <p style="color:var(--dim); font-size:0.72em; margin-bottom:14px;">
+        상용 시스템이 존재하는 건 맞습니다. 하지만 아래 문제들을 해결하는 시스템은 없습니다.
+    </p>
+
+    <table>
+        <tr>
+            <th style="width:22%"></th>
+            <th>Siri / Bixby / Cortana</th>
+            <th style="color:var(--accent);">Pluiz v2</th>
+        </tr>
+        <tr>
+            <td>대상 환경</td>
+            <td>모바일 중심, Windows 통합 제한적</td>
+            <td class="tag-ok">Windows PC 전용 · 깊은 시스템 통합</td>
+        </tr>
+        <tr>
+            <td>인터넷 의존</td>
+            <td>필수 — 오프라인 시 대부분 불가</td>
+            <td class="tag-ok">캐시 + 로컬 STT → 오프라인 핵심 기능 가능</td>
+        </tr>
+        <tr>
+            <td>Windows 제어 깊이</td>
+            <td>앱 실행 수준<br>창 제어 · 파일 생성 불가</td>
+            <td class="tag-ok">창 포커스, 볼륨, 밝기, 파일 생성 등 27종</td>
+        </tr>
+        <tr>
+            <td>한국어 최적화</td>
+            <td>범용 다국어 처리</td>
+            <td class="tag-ok">PC 제어 명령 구조 특화 설계</td>
+        </tr>
+        <tr>
+            <td>커스터마이즈</td>
+            <td>불가</td>
+            <td class="tag-ok">도구 추가 가능한 오픈 구조</td>
+        </tr>
+    </table>
+
+    <div class="hbox" style="margin-top:13px;">
+        "상용보다 낫다"가 아닌 — <strong>"상용이 하지 않는 구체적인 문제를 풀었다"</strong>
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     6. 기능 소개
+══════════════════════════════════════════════ -->
+<section>
+    <h2>제공 기능 — 도구 27개</h2>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
+
+        <!-- 앱 제어 -->
+        <div style="background:rgba(255,255,255,.04); border:1px solid #253040; border-top:2px solid var(--accent); border-radius:6px; padding:10px 12px;">
+            <div style="color:var(--accent); font-weight:bold; font-size:0.72em;">앱 제어 <span style="color:#445;">(5)</span></div>
+            <div style="color:#556; font-size:0.58em; margin:3px 0 6px;">실행 · 종료 · 최대화 · 최소화 · 바탕화면 표시</div>
+            <div style="color:#667; font-size:0.58em; margin-bottom:6px; line-height:1.5;">설치된 앱이면 이름만 말해도 실행<br><span style="color:#3a4a5a;">레지스트리 탐색 → 경로 자동 탐지<br>이미 실행 중이면 새 창 없이 포커스</span></div>
+            <div style="font-size:0.6em; color:#8ab;">
+                <span style="color:#778;">"</span>VS Code 켜줘<span style="color:#778;">"</span><br>
+                <span style="color:#778;">"</span>크롬 최대화해줘<span style="color:#778;">"</span>
+            </div>
+        </div>
+
+        <!-- 시스템 -->
+        <div style="background:rgba(255,255,255,.04); border:1px solid #253040; border-top:2px solid var(--accent); border-radius:6px; padding:10px 12px;">
+            <div style="color:var(--accent); font-weight:bold; font-size:0.72em;">시스템 <span style="color:#445;">(10)</span></div>
+            <div style="color:#556; font-size:0.58em; margin:3px 0 6px;">볼륨 3종 · 밝기 2종 · 스크린샷 · 배터리 · 현재시간 · 실행앱 목록</div>
+            <div style="color:#667; font-size:0.58em; margin-bottom:6px; line-height:1.5;">PC 상태 즉시 조회 · 변경<br><span style="color:#3a4a5a;">볼륨: pycaw API → 키 시뮬레이션 fallback<br>밝기: WMI → PowerShell fallback</span></div>
+            <div style="font-size:0.6em; color:#8ab;">
+                <span style="color:#778;">"</span>볼륨 50으로 줄여줘<span style="color:#778;">"</span><br>
+                <span style="color:#778;">"</span>배터리 얼마야?<span style="color:#778;">"</span>
+            </div>
+        </div>
+
+        <!-- 파일시스템 -->
+        <div style="background:rgba(255,255,255,.04); border:1px solid #253040; border-top:2px solid var(--accent); border-radius:6px; padding:10px 12px;">
+            <div style="color:var(--accent); font-weight:bold; font-size:0.72em;">파일시스템 <span style="color:#445;">(5)</span></div>
+            <div style="color:#556; font-size:0.58em; margin:3px 0 6px;">파일 생성 · 폴더 생성 · 파일 탐색 · 최근파일 · 파일 열기</div>
+            <div style="color:#667; font-size:0.58em; margin-bottom:6px; line-height:1.5;">경로 몰라도 이름으로 재귀 탐색<br><span style="color:#3a4a5a;">상대경로 자동 해석<br>최근 파일은 Windows Recent 폴더 참조</span></div>
+            <div style="font-size:0.6em; color:#8ab;">
+                <span style="color:#778;">"</span>바탕화면에 할일.txt 만들어줘<span style="color:#778;">"</span><br>
+                <span style="color:#778;">"</span>보고서.docx 찾아서 열어줘<span style="color:#778;">"</span>
+            </div>
+        </div>
+
+        <!-- 웹 -->
+        <div style="background:rgba(255,255,255,.04); border:1px solid #253040; border-top:2px solid #9c27b0; border-radius:6px; padding:10px 12px;">
+            <div style="color:#ce93d8; font-weight:bold; font-size:0.72em;">웹 <span style="color:#445;">(5)</span></div>
+            <div style="color:#556; font-size:0.58em; margin:3px 0 6px;">URL 열기 · 웹 검색 · 유튜브 검색 · 지도 · 정보 조회</div>
+            <div style="color:#667; font-size:0.58em; margin-bottom:6px; line-height:1.5;">검색 결과를 텍스트로 반환 가능<br><span style="color:#3a4a5a;">유튜브: Data API v3로 영상 ID 조회<br>지도: 경로는 Google, 장소는 Kakao</span></div>
+            <div style="font-size:0.6em; color:#ce93d8;">
+                <span style="color:#778;">"</span>유튜브에서 아이유 신곡 틀어줘<span style="color:#778;">"</span><br>
+                <span style="color:#778;">"</span>서울에서 부산 가는 길 찾아줘<span style="color:#778;">"</span>
+            </div>
+        </div>
+
+        <!-- 키보드 -->
+        <div style="background:rgba(255,255,255,.04); border:1px solid #253040; border-top:2px solid #ffc107; border-radius:6px; padding:10px 12px;">
+            <div style="color:#ffd54f; font-weight:bold; font-size:0.72em;">키보드 <span style="color:#445;">(2)</span></div>
+            <div style="color:#556; font-size:0.58em; margin:3px 0 6px;">텍스트 입력(한국어 포함) · 단축키 입력</div>
+            <div style="color:#667; font-size:0.58em; margin-bottom:6px; line-height:1.5;">현재 포커스된 앱에 직접 전송<br><span style="color:#3a4a5a;">한국어: 클립보드 경유 안전 처리<br>LLM이 의도 → 단축키 자동 매핑</span></div>
+            <div style="font-size:0.6em; color:#ffd54f;">
+                <span style="color:#778;">"</span>저장해줘<span style="color:#778;">" → </span>Ctrl+S 전송<br>
+                <span style="color:#778;">"</span>메모장에 회의 내용 입력해줘<span style="color:#778;">"</span>
+            </div>
+        </div>
+
+        <!-- 캘린더 -->
+        <div style="background:rgba(255,255,255,.04); border:1px solid #253040; border-top:2px solid var(--ok); border-radius:6px; padding:10px 12px;">
+            <div style="color:var(--ok); font-weight:bold; font-size:0.72em;">캘린더 <span style="color:#445;">(1)</span></div>
+            <div style="color:#556; font-size:0.58em; margin:3px 0 6px;">Google Calendar 일정 자동 추가</div>
+            <div style="color:#667; font-size:0.58em; margin-bottom:6px; line-height:1.5;">LLM이 날짜·시간 자연어 파싱<br><span style="color:#3a4a5a;">Google Calendar API 연동<br>API 미설정 시 브라우저 URL 스킴 fallback</span></div>
+            <div style="font-size:0.6em; color:#66bb6a;">
+                <span style="color:#778;">"</span>내일 오전 10시 발표 일정 추가해줘<span style="color:#778;">"</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 멀티스텝 + 지원 방식 -->
+    <div style="margin-top:10px; background:rgba(79,195,247,.06); border:1px solid #1e3040; border-radius:5px; padding:7px 14px; font-size:0.6em; display:flex; justify-content:space-between; align-items:center;">
+        <div>
+            <span style="color:#4fc3f7;">멀티스텝 예시</span>
+            <span style="color:#556; margin-left:8px;">"유튜브에서 파이썬 강의 찾아서 틀고, 바탕화면에 메모.txt 만들어줘"</span>
+            <span style="color:#334; margin-left:6px;">→ 도구 3개 자동 연결</span>
+        </div>
+        <div style="color:#334; white-space:nowrap; margin-left:16px;">
+            🎤 음성 · ⌨️ 텍스트 &nbsp;|&nbsp; 🔊 TTS 응답 포함
+        </div>
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     7. 시스템 스펙
+══════════════════════════════════════════════ -->
+<section>
+    <h2>개발 환경 및 기술 스택</h2>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;">
+
+        <div>
+            <div style="color:#aaa; font-size:0.68em; font-weight:bold; margin-bottom:8px; border-bottom:1px solid #252f3a; padding-bottom:5px;">HW 환경</div>
+            <table style="font-size:0.62em;">
+                <tr><td style="color:#778; width:40%;">CPU</td><td>Intel / AMD x86-64</td></tr>
+                <tr><td style="color:#778;">RAM</td><td>8GB 이상 권장</td></tr>
+                <tr><td style="color:#778;">입력장치</td><td>마이크 (음성 입력)</td></tr>
+                <tr><td style="color:#778;">OS</td><td>Windows 10 / 11</td></tr>
+            </table>
+
+            <div style="color:#aaa; font-size:0.68em; font-weight:bold; margin:14px 0 8px; border-bottom:1px solid #252f3a; padding-bottom:5px;">SW 환경 / 개발 도구</div>
+            <table style="font-size:0.62em;">
+                <tr><td style="color:#778; width:40%;">언어</td><td>Python 3.10+ · JavaScript</td></tr>
+                <tr><td style="color:#778;">런타임</td><td>Node.js 18+ / Electron 28</td></tr>
+                <tr><td style="color:#778;">서버</td><td>FastAPI + Uvicorn (포트 8765)</td></tr>
+                <tr><td style="color:#778;">통신</td><td>HTTP REST · WebSocket</td></tr>
+                <tr><td style="color:#778;">설정</td><td>pydantic-settings + .env</td></tr>
+            </table>
+        </div>
+
+        <div>
+            <div style="color:#ff7043; font-size:0.68em; font-weight:bold; margin-bottom:8px; border-bottom:1px solid #3a2018; padding-bottom:5px;">외부 모델 / API <span style="color:#444; font-weight:normal;">(우리가 만들지 않음)</span></div>
+            <table style="font-size:0.62em;">
+                <tr><td style="color:#a06050;">Gemini 2.0 Flash</td><td style="color:#666;">자연어 이해 · 도구 선택 판단</td></tr>
+                <tr><td style="color:#a06050;">LangGraph</td><td style="color:#666;">ReAct 루프 실행 엔진</td></tr>
+                <tr><td style="color:#a06050;">faster-whisper</td><td style="color:#666;">로컬 음성 인식 모델</td></tr>
+                <tr><td style="color:#a06050;">edge-tts</td><td style="color:#666;">텍스트 → 음성 합성 (Microsoft)</td></tr>
+                <tr><td style="color:#a06050;">YouTube Data API v3</td><td style="color:#666;">영상 검색 · ID 조회</td></tr>
+                <tr><td style="color:#a06050;">Google STT</td><td style="color:#666;">온라인 음성 인식 (비공식 무료)</td></tr>
+            </table>
+        </div>
+
+        <div>
+            <div style="color:#4fc3f7; font-size:0.68em; font-weight:bold; margin-bottom:8px; border-bottom:1px solid #1a3040; padding-bottom:5px;">Windows 제어 라이브러리</div>
+            <table style="font-size:0.62em;">
+                <tr><td style="color:#5a8fa8;">ctypes</td><td style="color:#666;">Windows API 직접 호출 (user32, kernel32)</td></tr>
+                <tr><td style="color:#5a8fa8;">psutil</td><td style="color:#666;">프로세스 목록 · 실행 상태 확인</td></tr>
+                <tr><td style="color:#5a8fa8;">winreg</td><td style="color:#666;">레지스트리 탐색 → 앱 경로 추출</td></tr>
+                <tr><td style="color:#5a8fa8;">pycaw</td><td style="color:#666;">Windows 볼륨 API 제어</td></tr>
+                <tr><td style="color:#5a8fa8;">wmi</td><td style="color:#666;">화면 밝기 조회 · 변경</td></tr>
+                <tr><td style="color:#5a8fa8;">pyautogui / pyperclip</td><td style="color:#666;">키보드 입력 · 클립보드 제어</td></tr>
+            </table>
+
+            <div style="color:#aaa; font-size:0.68em; font-weight:bold; margin:12px 0 8px; border-bottom:1px solid #252f3a; padding-bottom:5px;">기타 주요 라이브러리</div>
+            <table style="font-size:0.62em;">
+                <tr><td style="color:#667;">PyAV</td><td style="color:#555;">webm → PCM 변환 (ffmpeg 바이너리 불필요)</td></tr>
+                <tr><td style="color:#667;">Pillow · ddgs · SpeechRecognition</td><td style="color:#555;">스크린샷 · 웹 검색 · STT 래퍼</td></tr>
+            </table>
+        </div>
+
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     8. 외부 vs 우리 (솔직하게)
+══════════════════════════════════════════════ -->
+<section>
+    <h2>외부에서 가져온 것 vs 우리가 직접 만든 것</h2>
+    <div class="two-col" style="gap:14px;">
+        <div>
+            <p style="color:var(--warn); font-weight:bold; font-size:0.7em; margin-bottom:8px;">📦 외부 — 가져다 쓴 것</p>
+            <table style="font-size:0.62em;">
+                <tr>
+                    <th style="width:38%;">구성요소</th>
+                    <th>우리 시스템에서 하는 역할</th>
+                </tr>
+                <tr><td style="color:#a06050;">Gemini 2.0 Flash</td><td style="color:#666;">사용자 의도 파악 · 어떤 도구를 쓸지 결정</td></tr>
+                <tr><td style="color:#a06050;">LangGraph create_react_agent</td><td style="color:#666;">판단→실행→관찰 루프 엔진</td></tr>
+                <tr><td style="color:#a06050;">faster-whisper (base 모델)</td><td style="color:#666;">오프라인 음성 → 텍스트 변환</td></tr>
+                <tr><td style="color:#a06050;">edge-tts (Microsoft)</td><td style="color:#666;">텍스트 → 한국어 음성 합성</td></tr>
+                <tr><td style="color:#a06050;">FastAPI · Electron · pydantic</td><td style="color:#666;">서버 · UI · 설정 프레임워크</td></tr>
+                <tr><td style="color:#a06050;">pyautogui · pyperclip · psutil</td><td style="color:#666;">키입력 · 클립보드 · 프로세스 유틸</td></tr>
+            </table>
+        </div>
+        <div>
+            <p style="color:var(--accent); font-weight:bold; font-size:0.7em; margin-bottom:8px;">🔧 우리가 설계 · 구현한 것</p>
+            <table style="font-size:0.62em;">
+                <tr>
+                    <th style="width:42%;">구현 항목</th>
+                    <th>왜 직접 만들어야 했나</th>
+                </tr>
+                <tr><td style="color:#4fc3f7;">3단계 파이프라인</td><td style="color:#666;">Security→Cache→LLM 순서 · 각 레이어 로직 설계</td></tr>
+                <tr><td style="color:#4fc3f7;">보안 레이어</td><td style="color:#666;">한국어 위험 명령 패턴 25개+ · LLM 전 차단 구조</td></tr>
+                <tr><td style="color:#4fc3f7;">커맨드 캐시</td><td style="color:#666;">Intent 추출 + 퍼지 매칭 2단계 알고리즘 · 시드 37개</td></tr>
+                <tr><td style="color:#4fc3f7;">도구 27개 전체</td><td style="color:#666;">Windows API 직접 제어 코드 (어떤 라이브러리도 제공 안 함)</td></tr>
+                <tr><td style="color:#4fc3f7;">하이브리드 STT 전환</td><td style="color:#666;">네트워크 감지 → 자동 전환 · 오인식 교정 딕셔너리</td></tr>
+                <tr><td style="color:#4fc3f7;">Thread 자동 복구</td><td style="color:#666;">오염 감지 → 체크포인트 삭제 → 재시도 (LangGraph 문서 외)</td></tr>
+                <tr><td style="color:#4fc3f7;">결정론적 라우터</td><td style="color:#666;">9개 패턴 → LLM 우회 직접 실행</td></tr>
+            </table>
+        </div>
+    </div>
+    <div style="margin-top:10px; font-size:0.6em; color:#3a4a5a; border-top:1px solid #1e2530; padding-top:8px;">
+        오른쪽 항목들은 왼쪽 라이브러리 중 어느 것도 제공하지 않습니다. &nbsp;·&nbsp; Gemini는 어떤 도구를 쓸지 결정할 뿐, 실제 Windows 제어는 전부 우리 코드가 합니다.
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     9. "API 붙인 거랑 뭐가 다른가?" ← 핵심 방어
+══════════════════════════════════════════════ -->
+<section>
+    <h2>직접 구현의 증거 — "라이브러리로 안 됐던 것들"</h2>
+    <p style="font-size:0.65em; color:#556; margin-bottom:12px;">"API 붙인 것 아니냐"는 질문에 대한 구체적 답변입니다. 라이브러리가 해결 못해 직접 짜야 했던 케이스들.</p>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:9px;">
+
+        <!-- 케이스 1 -->
+        <div style="border:1px solid #252f3a; border-left:3px solid var(--warn); border-radius:5px; padding:10px 12px; font-size:0.63em; line-height:1.7;">
+            <div style="color:var(--warn); font-weight:bold; margin-bottom:4px;">① 창 포커스 권한</div>
+            <div><span style="color:#556;">문제:</span> <span style="color:#889;">다른 앱이 포그라운드일 때 SetForegroundWindow() 호출해도 창이 안 올라옴</span></div>
+            <div><span style="color:#556;">왜 라이브러리로 안 되나:</span> <span style="color:#667;">Windows 보안 정책. pyautogui·psutil 모두 이 문제를 해결하지 않음</span></div>
+            <div><span style="color:var(--accent);">우리 해결:</span> <span style="color:#aaa;">현재 포그라운드 스레드에 AttachThreadInput으로 임시 attach → 권한 획득 후 창 전환 → detach. ctypes user32 직접 호출.</span></div>
+        </div>
+
+        <!-- 케이스 2 -->
+        <div style="border:1px solid #252f3a; border-left:3px solid var(--warn); border-radius:5px; padding:10px 12px; font-size:0.63em; line-height:1.7;">
+            <div style="color:var(--warn); font-weight:bold; margin-bottom:4px;">② 한국어 키보드 입력</div>
+            <div><span style="color:#556;">문제:</span> <span style="color:#889;">pyautogui.typewrite()는 ASCII만 지원. 한국어 직접 입력 시 글자 깨짐</span></div>
+            <div><span style="color:#556;">왜 라이브러리로 안 되나:</span> <span style="color:#667;">pyautogui 공식 문서에 한국어 미지원 명시. 대안 라이브러리 없음</span></div>
+            <div><span style="color:var(--accent);">우리 해결:</span> <span style="color:#aaa;">한국어 텍스트를 클립보드에 복사(pyperclip) → Ctrl+V로 붙여넣기 → 원래 클립보드 내용 복원. 사용자에게 투명하게 동작.</span></div>
+        </div>
+
+        <!-- 케이스 3 -->
+        <div style="border:1px solid #252f3a; border-left:3px solid var(--warn); border-radius:5px; padding:10px 12px; font-size:0.63em; line-height:1.7;">
+            <div style="color:var(--warn); font-weight:bold; margin-bottom:4px;">③ LangGraph thread 오염 자동 복구</div>
+            <div><span style="color:#556;">문제:</span> <span style="color:#889;">예외 발생 시 불완전 체크포인트 저장 → 이후 요청부터 에이전트 무한루프</span></div>
+            <div><span style="color:#556;">왜 라이브러리로 안 되나:</span> <span style="color:#667;">LangGraph 문서에 없는 케이스. MemorySaver 내부 저장소를 직접 접근해야만 해결 가능</span></div>
+            <div><span style="color:var(--accent);">우리 해결:</span> <span style="color:#aaa;">오염 패턴 자동 감지 → MemorySaver storage 키 직접 삭제(_clear_thread) → 새 thread_id로 재시도. 사용자 개입 없이 자가 복구.</span></div>
+        </div>
+
+        <!-- 케이스 4 -->
+        <div style="border:1px solid #252f3a; border-left:3px solid var(--warn); border-radius:5px; padding:10px 12px; font-size:0.63em; line-height:1.7;">
+            <div style="color:var(--warn); font-weight:bold; margin-bottom:4px;">④ STT 자동 전환 (하이브리드)</div>
+            <div><span style="color:#556;">문제:</span> <span style="color:#889;">Google STT는 오프라인에서 죽음. faster-whisper만 쓰면 온라인보다 느리고 정확도 낮음</span></div>
+            <div><span style="color:#556;">왜 라이브러리로 안 되나:</span> <span style="color:#667;">두 라이브러리 모두 "자동 전환" 기능 없음. 네트워크 상태 감지 + 전환 로직 자체 설계 필요</span></div>
+            <div><span style="color:var(--accent);">우리 해결:</span> <span style="color:#aaa;">네트워크 체크(10초 TTL 캐싱) → 온라인이면 Google STT, 오프라인이면 Whisper. 서버 시작 시 Whisper 백그라운드 프리로드.</span></div>
+        </div>
+
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     10. 3단계 파이프라인 설계
+══════════════════════════════════════════════ -->
+<section>
+    <h2>핵심 설계 — 3단계 실행 파이프라인</h2>
+    <p style="font-size:0.7em; color:var(--dim);">"왜 LLM에 모든 걸 맡기지 않는가" — 이것이 우리 아키텍처의 핵심 설계 결정입니다.</p>
+
+    <div class="pipeline">
+        <div class="pipe-box p-sec">🛡 Security<br><small>결정론적 차단</small></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box p-cache">⚡ Cache<br><small>오프라인 직접 실행</small></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box p-llm">🤖 LLM<br><small>마지막 수단</small></div>
+    </div>
+
+    <table style="font-size:0.63em;">
+        <tr>
+            <th>레이어</th>
+            <th>역할</th>
+            <th>왜 이 위치인가</th>
+            <th>LLM 필요</th>
+            <th>인터넷 필요</th>
+        </tr>
+        <tr>
+            <td style="color:var(--warn);">Security</td>
+            <td>위험 명령 패턴 차단</td>
+            <td>LLM이 입력을 보기 전에 결정론적으로 막아야</td>
+            <td>❌</td>
+            <td>❌</td>
+        </tr>
+        <tr>
+            <td style="color:var(--ok);">Cache</td>
+            <td>자주 쓰는 명령 직접 실행</td>
+            <td>API 비용 절감 + 오프라인 핵심 기능 보장</td>
+            <td>❌</td>
+            <td>❌</td>
+        </tr>
+        <tr>
+            <td style="color:var(--accent);">LLM</td>
+            <td>복잡한 명령 이해 및 판단</td>
+            <td>캐시 미스인 경우만 호출</td>
+            <td>✅</td>
+            <td>✅</td>
+        </tr>
+    </table>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     11. 전체 동작 흐름
+══════════════════════════════════════════════ -->
+<section>
+    <h2>전체 동작 흐름</h2>
+    <div>
+        <div class="layer">
+            🎤 <strong>입력</strong> — 음성(MediaRecorder webm) 또는 텍스트 (WebSocket / HTTP)
+        </div>
+        <div style="text-align:center;color:#444;font-size:0.65em;">↓ 음성이면</div>
+        <div class="layer">
+            📝 <strong>STT</strong> — 온라인: Google STT (비공식 무료) / 오프라인: faster-whisper 자동 전환
+            <br><span style="color:#555;">&nbsp;&nbsp;&nbsp;&nbsp;네트워크 상태 10초 캐싱 · 오인식 교정 딕셔너리 24개 패턴 적용</span>
+        </div>
+        <div style="text-align:center;color:#444;font-size:0.65em;">↓</div>
+        <div class="layer" style="border-color:var(--warn);">
+            🛡 <strong>Security</strong> — 정규식 25개+ 패턴. 위험 명령 LLM 전 결정론적 차단
+        </div>
+        <div style="text-align:center;color:#444;font-size:0.65em;">↓ 통과 시</div>
+        <div class="layer" style="border-color:var(--ok);">
+            ⚡ <strong>Cache</strong> — Stage 1: Intent 기반 매칭 (entity + action 쌍 추출)
+            → Stage 2: SequenceMatcher 퍼지 매칭 (임계값 0.80). 히트 시 도구 직접 실행
+        </div>
+        <div style="text-align:center;color:#444;font-size:0.65em;">↓ 캐시 미스 시</div>
+        <div class="layer" style="border-color:var(--accent);">
+            🤖 <strong>LangGraph ReAct</strong> — Gemini 판단 → 도구 선택 → 실행 → 관찰 → 반복 (최대 10회)
+        </div>
+        <div style="text-align:center;color:#444;font-size:0.65em;">↓</div>
+        <div class="layer">
+            🔊 <strong>TTS</strong> — edge-tts → MP3 → base64 → 브라우저 Audio API 재생
+        </div>
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     12. 폴더 구조
+══════════════════════════════════════════════ -->
+<section>
+    <h2>프로젝트 구성</h2>
+    <div>
+        <div class="layer"><span class="layer-label">진입점</span>main.py — FastAPI 서버 (HTTP /chat, /voice, /ws WebSocket)</div>
+        <div class="layer" style="border-color:var(--warn);"><span class="layer-label">에이전트 코어</span>core/ — agent.py · security.py · command_cache.py · tool_registry.py</div>
+        <div class="layer" style="border-color:var(--ok);"><span class="layer-label">도구 (27개)</span>tools/ — app_control · system · filesystem · web · input_control · calendar</div>
+        <div class="layer"><span class="layer-label">음성 처리</span>services/ — stt.py (하이브리드 Google+Whisper) · tts.py (edge-tts)</div>
+        <div class="layer"><span class="layer-label">설정</span>config/settings.py — pydantic-settings · @lru_cache · .env 기반 멀티 프로바이더</div>
+        <div class="layer"><span class="layer-label">메모리</span>memory/session.py — SQLite 로그 / LangGraph MemorySaver — thread_id별 맥락</div>
+        <div class="layer"><span class="layer-label">UI</span>electron-ui/ — main.js · preload.js · renderer/index.html (idle pill ↔ active view)</div>
+        <div class="layer"><span class="layer-label">캐시</span>cache/command_cache.json — 시드 37개 · 퍼지 매칭 · JSON 영속 저장</div>
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     13. 개발 과정 문제 — 시스템 변천사
+══════════════════════════════════════════════ -->
+<section>
+    <h2>개발 과정 문제 ① — 시스템 설계를 두 번 갈아엎었다</h2>
+    <p style="font-size:0.65em; color:#556; margin-bottom:10px;">단순 기능 추가가 아닌 <strong style="color:var(--warn);">구조 자체의 실패</strong>를 두 번 겪고 V2에 도달했습니다.</p>
+
+    <table style="font-size:0.61em;">
+        <tr>
+            <th style="width:16%;"></th>
+            <th style="color:#888;">V0 · 초기 프로토타입</th>
+            <th style="color:#888;">V1 · 서버 + 멀티에이전트</th>
+            <th style="color:var(--accent);">V2 · 현재</th>
+        </tr>
+        <tr>
+            <td>실행 방식</td>
+            <td class="tag-warn">LLM 코드 생성 → exec()</td>
+            <td class="tag-warn">LLM 코드 생성 → exec()</td>
+            <td class="tag-ok">사전 정의 도구 27개만 호출</td>
+        </tr>
+        <tr>
+            <td>보안</td>
+            <td class="tag-warn">JSON 키워드 필터 (우회 가능)</td>
+            <td class="tag-warn">AST 분석 가드 (불완전)</td>
+            <td class="tag-ok">정규식 25개+ · LLM 전 차단</td>
+        </tr>
+        <tr>
+            <td>에이전트 구조</td>
+            <td style="color:#666;">단일 컨트롤러</td>
+            <td class="tag-warn">Supervisor→Local→Base 3계층<br><span style="color:#555;">응답 지연 · 루프 제어 불가</span></td>
+            <td class="tag-ok">단일 ReAct 에이전트</td>
+        </tr>
+        <tr>
+            <td>STT / TTS</td>
+            <td class="tag-warn">로컬 Whisper만 / gTTS</td>
+            <td class="tag-warn">Google Cloud STT / TTS 미완성</td>
+            <td class="tag-ok">하이브리드 STT / edge-tts</td>
+        </tr>
+        <tr>
+            <td>메모리</td>
+            <td class="tag-warn">없음</td>
+            <td class="tag-warn">직전 1회만</td>
+            <td class="tag-ok">thread_id별 전체 히스토리</td>
+        </tr>
+    </table>
+
+    <div style="margin-top:10px; background:rgba(255,112,67,.08); border-left:3px solid var(--warn); padding:8px 14px; font-size:0.64em; line-height:1.8;">
+        <strong style="color:var(--warn);">V0·V1 폐기 이유 핵심:</strong>
+        exec() 구조는 LLM이 임의 코드를 생성·실행 → 프롬프트 인젝션으로 시스템 명령 실행 가능.
+        V1 멀티에이전트는 3계층 파싱 복잡도 급증 → TTS 미완성·응답 지연 → 사실상 실패.
+        <span style="color:#556;">다음 슬라이드에서 exec() vs 도구 방식 차이를 구체적으로 설명합니다.</span>
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     14. exec() vs 도구 방식 패러다임 비교
+══════════════════════════════════════════════ -->
+<section>
+    <h2>개발 과정 문제 ① — exec() vs 도구 방식</h2>
+    <div style="display:flex; justify-content:center; margin-top:8px;">
+        <img src="pluiz_paradigm.svg" style="width:100%; max-height:390px; object-fit:contain;"/>
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     15. 개발 과정 문제 ② — 기타 기술 도전
+══════════════════════════════════════════════ -->
+<section>
+    <h2>개발 과정 문제 ② — 그 외 기술 도전과 해결</h2>
+    <p style="font-size:0.63em; color:#556; margin-bottom:10px;">구조 재설계 이후에도 라이브러리로 해결 안 되는 문제들이 남아있었습니다.</p>
+
+    <div class="hbox">
+        <strong>① Electron file:// → 서버 사이드 STT 전환</strong><br>
+        <span style="color:var(--dim);">문제:</span> Web Speech API는 HTTPS 보안 컨텍스트 필요. file:// 프로토콜에서 마이크 접근 불가.<br>
+        <span style="color:var(--ok);">해결:</span> STT를 서버로 이전. MediaRecorder webm blob → POST /voice → Whisper 처리.<br>
+        <span style="color:var(--accent);">의미:</span> 단순 버그픽스가 아닌 아키텍처 결정. Electron 한계를 서버 사이드로 우회.
+    </div>
+    <div class="hbox">
+        <strong>② Windows SetForegroundWindow 권한 제한</strong><br>
+        <span style="color:var(--dim);">문제:</span> 다른 앱이 포그라운드일 때 창 활성화 불가. Windows 보안 정책.<br>
+        <span style="color:var(--ok);">해결:</span> AttachThreadInput 트릭 — 포그라운드 스레드에 임시 attach → 권한 획득 → detach.<br>
+        <span style="color:var(--accent);">의미:</span> Windows 저레벨 API 직접 제어. 어떤 라이브러리도 이 문제를 해결하지 않음.
+    </div>
+    <div class="hbox">
+        <strong>③ LangGraph thread 오염 → 자동 복구</strong><br>
+        <span style="color:var(--dim);">문제:</span> 예외 발생 시 불완전 체크포인트 저장 → 이후 요청부터 무한루프.<br>
+        <span style="color:var(--ok);">해결:</span> 오염 패턴 자동 감지 → MemorySaver storage 직접 삭제 → 새 thread_id로 재시도.<br>
+        <span style="color:var(--accent);">의미:</span> LangGraph 문서에 없는 케이스. 자가 복구 → 사용자 개입 불필요.
+    </div>
+
+    <p style="font-size:0.58em; color:#3a3a4a; text-align:right; margin-top:6px;">* 이 외 한국어 키보드 입력 · pycaw asyncio · Gemini 빈 응답 등 총 16개 기술 도전 해결</p>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     15. 절충된 문제들 (솔직하게)
+══════════════════════════════════════════════ -->
+<section>
+    <h2>현재 남아있는 과제</h2>
+    <p style="font-size:0.7em; color:var(--dim);">"알고 있고, 왜 지금은 안 했는지도 안다"</p>
+
+    <table style="font-size:0.66em;">
+        <tr>
+            <th>문제</th>
+            <th>현재 상태</th>
+            <th>왜 지금 안 됐나</th>
+            <th>2학기 계획</th>
+        </tr>
+        <tr>
+            <td>웨이크워드 "소윤아"</td>
+            <td class="tag-warn">Alt+Space 대체</td>
+            <td>tiny 모델 오탐/미탐 심각. 별도 키워드 탐지 모델 필요</td>
+            <td>경량 키워드 탐지 모델 도입</td>
+        </tr>
+        <tr>
+            <td>실행 결과 검증</td>
+            <td class="tag-warn">미구현</td>
+            <td>도구 27개 전부 반환값 파싱 레이어 추가 필요. 대규모 수정</td>
+            <td>검증 레이어 별도 구현</td>
+        </tr>
+        <tr>
+            <td>병렬 명령 실행</td>
+            <td class="tag-warn">미구현</td>
+            <td>create_react_agent 폐기 + 커스텀 그래프 재설계 수준</td>
+            <td>Plan-and-Execute 구조</td>
+        </tr>
+        <tr>
+            <td>캐시 퍼지 매칭</td>
+            <td class="tag-dim">0.80 절충값</td>
+            <td>한국어 구어체 변형 다양성 → 문자열 유사도 한계</td>
+            <td>임베딩 기반 시맨틱 매칭</td>
+        </tr>
+    </table>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     16. 개발 로드맵 전체
+══════════════════════════════════════════════ -->
+<section>
+    <h2>1학기 완료 기준선</h2>
+
+    <div style="display:grid; grid-template-columns:3fr 2fr; gap:14px;">
+
+        <div>
+            <p style="color:var(--ok); font-size:0.7em; font-weight:bold; margin-bottom:8px;">✅ 완료 — 1학기 목표 전체 달성</p>
+            <table style="font-size:0.6em;">
+                <tr><td style="color:#4fc3f7; width:36%;">3단계 파이프라인</td><td style="color:#667;">Security(패턴 25개+) → Cache(시드 37개, 퍼지 0.80) → LangGraph ReAct</td></tr>
+                <tr><td style="color:#4fc3f7;">도구 27개</td><td style="color:#667;">앱×5 · 시스템×10 · 파일×5 · 웹×5 · 키보드×2 · 캘린더×1</td></tr>
+                <tr><td style="color:#4fc3f7;">하이브리드 STT</td><td style="color:#667;">Google(온라인) + Whisper(오프라인) 자동 전환 · 10초 TTL 캐시</td></tr>
+                <tr><td style="color:#4fc3f7;">TTS</td><td style="color:#667;">edge-tts → MP3 → base64 · 음성+텍스트 입력 모두 지원</td></tr>
+                <tr><td style="color:#4fc3f7;">Electron UI</td><td style="color:#667;">idle pill ↔ active view · always-on-top · API 핫스왑</td></tr>
+                <tr><td style="color:#4fc3f7;">Thread 자동 복구</td><td style="color:#667;">오염 감지 → MemorySaver 직접 삭제 → 새 thread_id 재시도</td></tr>
+                <tr><td style="color:#4fc3f7;">결정론적 라우터</td><td style="color:#667;">9개 패턴 → LLM 우회 직접 실행 (속도 + API 비용 절감)</td></tr>
+                <tr><td style="color:#4fc3f7;">자동화 테스트</td><td style="color:#667;">25 / 25 통과 · 전 엔드포인트 · 주요 시나리오 커버</td></tr>
+            </table>
+        </div>
+
+        <div>
+            <p style="color:#ffc107; font-size:0.7em; font-weight:bold; margin-bottom:8px;">⏸ 알고 보류한 것</p>
+            <div style="font-size:0.6em; background:rgba(255,255,255,.03); border-left:3px solid #ffc107; padding:10px 14px; border-radius:0 4px 4px 0; line-height:1.9;">
+                <div>
+                    <span style="color:#aaa;">웨이크워드 "소윤아"</span><br>
+                    <span style="color:#556;">→ Alt+Space로 대체 중. tiny 모델 오탐율 심각. 방학에 openWakeWord / Porcupine 검토.</span>
+                </div>
+                <div style="margin-top:10px;">
+                    <span style="color:#aaa;">클립보드 읽기</span><br>
+                    <span style="color:#556;">→ 쓰기(pyperclip)는 완료. 읽기 도구 1개만 추가하면 됨. 방학 작업.</span>
+                </div>
+                <div style="margin-top:10px;">
+                    <span style="color:#aaa;">stream() 캐시 통합</span><br>
+                    <span style="color:#556;">→ run_async()에만 캐시 적용됨. WebSocket 스트리밍 경로에도 추가 필요.</span>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     17. 개발 로드맵
+══════════════════════════════════════════════ -->
+<section>
+    <h2>개발 로드맵 — 방학 · 2학기</h2>
+
+    <!-- 타임라인 헤더 -->
+    <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1fr; font-size:0.62em; margin-bottom:8px; border-radius:4px; overflow:hidden;">
+        <div style="background:rgba(255,193,7,.18); border:1px solid #ffc107; padding:6px 10px; text-align:center; color:#ffc107; font-weight:bold;">☀️ 방학 &nbsp;(6월말 — 8월말)</div>
+        <div style="background:rgba(79,195,247,.12); border:1px solid #4fc3f7; border-left:none; padding:6px 10px; text-align:center; color:#4fc3f7; font-weight:bold;">9월</div>
+        <div style="background:rgba(79,195,247,.12); border:1px solid #4fc3f7; border-left:none; padding:6px 10px; text-align:center; color:#4fc3f7; font-weight:bold;">10월</div>
+        <div style="background:rgba(102,187,106,.14); border:1px solid #66bb6a; border-left:none; padding:6px 10px; text-align:center; color:#66bb6a; font-weight:bold;">11월</div>
+    </div>
+
+    <!-- 상세 내용 -->
+    <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:7px; font-size:0.58em;">
+
+        <!-- 방학: 두 블록 세로 배치 -->
+        <div style="display:flex; flex-direction:column; gap:7px;">
+            <div style="border:1px solid #ffc107; border-radius:4px; padding:9px 11px; background:rgba(255,193,7,.04); flex:1;">
+                <div style="color:#ffc107; font-weight:bold; margin-bottom:5px;">6 - 7월 · 코드 품질 정비</div>
+                <div style="color:#667; line-height:1.85;">
+                    · 로깅 시스템 도입 <span style="color:#445;">(loguru)</span><br>
+                    · 에러 핸들링 표준화<br>
+                    <span style="color:#445;">&nbsp;&nbsp;(도구마다 제각각인 예외 처리 통일)</span><br>
+                    · 테스트 25개 → 60개+<br>
+                    <span style="color:#445;">&nbsp;&nbsp;(도구별 단위 테스트 추가)</span><br>
+                    · requirements.txt 버전 고정
+                </div>
+            </div>
+            <div style="border:1px solid #ffc107; border-radius:4px; padding:9px 11px; background:rgba(255,193,7,.04); flex:1;">
+                <div style="color:#ffc107; font-weight:bold; margin-bottom:5px;">7 - 8월 · Phase 1 완성 + Vision 기초</div>
+                <div style="color:#667; line-height:1.85;">
+                    · 브라우저 자동화 <span style="color:#445;">(Playwright)</span><br>
+                    · 클립보드 읽기 도구 추가<br>
+                    · 웨이크워드 개선 탐색<br>
+                    <span style="color:#445;">&nbsp;&nbsp;(openWakeWord / Porcupine)</span><br>
+                    · stream() 캐시 통합<br>
+                    · 화면 이해 기초 프로토타입<br>
+                    <span style="color:#445;">&nbsp;&nbsp;스크린샷 → Gemini Vision → 설명 도구</span><br>
+                    · PyInstaller / .exe 패키징 기초
+                </div>
+            </div>
+        </div>
+
+        <!-- 9월 -->
+        <div style="border:1px solid #4fc3f7; border-radius:4px; padding:9px 11px; background:rgba(79,195,247,.04);">
+            <div style="color:#4fc3f7; font-weight:bold; margin-bottom:5px;">Phase 2 완성<br>화면 이해</div>
+            <div style="color:#667; line-height:1.9;">
+                · Vision 기반<br>&nbsp;&nbsp;UI 요소 인식<br>
+                <span style="color:#445;">&nbsp;&nbsp;(버튼·텍스트 위치)</span><br><br>
+                · 화면 변화<br>&nbsp;&nbsp;모니터링<br>
+                <span style="color:#445;">&nbsp;&nbsp;"오류 뜨면 알려줘"</span><br><br>
+                · 실행 결과<br>&nbsp;&nbsp;시각적 검증<br>
+                <span style="color:#445;">&nbsp;&nbsp;"됐어?" 자동 확인</span>
+            </div>
+        </div>
+
+        <!-- 10월 -->
+        <div style="border:1px solid #4fc3f7; border-radius:4px; padding:9px 11px; background:rgba(79,195,247,.04);">
+            <div style="color:#4fc3f7; font-weight:bold; margin-bottom:5px;">Plan-and-Execute<br>+ 개인화</div>
+            <div style="color:#667; line-height:1.9;">
+                · create_react_agent<br>&nbsp;&nbsp;폐기<br>
+                · 커스텀 LangGraph<br>&nbsp;&nbsp;그래프 설계<br>
+                · 병렬 실행 지원<br><br>
+                · 장기 메모리<br>
+                <span style="color:#445;">&nbsp;&nbsp;(자주 쓰는 앱·명령)</span><br>
+                · 루틴 학습<br>
+                · 임베딩 기반 캐시
+            </div>
+        </div>
+
+        <!-- 11월 -->
+        <div style="border:1px solid #66bb6a; border-radius:4px; padding:9px 11px; background:rgba(102,187,106,.04);">
+            <div style="color:#66bb6a; font-weight:bold; margin-bottom:5px;">배포 완성</div>
+            <div style="color:#667; line-height:1.9;">
+                · Windows Installer<br>
+                <span style="color:#445;">&nbsp;&nbsp;(.exe 배포판)</span><br>
+                · 자동 업데이트<br>&nbsp;&nbsp;메커니즘<br><br>
+                · 외부 서비스 연동<br>
+                <span style="color:#445;">&nbsp;&nbsp;Gmail · 카카오 API</span><br><br>
+                · 성능 최적화<br>
+                <span style="color:#445;">&nbsp;&nbsp;(응답 지연 목표치)</span>
+            </div>
+        </div>
+
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     18. 최종 시스템 목표
+══════════════════════════════════════════════ -->
+<section>
+    <h2>최종 시스템 목표</h2>
+    <p style="font-size:0.82em; color:var(--accent); text-align:center; margin:6px 0 18px; letter-spacing:0.3px;">
+        "Windows 위에서 동작하는 이식 가능한 <strong>개인 적응형 에이전트</strong>"
+    </p>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+
+        <div style="border:1px solid var(--accent); border-radius:8px; padding:14px 16px; background:rgba(79,195,247,.06);">
+            <div style="font-size:1.6em; margin-bottom:6px;">🖥️</div>
+            <div style="color:var(--accent); font-weight:bold; font-size:0.73em; margin-bottom:7px;">화면을 보고 상황을 이해</div>
+            <div style="color:#667; font-size:0.62em; line-height:1.75;">
+                스크린샷 → Vision LLM → 화면 내용 파악<br>
+                "지금 화면에 뭐 있어?", "오류 생기면 알려줘"<br>
+                UI 요소 인식 → 버튼 위치 파악 → 자동 클릭
+            </div>
+        </div>
+
+        <div style="border:1px solid #ce93d8; border-radius:8px; padding:14px 16px; background:rgba(156,39,176,.06);">
+            <div style="font-size:1.6em; margin-bottom:6px;">🧠</div>
+            <div style="color:#ce93d8; font-weight:bold; font-size:0.73em; margin-bottom:7px;">쓸수록 더 잘 알게 되는</div>
+            <div style="color:#667; font-size:0.62em; line-height:1.75;">
+                사용자 행동 패턴 장기 메모리<br>
+                자주 쓰는 앱·명령·루틴 자동 기억<br>
+                "매일 아침 켜는 앱" → 습관 학습 → 선제 제안
+            </div>
+        </div>
+
+        <div style="border:1px solid var(--ok); border-radius:8px; padding:14px 16px; background:rgba(102,187,106,.06);">
+            <div style="font-size:1.6em; margin-bottom:6px;">📡</div>
+            <div style="color:var(--ok); font-weight:bold; font-size:0.73em; margin-bottom:7px;">인터넷 없이도 핵심 기능 동작</div>
+            <div style="color:#667; font-size:0.62em; line-height:1.75;">
+                자주 쓰는 명령 → 캐시에 저장 → 오프라인 직접 실행<br>
+                하이브리드 STT (온라인 부재 시 Whisper 자동 전환)<br>
+                상용 시스템 대비 핵심 차별점
+            </div>
+        </div>
+
+        <div style="border:1px solid var(--warn); border-radius:8px; padding:14px 16px; background:rgba(255,112,67,.06);">
+            <div style="font-size:1.6em; margin-bottom:6px;">📦</div>
+            <div style="color:var(--warn); font-weight:bold; font-size:0.73em; margin-bottom:7px;">설치형 배포 — 실제 사용 가능한 SW</div>
+            <div style="color:#667; font-size:0.62em; line-height:1.75;">
+                Windows Installer (.exe) 배포판<br>
+                자동 업데이트 · Gmail·카카오 외부 서비스 연동<br>
+                "연구 프로토타입"이 아닌 실제 작동하는 소프트웨어
+            </div>
+        </div>
+
+    </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     19. [팀원] 데모
+══════════════════════════════════════════════ -->
+<section>
+    <div class="placeholder">
+        <p style="font-size:1.1em; color:#555;">[ 팀원 파트 ]</p>
+        <p style="color:#444; margin-top:8px;">데모 영상</p>
+        <p style="font-size:0.7em; color:#383838;">일반 실행 · 보안 · 캐싱 성능 · 예외 처리</p>
+    </div>
+</section>
+
+</div><!-- /slides -->
+</div><!-- /reveal -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/reveal.min.js"></script>
+<script>
+Reveal.initialize({
+    hash: true,
+    transition: 'fade',
+    transitionSpeed: 'fast',
+    controls: true,
+    progress: true,
+    slideNumber: 'c/t',
+    keyboard: true,
+    center: false,
+    margin: 0.08,
+});
+</script>
+</body>
+</html>

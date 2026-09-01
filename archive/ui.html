@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pluiz — 음성 AI 에이전트</title>
+<style>
+  :root {
+    --bg: #0f0f13;
+    --surface: #1a1a23;
+    --surface2: #24243a;
+    --accent: #7c6fef;
+    --accent2: #5b51d8;
+    --text: #e8e8f0;
+    --text-muted: #7878a0;
+    --user-bubble: #2a2a4a;
+    --agent-bubble: #1e2a3a;
+    --success: #4ade80;
+    --danger: #f87171;
+    --border: rgba(124,111,239,0.2);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', 'Apple SD Gothic Neo', sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── 헤더 ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .logo-icon {
+    width: 34px; height: 34px;
+    background: linear-gradient(135deg, var(--accent), #a78bfa);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 6px var(--success);
+    transition: all .3s;
+  }
+  .status-dot.offline { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+  .status-dot.connecting { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; animation: pulse 1s infinite; }
+  .status-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  /* ── 채팅 영역 ── */
+  .chat-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    scroll-behavior: smooth;
+  }
+  .chat-container::-webkit-scrollbar { width: 4px; }
+  .chat-container::-webkit-scrollbar-track { background: transparent; }
+  .chat-container::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 4px; }
+
+  .message {
+    display: flex;
+    gap: 10px;
+    max-width: 85%;
+    animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  .message.user { align-self: flex-end; flex-direction: row-reverse; }
+  .message.agent { align-self: flex-start; }
+
+  .avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+  }
+  .avatar.user-av { background: var(--accent); }
+  .avatar.agent-av { background: linear-gradient(135deg, #1e3a5f, #2a4a7f); border: 1px solid var(--border); }
+
+  .bubble {
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 14px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .message.user .bubble {
+    background: var(--user-bubble);
+    border: 1px solid var(--border);
+    border-top-right-radius: 4px;
+  }
+  .message.agent .bubble {
+    background: var(--agent-bubble);
+    border: 1px solid rgba(30,90,150,0.3);
+    border-top-left-radius: 4px;
+  }
+
+  .typing-indicator {
+    display: none;
+    align-self: flex-start;
+    gap: 10px;
+    align-items: center;
+  }
+  .typing-indicator.visible { display: flex; }
+  .dots { display: flex; gap: 4px; padding: 10px 14px; background: var(--agent-bubble); border-radius: 14px; border-top-left-radius: 4px; border: 1px solid rgba(30,90,150,0.3); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); animation: bounce .9s infinite; }
+  .dot:nth-child(2) { animation-delay: .15s; }
+  .dot:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+
+  /* ── 입력 영역 ── */
+  .input-area {
+    padding: 14px 16px 18px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .input-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 8px 8px 8px 14px;
+    transition: border-color .2s;
+  }
+  .input-row:focus-within { border-color: var(--accent); }
+
+  #text-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    resize: none;
+    max-height: 100px;
+    min-height: 24px;
+    line-height: 1.5;
+  }
+  #text-input::placeholder { color: var(--text-muted); }
+
+  .btn {
+    width: 38px; height: 38px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px;
+    transition: all .15s;
+    flex-shrink: 0;
+  }
+  .btn:active { transform: scale(0.93); }
+
+  #send-btn {
+    background: var(--accent);
+    color: white;
+  }
+  #send-btn:hover { background: var(--accent2); }
+  #send-btn:disabled { background: var(--surface2); color: var(--text-muted); cursor: not-allowed; }
+
+  #mic-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  #mic-btn:hover { color: var(--text); border-color: var(--accent); }
+  #mic-btn.recording {
+    background: rgba(248,113,113,0.2);
+    border-color: var(--danger);
+    color: var(--danger);
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+  /* ── 힌트 칩 ── */
+  .hint-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .chip {
+    padding: 5px 11px;
+    border-radius: 20px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .chip:hover { background: var(--user-bubble); color: var(--text); border-color: var(--accent); }
+
+  /* ── 환영 화면 ── */
+  .welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 20px;
+  }
+  .welcome-icon { font-size: 48px; margin-bottom: 4px; }
+  .welcome h2 { font-size: 22px; color: var(--text); font-weight: 600; }
+  .welcome p { font-size: 14px; max-width: 320px; line-height: 1.6; }
+
+  /* ── 음성 파형 ── */
+  #voice-viz {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 32px;
+    padding: 0 8px;
+  }
+  #voice-viz.visible { display: flex; }
+  .bar {
+    width: 3px;
+    background: var(--danger);
+    border-radius: 3px;
+    animation: wave 0.8s ease-in-out infinite;
+  }
+  .bar:nth-child(1) { animation-delay: 0s; }
+  .bar:nth-child(2) { animation-delay: 0.1s; }
+  .bar:nth-child(3) { animation-delay: 0.2s; }
+  .bar:nth-child(4) { animation-delay: 0.1s; }
+  .bar:nth-child(5) { animation-delay: 0s; }
+  @keyframes wave {
+    0%,100% { height: 6px; }
+    50% { height: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🎙️</div>
+    Pluiz
+  </div>
+  <div class="status-label">
+    <div class="status-dot connecting" id="status-dot"></div>
+    <span id="status-text">연결 중...</span>
+  </div>
+</header>
+
+<div class="chat-container" id="chat">
+  <div class="welcome" id="welcome">
+    <div class="welcome-icon">🤖</div>
+    <h2>Pluiz에게 말을 걸어보세요</h2>
+    <p>음성 또는 텍스트로 Windows PC를 제어할 수 있습니다</p>
+  </div>
+  <div class="typing-indicator" id="typing">
+    <div class="avatar agent-av">🤖</div>
+    <div class="dots">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+  </div>
+</div>
+
+<div class="input-area">
+  <div class="hint-chips" id="chips">
+    <div class="chip" onclick="sendChip(this)">크롬 열어줘</div>
+    <div class="chip" onclick="sendChip(this)">유튜브에서 아이유 검색해</div>
+    <div class="chip" onclick="sendChip(this)">볼륨 올려줘</div>
+    <div class="chip" onclick="sendChip(this)">지금 몇 시야?</div>
+    <div class="chip" onclick="sendChip(this)">바탕화면에 메모.txt 만들어</div>
+    <div class="chip" onclick="sendChip(this)">실행 중인 앱 알려줘</div>
+  </div>
+  <div class="input-row">
+    <div id="voice-viz">
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div>
+    </div>
+    <textarea id="text-input" placeholder="명령을 입력하세요..." rows="1"
+      onkeydown="handleKeyDown(event)" oninput="autoResize(this)"></textarea>
+    <button class="btn" id="mic-btn" onclick="toggleRecording()" title="음성 입력 (스페이스바)">🎙️</button>
+    <button class="btn" id="send-btn" onclick="sendText()" title="전송 (Enter)">▲</button>
+  </div>
+</div>
+
+<script>
+const API_BASE = 'http://127.0.0.1:8765';
+let ws = null;
+let threadId = 'ui_' + Date.now();
+let isRecording = false;
+let mediaRecorder = null;
+let audioChunks = [];
+let isWaiting = false;
+
+// ── WebSocket 연결 ──────────────────────────────────────────────
+
+function connect() {
+  setStatus('connecting');
+  ws = new WebSocket(`ws://127.0.0.1:8765/ws`);
+
+  ws.onopen = () => {
+    setStatus('online');
+    console.log('[WS] Connected');
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'start') {
+      showTyping(false);
+      appendMessage('agent', '');
+    } else if (msg.type === 'chunk') {
+      appendChunk(msg.content);
+    } else if (msg.type === 'end') {
+      finalizeLastMessage(msg.full);
+      setWaiting(false);
+    } else if (msg.type === 'error') {
+      appendMessage('agent', '⚠️ ' + msg.message);
+      setWaiting(false);
+    }
+  };
+
+  ws.onclose = () => {
+    setStatus('offline');
+    setTimeout(connect, 3000);  // 재연결
+  };
+
+  ws.onerror = () => {
+    setStatus('offline');
+  };
+}
+
+// ── 상태 관리 ───────────────────────────────────────────────────
+
+function setStatus(s) {
+  const dot = document.getElementById('status-dot');
+  const label = document.getElementById('status-text');
+  dot.className = 'status-dot ' + s;
+  label.textContent = { online: '연결됨', offline: '오프라인', connecting: '연결 중...' }[s];
+}
+
+function setWaiting(v) {
+  isWaiting = v;
+  document.getElementById('send-btn').disabled = v;
+}
+
+function showTyping(v) {
+  document.getElementById('typing').className = 'typing-indicator' + (v ? ' visible' : '');
+}
+
+// ── 메시지 렌더링 ───────────────────────────────────────────────
+
+function hideWelcome() {
+  const w = document.getElementById('welcome');
+  if (w) w.remove();
+}
+
+function appendMessage(role, text) {
+  hideWelcome();
+  const chat = document.getElementById('chat');
+  const typing = document.getElementById('typing');
+
+  const msg = document.createElement('div');
+  msg.className = 'message ' + role;
+  msg.innerHTML = `
+    <div class="avatar ${role === 'user' ? 'user-av' : 'agent-av'}">${role === 'user' ? '👤' : '🤖'}</div>
+    <div class="bubble">${escapeHtml(text)}</div>
+  `;
+  chat.insertBefore(msg, typing);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+let streamBubble = null;
+
+function appendChunk(chunk) {
+  if (!streamBubble) {
+    const typing = document.getElementById('typing');
+    const msg = document.createElement('div');
+    msg.className = 'message agent';
+    msg.innerHTML = `
+      <div class="avatar agent-av">🤖</div>
+      <div class="bubble"></div>
+    `;
+    document.getElementById('chat').insertBefore(msg, typing);
+    streamBubble = msg.querySelector('.bubble');
+  }
+  streamBubble.textContent += chunk;
+  document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+}
+
+function finalizeLastMessage(full) {
+  if (streamBubble) {
+    streamBubble.textContent = full;
+    streamBubble = null;
+  }
+  document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+// ── 텍스트 전송 ─────────────────────────────────────────────────
+
+function sendText() {
+  const input = document.getElementById('text-input');
+  const text = input.value.trim();
+  if (!text || isWaiting) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    appendMessage('agent', '⚠️ 서버에 연결되지 않았습니다. 서버가 실행 중인지 확인하세요.');
+    return;
+  }
+
+  appendMessage('user', text);
+  input.value = '';
+  input.style.height = 'auto';
+
+  setWaiting(true);
+  showTyping(true);
+
+  ws.send(JSON.stringify({ text, thread_id: threadId }));
+}
+
+function sendChip(el) {
+  document.getElementById('text-input').value = el.textContent;
+  sendText();
+}
+
+function handleKeyDown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendText();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+}
+
+// ── 음성 입력 ───────────────────────────────────────────────────
+
+async function toggleRecording() {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    await startRecording();
+  }
+}
+
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    audioChunks = [];
+
+    mediaRecorder.ondataavailable = e => {
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(audioChunks, { type: 'audio/webm' });
+      await sendVoice(blob);
+    };
+
+    mediaRecorder.start();
+    isRecording = true;
+
+    document.getElementById('mic-btn').classList.add('recording');
+    document.getElementById('mic-btn').textContent = '⏹️';
+    document.getElementById('voice-viz').classList.add('visible');
+    document.getElementById('text-input').style.display = 'none';
+  } catch (err) {
+    alert('마이크 권한이 필요합니다: ' + err.message);
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && isRecording) {
+    mediaRecorder.stop();
+    isRecording = false;
+    document.getElementById('mic-btn').classList.remove('recording');
+    document.getElementById('mic-btn').textContent = '🎙️';
+    document.getElementById('voice-viz').classList.remove('visible');
+    document.getElementById('text-input').style.display = '';
+  }
+}
+
+async function sendVoice(blob) {
+  setWaiting(true);
+  showTyping(true);
+
+  try {
+    const formData = new FormData();
+    formData.append('audio', blob, 'voice.webm');
+    formData.append('thread_id', threadId);
+    formData.append('use_tts', 'true');
+
+    const res = await fetch(`${API_BASE}/voice`, { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (data.error) {
+      appendMessage('agent', '⚠️ ' + data.error);
+    } else {
+      appendMessage('user', '🎤 ' + data.text);
+      appendMessage('agent', data.response);
+
+      // TTS 재생
+      if (data.audio_base64) {
+        const audioData = atob(data.audio_base64);
+        const arr = new Uint8Array(audioData.length);
+        for (let i = 0; i < audioData.length; i++) arr[i] = audioData.charCodeAt(i);
+        const audioBlob = new Blob([arr], { type: 'audio/mp3' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.play().catch(() => {});
+        audio.onended = () => URL.revokeObjectURL(audioUrl);
+      }
+    }
+  } catch (err) {
+    appendMessage('agent', '⚠️ 음성 처리 실패: ' + err.message);
+  } finally {
+    showTyping(false);
+    setWaiting(false);
+  }
+}
+
+// ── 키보드 단축키 ───────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && e.target === document.body) {
+    e.preventDefault();
+    toggleRecording();
+  }
+});
+
+// ── 시작 ───────────────────────────────────────────────────────
+connect();
+</script>
+</body>
+</html>

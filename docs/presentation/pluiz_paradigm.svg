@@ -1,0 +1,149 @@
+<svg viewBox="0 0 900 460" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI', system-ui, sans-serif">
+  <rect width="900" height="460" fill="#111318"/>
+
+  <!-- 제목 -->
+  <text x="450" y="32" text-anchor="middle" fill="#e8e8f0" font-size="14" font-weight="700">설계 패러다임 전환 — 왜 V2에서 구조를 갈아엎었나</text>
+
+  <!-- ═══ 왼쪽 패널: V0/V1 방식 ═══ -->
+  <rect x="16" y="44" width="418" height="400" rx="10" fill="#1a0f0f" stroke="#ff7043" stroke-width="1.5"/>
+  <text x="225" y="66" text-anchor="middle" fill="#ff7043" font-size="12" font-weight="700">V0 / V1 방식 — exec() 기반</text>
+
+  <!-- 흐름 박스들 -->
+  <!-- 사용자 입력 -->
+  <rect x="32" y="80" width="88" height="40" rx="6" fill="#1e2230" stroke="#555" stroke-width="1"/>
+  <text x="76" y="96" text-anchor="middle" fill="#aaa" font-size="10" font-weight="600">사용자 입력</text>
+  <text x="76" y="111" text-anchor="middle" fill="#667" font-size="9">"메모장 열어줘"</text>
+
+  <line x1="120" y1="100" x2="140" y2="100" stroke="#666" stroke-width="1.5" marker-end="url(#a-gray)"/>
+
+  <!-- LLM -->
+  <rect x="142" y="80" width="88" height="40" rx="6" fill="#2a1505" stroke="#ff7043" stroke-width="1.5"/>
+  <text x="186" y="96" text-anchor="middle" fill="#ff9a6c" font-size="10" font-weight="600">LLM</text>
+  <text x="186" y="111" text-anchor="middle" fill="#a06040" font-size="9">코드 생성</text>
+
+  <line x1="230" y1="100" x2="250" y2="100" stroke="#666" stroke-width="1.5" marker-end="url(#a-gray)"/>
+
+  <!-- 코드 생성 -->
+  <rect x="252" y="80" width="88" height="40" rx="6" fill="#2a1505" stroke="#ff7043" stroke-width="1.5"/>
+  <text x="296" y="96" text-anchor="middle" fill="#ff9a6c" font-size="10" font-weight="600">Python 코드</text>
+  <text x="296" y="111" text-anchor="middle" fill="#a06040" font-size="9">임의 생성</text>
+
+  <line x1="340" y1="100" x2="360" y2="100" stroke="#666" stroke-width="1.5" marker-end="url(#a-gray)"/>
+
+  <!-- exec() -->
+  <rect x="362" y="76" width="56" height="48" rx="6" fill="#3a0a0a" stroke="#ff3030" stroke-width="2"/>
+  <text x="390" y="96" text-anchor="middle" fill="#ff5050" font-size="11" font-weight="700">exec()</text>
+  <text x="390" y="113" text-anchor="middle" fill="#a03030" font-size="8">실행</text>
+
+  <!-- exec 아래 화살표 -->
+  <line x1="390" y1="124" x2="390" y2="148" stroke="#ff3030" stroke-width="1.5" marker-end="url(#a-red)"/>
+
+  <!-- Windows -->
+  <rect x="340" y="150" width="96" height="36" rx="6" fill="#1e2230" stroke="#555" stroke-width="1"/>
+  <text x="388" y="172" text-anchor="middle" fill="#aaa" font-size="10">Windows 실행</text>
+
+  <!-- ═══ 공격 포인트 시각화 ═══ -->
+  <!-- 빨간 인젝션 화살표 (위에서 LLM으로) -->
+  <line x1="186" y1="44" x2="186" y2="76" stroke="#ff3030" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#a-red)"/>
+  <rect x="100" y="44" width="172" height="22" rx="4" fill="#3a0808" stroke="#ff3030" stroke-width="1"/>
+  <text x="186" y="59" text-anchor="middle" fill="#ff6060" font-size="9" font-weight="600">⚠ 악의적 프롬프트 주입 가능</text>
+
+  <!-- 생성 코드 내용 (코드 박스) -->
+  <rect x="32" y="150" width="292" height="72" rx="6" fill="#0f0a0a" stroke="#3a1a1a" stroke-width="1"/>
+  <text x="42" y="168" fill="#ff7043" font-size="9" font-weight="600">LLM이 생성하는 코드 예시:</text>
+  <text x="42" y="183" fill="#667" font-size="9" font-family="monospace">import os</text>
+  <text x="42" y="196" fill="#667" font-size="9" font-family="monospace">os.system("del /f /s C:\\*.*")  # 전체 삭제</text>
+  <text x="42" y="209" fill="#445" font-size="9" font-family="monospace">subprocess.run(["format", "C:"])  # 포맷</text>
+
+  <!-- 문제점 리스트 -->
+  <text x="32" y="244" fill="#ff7043" font-size="10" font-weight="600">핵심 문제</text>
+  <text x="32" y="262" fill="#a05040" font-size="10">❌  LLM이 어떤 코드든 생성 가능 → 무한한 공격 표면</text>
+  <text x="32" y="280" fill="#a05040" font-size="10">❌  프롬프트 인젝션으로 시스템 명령 실행 가능</text>
+  <text x="32" y="298" fill="#a05040" font-size="10">❌  생성 코드 품질에 따라 안정성 불안정</text>
+  <text x="32" y="316" fill="#a05040" font-size="10">❌  어떤 동작이 실행될지 사전에 알 수 없음</text>
+
+  <!-- V1 추가 문제 -->
+  <rect x="32" y="330" width="390" height="52" rx="5" fill="#1a0a0a" stroke="#3a1a1a" stroke-width="1"/>
+  <text x="42" y="348" fill="#ff7043" font-size="9" font-weight="600">V1 추가 문제 (멀티에이전트 구조)</text>
+  <text x="42" y="363" fill="#6a3a2a" font-size="9">Supervisor → Local → Base 3계층 → 에이전트 간 메시지 파싱 복잡도 급증</text>
+  <text x="42" y="376" fill="#6a3a2a" font-size="9">응답 지연 심각 · TTS 미완성 · 루프 제어 불가능 → 사실상 실패</text>
+
+  <!-- ═══ 오른쪽 패널: V2 방식 ═══ -->
+  <rect x="466" y="44" width="418" height="400" rx="10" fill="#0f1a10" stroke="#66bb6a" stroke-width="1.5"/>
+  <text x="675" y="66" text-anchor="middle" fill="#66bb6a" font-size="12" font-weight="700">V2 방식 — 도구 명시적 정의</text>
+
+  <!-- 흐름 박스들 -->
+  <!-- 사용자 입력 -->
+  <rect x="480" y="80" width="74" height="40" rx="6" fill="#1e2230" stroke="#555" stroke-width="1"/>
+  <text x="517" y="96" text-anchor="middle" fill="#aaa" font-size="10" font-weight="600">사용자 입력</text>
+  <text x="517" y="111" text-anchor="middle" fill="#667" font-size="9">"메모장 열어줘"</text>
+
+  <line x1="554" y1="100" x2="570" y2="100" stroke="#666" stroke-width="1.5" marker-end="url(#a-gray)"/>
+
+  <!-- Security -->
+  <rect x="572" y="80" width="72" height="40" rx="6" fill="#2a1a15" stroke="#ff7043" stroke-width="1.2"/>
+  <text x="608" y="96" text-anchor="middle" fill="#ff7043" font-size="10" font-weight="600">🛡 Security</text>
+  <text x="608" y="111" text-anchor="middle" fill="#a06040" font-size="9">위험 명령 차단</text>
+
+  <line x1="644" y1="100" x2="660" y2="100" stroke="#666" stroke-width="1.5" marker-end="url(#a-gray)"/>
+
+  <!-- LLM -->
+  <rect x="662" y="80" width="72" height="40" rx="6" fill="#152030" stroke="#4fc3f7" stroke-width="1.2"/>
+  <text x="698" y="96" text-anchor="middle" fill="#4fc3f7" font-size="10" font-weight="600">LLM</text>
+  <text x="698" y="111" text-anchor="middle" fill="#407090" font-size="9">도구 선택</text>
+
+  <line x1="734" y1="100" x2="750" y2="100" stroke="#666" stroke-width="1.5" marker-end="url(#a-gray)"/>
+
+  <!-- 도구 선택 -->
+  <rect x="752" y="80" width="116" height="40" rx="6" fill="#172517" stroke="#66bb6a" stroke-width="1.5"/>
+  <text x="810" y="96" text-anchor="middle" fill="#66bb6a" font-size="10" font-weight="600">도구 실행</text>
+  <text x="810" y="111" text-anchor="middle" fill="#406040" font-size="9">27개 중 하나만</text>
+
+  <!-- 도구 실행 아래 화살표 -->
+  <line x1="810" y1="124" x2="810" y2="148" stroke="#66bb6a" stroke-width="1.5" marker-end="url(#a-green)"/>
+
+  <!-- Windows -->
+  <rect x="762" y="150" width="96" height="36" rx="6" fill="#1e2230" stroke="#555" stroke-width="1"/>
+  <text x="810" y="172" text-anchor="middle" fill="#aaa" font-size="10">Windows 실행</text>
+
+  <!-- 27개 도구 박스 (미니) -->
+  <rect x="480" y="150" width="258" height="72" rx="6" fill="#0d150d" stroke="#253a25" stroke-width="1"/>
+  <text x="490" y="167" fill="#66bb6a" font-size="9" font-weight="600">실행 가능한 동작 목록 (전체):</text>
+  <text x="490" y="181" fill="#3a5a3a" font-size="8.5">open_app  close_app  maximize  minimize  show_desktop</text>
+  <text x="490" y="194" fill="#3a5a3a" font-size="8.5">volume_up  volume_down  set_volume  mute  brightness_up ...</text>
+  <text x="490" y="207" fill="#3a5a3a" font-size="8.5">create_file  find_file  web_search  youtube_search  type_text ...</text>
+  <text x="730" y="215" text-anchor="end" fill="#66bb6a" font-size="8">총 27개 고정</text>
+
+  <!-- 해결책 리스트 -->
+  <text x="480" y="248" fill="#66bb6a" font-size="10" font-weight="600">핵심 개선</text>
+  <text x="480" y="266" fill="#406040" font-size="10">✅  실행 가능한 동작이 27개로 명시적 제한</text>
+  <text x="480" y="284" fill="#406040" font-size="10">✅  Security 레이어가 LLM 전에 위험 명령 차단</text>
+  <text x="480" y="302" fill="#406040" font-size="10">✅  LLM은 "선택"만 — 임의 코드 생성 불가</text>
+  <text x="480" y="320" fill="#406040" font-size="10">✅  각 도구가 독립적으로 테스트·검증 가능</text>
+
+  <!-- V2 구조 요약 -->
+  <rect x="480" y="334" width="390" height="52" rx="5" fill="#0d1a0d" stroke="#253a25" stroke-width="1"/>
+  <text x="490" y="352" fill="#66bb6a" font-size="9" font-weight="600">V2 구조 결정</text>
+  <text x="490" y="367" fill="#304a30" font-size="9">단일 ReAct 에이전트 (create_react_agent) — 멀티에이전트 구조 폐기</text>
+  <text x="490" y="380" fill="#304a30" font-size="9">보안·캐시·LLM 3단계 파이프라인 → 속도·안정성·보안 동시 확보</text>
+
+  <!-- 가운데 구분선 -->
+  <line x1="450" y1="44" x2="450" y2="444" stroke="#2a2a3a" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="450" y="244" text-anchor="middle" fill="#2a2a3a" font-size="10" transform="rotate(-90, 450, 244)">V0/V1 → V2</text>
+
+  <!-- 하단 핵심 메시지 -->
+  <rect x="16" y="452" width="868" height="0" rx="0" fill="none"/>
+
+  <!-- markers -->
+  <defs>
+    <marker id="a-gray" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#666"/>
+    </marker>
+    <marker id="a-red" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#ff3030"/>
+    </marker>
+    <marker id="a-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#66bb6a"/>
+    </marker>
+  </defs>
+</svg>
