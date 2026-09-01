@@ -5,13 +5,33 @@
 
 ---
 
-## 지금 상태 (2026-09-01)
+## 지금 상태 (2026-09-01 기준)
 
 **Pluiz** — 한국어 음성 명령으로 Windows PC를 제어하는 AI 에이전트. 졸업 캡스톤.
 
-- 2026.06.15 데모 완료. 이후 강의 개념(LangGraph·HITL·OWASP·RAG)을 구조에 적용하는 **Milestone 1** 진행 중.
-- M1 진행: P0(진단) → P1(맥락) → P1.5(그래프 이관) → P2(HITL) → P3(OWASP 가드레일) → **P4(캐시 동적 학습) 완료**
-- 다음 할 일은 [BACKLOG.md](BACKLOG.md) 참조. 최근 작업 맥락은 [DEVLOG.md](DEVLOG.md) 최상단 항목.
+2026.06.15 데모 완료. 이후 강의 개념(LangGraph·HITL·OWASP·RAG)을 구조에 적용하는
+**Milestone 1**을 진행했고, **M1은 사실상 마무리 단계**다.
+
+| 항목 | 상태 |
+|---|---|
+| **엔진** | `PluizGraphAgent` **단일**. 구 엔진은 M1-P5에서 제거 → [design/M1_P5_엔진단일화.md](design/M1_P5_엔진단일화.md) |
+| **M1 진행** | P0 진단 → P1 맥락 → P1.5 그래프 이관 → P2 HITL → P3 OWASP → P4 캐시학습 → **P5 엔진단일화 · 전부 완료** |
+| **도구** | 33개 (삭제 2개는 HITL 승인 필수) |
+| **테스트** | mock **17파일 228개** + 라이브 3스위트. CI는 그중 16파일 198개 자동 실행 |
+| **CI** | GitHub Actions 3잡 — mock · 문서링크 · 비밀정보 가드 |
+| **브랜치** | `main` = `develop` = 최신. 작업은 `feature/byeonsoyun` |
+| **[즉시/위험]** | **0건** |
+
+### 바로 시작하려면
+
+1. [BACKLOG.md](BACKLOG.md) — 남은 일 (전부 [TODO/품질], 서로 막지 않음)
+2. [DEVLOG.md](DEVLOG.md) 최상단 — 직전에 무슨 일이 있었는지
+3. [WORKFLOW.md](WORKFLOW.md) — 작업 루프 · 테스트 실행법 · 커밋 규칙
+
+> ⚠️ **환경 두 가지를 먼저 확인하세요** (매번 걸리던 것)
+> - 루트 `python`(anaconda base)에는 langgraph가 없다 → `conda activate pluiz`
+> - Windows 콘솔이 cp949 → `PYTHONIOENCODING=utf-8`
+> - 새 환경이면 `python tests/test_dependencies.py` 로 의존성부터 확인
 
 ---
 
@@ -29,6 +49,7 @@
 | **캐시 매칭·학습 수정** | [ARCHITECTURE.md § 캐시](ARCHITECTURE.md#커맨드-캐시) → [design/M1_P4_캐시정책.md](design/M1_P4_캐시정책.md) |
 | **구조를 바꾸는 큰 결정** | [design/](design/)에 ADR 먼저 작성 → [WORKFLOW.md § 설계 결정](WORKFLOW.md#설계-결정-adr) |
 | **테스트 작성·실행** | [WORKFLOW.md § 테스트](WORKFLOW.md#테스트) · 수동 항목은 [testing/](testing/) |
+| **환경이 이상할 때 (도구가 조용히 안 됨)** | `python tests/test_dependencies.py` → [WORKFLOW.md § 의존성](WORKFLOW.md#️-의존성이-없으면-도구가-조용히-죽는다) |
 | **커밋·브랜치·PR** | [WORKFLOW.md § 커밋 컨벤션](WORKFLOW.md#커밋-컨벤션) · [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **발표·제출 자료 준비** | [presentation/](presentation/) |
 
@@ -54,7 +75,7 @@
 | [M1_아키텍처_설계.md](design/M1_아키텍처_설계.md) | 맥락 붕괴 버그의 근본 원인 진단 + To-Be 그래프 설계. **이 프로젝트에서 가장 중요한 문서** |
 | [M1_P1.5_그래프이관_계획.md](design/M1_P1.5_그래프이관_계획.md) | 구 엔진 → 그래프 로직 1:1 이관 매핑 |
 | [M1_P4_캐시정책.md](design/M1_P4_캐시정책.md) | 동적 학습의 자격·저장구조·정리·롤백 정책 |
-| [M1_P5_엔진단일화.md](design/M1_P5_엔진단일화.md) | 구 엔진 제거 배경 + **기능 대응표·복원 방법** |
+| [M1_P5_엔진단일화.md](design/M1_P5_엔진단일화.md) | 구 엔진 제거 배경 + **기능 대응표·복원 방법**. 신 엔진에 문제가 생기면 여기부터 |
 
 ### 테스트 문서 — [testing/](testing/)
 
@@ -62,7 +83,8 @@
 
 - [TEST_CASES.md](testing/TEST_CASES.md) · [MANUAL_TEST_CASES.md](testing/MANUAL_TEST_CASES.md) · [MANUAL_TESTS.md](testing/MANUAL_TESTS.md)
 
-> ⚠️ 세 문서가 자동/수동 경계를 서로 다르게 잡고 있어 부분적으로 낡았다. 통합 예정 (BACKLOG).
+> ⚠️ 세 문서가 자동/수동 경계를 서로 다르게 잡고 있어 부분적으로 낡았다.
+> 통합은 [BACKLOG BL-10](BACKLOG.md) 참조.
 
 ### 발표 자료 — [presentation/](presentation/)
 
