@@ -9,6 +9,57 @@
 
 ---
 
+## 2026-09-01 (계속) — M1-P5: 엔진 단일화 (BL-05 해결)
+
+### 목표
+구 엔진 `core/agent.py`(771줄) 제거. 단, **문제 발생 시 참고 가능하도록 기록을 남긴다.**
+
+### 왜 지금인가 — "서두르지 말 것" 전제가 이미 무효였음
+BACKLOG BL-05는 롤백 낙하산 목적으로 보존을 권했으나, 실제로는:
+1. **신 엔진이 구 엔진에 의존**하고 있었다 — `graph_agent.py`가 `_build_llm` 하나 때문에
+   `from core.agent import _build_llm`. 폴백이 주 경로의 의존 대상이 된 상태.
+2. **P2~P4 개선이 구 엔진에 미반영** — 되돌리면 HITL·가드레일·캐시학습이 전부 사라진다.
+   즉 안전한 폴백이 아니었다.
+3. 삭제 도구 게이팅이 `use_graph` 플래그에 묶여 있어 분기가 남아 있었다.
+
+### 완료
+- **신규 `core/llm.py`** — `build_llm()`. 구 엔진의 `_build_llm` 분리 (provider lazy import)
+- `core/agent.py` → **`archive/core_agent_v1.py`** (삭제 아님, 읽기 전용 보존)
+- `core/factory.py` 삭제, `settings.use_graph`·`.env`의 `USE_GRAPH` 제거
+- `main.py`: `get_active_agent()` → `get_graph_agent()` (3곳)
+- `core/tool_registry.py`: 삭제 도구를 플래그 없이 항상 등록
+  → 안전장치는 `DANGEROUS_TOOLS` + `hitl` 노드가 전담
+- 🐛 **`core/__init__.py`가 `from .agent import ...`로 구 엔진을 re-export** 하고 있어
+  패키지 import 자체가 깨졌다. 무거운 eager import를 전부 제거하고 주석으로 이유 명시.
+- `tests/test_sprint1_2.py`의 구 엔진 소스 검증을 `core/graph.py` 기준으로 갱신
+
+### 🐛 직전 작업의 자기 회귀 발견·수정
+`tests/` 이동 때 경로를 일괄 치환하면서 **문자열 리터럴까지 건드려** `test_sprint1_2.py`가
+`command_cache.py`의 `_BASE_DIR` 줄을 못 찾게 됐다(검색 문자열에 `dirname`이 하나 더 붙음).
+→ 정확한 문자열로 복구. 정적 파트 44/44 통과.
+**교훈**: 코드 일괄 치환 시 문자열 리터럴 안에 같은 패턴이 있는지 확인할 것.
+
+### 기록 (핵심 산출물)
+**`docs/design/M1_P5_엔진단일화.md`** — 문제 발생 시 여기를 본다.
+- 제거 배경과 근거
+- **기능 대응표**: 구 함수 → 신 위치 (`_extract_tool_errors`+`_patch_response_on_error` →
+  `verify_output`, `_record_fast_path` → 구조적으로 불필요 등)
+- **복원 방법**: `archive/core_agent_v1.py` 직접 열기 / `git show 340b8a0:core/agent.py` /
+  진짜 되돌리는 절차와 그 위험
+
+### 검증
+- mock 15파일 **158개 전부 통과** (엔진 교체 후 동일)
+- `test_sprint1_2 --static` 44/44
+- 도구 33개 등록 확인, `DANGEROUS_TOOLS ⊆ 등록 도구` 확인
+- `main.py` import 성공, 컴파일 전 파일 통과
+- 코드에서 `core.agent`·`core.factory`·`use_graph` 참조 0건
+
+### 남은 것
+- BL-08(README 데모 GIF) — 사용자 화면 녹화 필요, BACKLOG에 상세 기록
+- BL-04(`/ws` 토큰 스트리밍), BL-02·03·06·07
+
+---
+
 ## 2026-09-01 (계속) — tests/ 분리 + CI 도입, 🚨 커밋된 API 키 발견
 
 ### 🚨 보안 — tests/test_sensitive.py에 실제 형식 Google API 키 박혀 있었음

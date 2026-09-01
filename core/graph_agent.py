@@ -1,9 +1,12 @@
 """
-PluizGraphAgent (M1-P1.5-c) — 그래프 오케스트레이터
+PluizGraphAgent — 그래프 오케스트레이터 (단일 엔진)
 ==================================================
-core/graph.py의 StateGraph를 감싸, 기존 core/agent.py(PluizAgent)와
-**동일한 공개 API**(`run_async`, `stream`)를 제공한다.
-→ main.py가 플래그(USE_GRAPH)로 신/구 코어를 무중단 교체 가능(P1.5-d).
+core/graph.py의 StateGraph를 감싸 `run_async` / `stream` 공개 API를 제공한다.
+
+M1-P1.5에서 구 엔진(create_react_agent + 수동 if/return 전처리)과 동일한
+시그니처로 만들어 USE_GRAPH 플래그로 교체 가능하게 했고, P2~P4 검증을 거쳐
+M1-P5에서 구 엔진을 제거해 **유일한 엔진**이 되었다.
+구 엔진 원본과 복원 방법: docs/design/M1_P5_엔진단일화.md
 
 책임:
 - 실제 의존성 배선: llm / tools / 보안검사 / fast_path(캐시+라우터) / 세션메모리.
@@ -32,8 +35,8 @@ def _prod_settings():
     return get_settings()
 
 def _prod_llm(settings):
-    from core.agent import _build_llm
-    return _build_llm(settings)
+    from core.llm import build_llm
+    return build_llm(settings)
 
 def _prod_tools():
     from core.tool_registry import get_all_tools

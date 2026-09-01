@@ -14,7 +14,7 @@ from pydantic import BaseModel
 _bg_tasks: set = set()
 
 from config.settings import get_settings
-from core.factory import get_active_agent
+from core.graph_agent import get_graph_agent
 from core.security import check_security
 from services.tts import get_tts
 from services.stt import get_stt
@@ -103,9 +103,9 @@ async def save_config(req: ConfigRequest):
     # 캐시 초기화 → 다음 get_settings() 호출에서 .env 재로드
     get_settings.cache_clear()
 
-    # 에이전트 재초기화 (신/구 코어 모두)
-    from core.factory import reset_active_agent
-    reset_active_agent()
+    # 에이전트 재초기화
+    from core.graph_agent import reset_graph_agent
+    reset_graph_agent()
 
     print(f"[config] provider={req.provider} key=***{req.api_key[-4:] if req.api_key else ''} 저장됨")
     return {"status": "ok", "provider": req.provider}
@@ -125,7 +125,7 @@ async def chat(req: TextRequest):
             print(f"[Security] 차단됨: {repr(req.text[:60])}")
             return {"response": reason, "thread_id": req.thread_id}
 
-        agent = get_active_agent()
+        agent = get_graph_agent()
         response = await agent.run_async(req.text, thread_id=req.thread_id)
 
         if req.use_tts:
@@ -171,7 +171,7 @@ async def voice_input(audio: UploadFile = File(...), thread_id: str = "default",
         return {"text": text, "response": reason}
 
     # 에이전트
-    agent = get_active_agent()
+    agent = get_graph_agent()
     response = await agent.run_async(text, thread_id=thread_id)
 
     # TTS
@@ -397,7 +397,7 @@ async def websocket_endpoint(websocket: WebSocket):
     use_tts=true 시 end 메시지에 audio_base64 포함.
     """
     await websocket.accept()
-    agent = get_active_agent()
+    agent = get_graph_agent()
 
     try:
         while True:
