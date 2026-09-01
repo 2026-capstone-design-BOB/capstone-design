@@ -105,8 +105,13 @@ mock 테스트는 `langgraph`·`langchain-core`만 설치해서 돈다. `require
 ### 라이브 테스트 (서버 실행 필요)
 
 ```bash
-"$PY" tests/test_commands.py     # ⚠️ 구 엔진 기준 (BACKLOG BL-06)
-"$PY" tests/test_regression.py   # ⚠️ 동일
+"$PY" tests/test_commands.py     # 기능 동작 (앱 실행·파일·보안·도구 등록)
+"$PY" tests/test_regression.py   # 회귀 + 신 엔진 기능 (HITL·가드레일·마스킹·캐시학습)
+"$PY" tests/test_sprint1_2.py    # Sprint1&2 (--static 으로 서버 없이도 가능)
+
+`test_regression.py`의 **G-02(하이브리드 가드레일)는 온라인 전용**이다.
+오프라인이면 LLM 판정기가 skip 돼 통과할 수 있다.
+`G-01`·`G-04`는 실제로 파일을 만들고 앱을 띄운다(끝나면 정리한다).
 ```
 
 ### 수동 테스트

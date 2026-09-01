@@ -1,6 +1,13 @@
 """
-Pluiz 명령 자동 테스트 스크립트
-서버가 실행 중인 상태에서 실행: python test_commands.py
+Pluiz 명령 자동 테스트 스크립트 (라이브 — 서버 필요)
+====================================================
+실행: python tests/test_commands.py     ※ python main.py 로 서버를 먼저 띄울 것
+
+실제 Windows에서 앱을 띄우고 파일을 만드는 기능 테스트다.
+로직 단위 검증은 mock 스위트(OS·API 불필요)가 담당한다 → docs/WORKFLOW.md
+
+엔진: PluizGraphAgent 단일 (M1-P5에서 구 엔진 제거).
+회귀·신기능(HITL·가드레일·캐시학습) 검증은 tests/test_regression.py 에 있다.
 """
 
 import requests
@@ -508,6 +515,32 @@ else:
 # ── fetch_web_info 테스트 (수정 2) ────────────────────────────────
 # ══════════════════════════════════════════════════════════════════
 print(f"\n{BOLD}▶ fetch_web_info (웹 검색 결과 LLM 전달){RESET}")
+
+print(f"\n{CYAN}{BOLD}[TOOL-01]{RESET} 위험 도구가 전부 HITL 대상인지 (M1-P5 불변식)")
+# 엔진 단일화로 "구 엔진엔 삭제 도구를 안 준다"는 이중 방어가 사라졌다.
+# 이제 DANGEROUS_TOOLS 등록이 유일한 안전장치이므로, 새 위험 도구를 추가하고
+# DANGEROUS_TOOLS 에 넣는 걸 잊으면 승인 없이 실행된다. 그걸 여기서 막는다.
+#   → docs/design/M1_P5_엔진단일화.md
+try:
+    import sys as _s
+    _s.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from core.tool_registry import get_all_tools as _gat
+    from core.graph import DANGEROUS_TOOLS as _DT
+
+    _tool_names = {t.name for t in _gat()}
+    missing = _DT - _tool_names
+    if missing:
+        fail(f"DANGEROUS_TOOLS 중 미등록: {missing}"); results["fail"] += 1
+    else:
+        ok(f"위험 도구 {len(_DT)}개 전부 등록됨: {sorted(_DT)}"); results["pass"] += 1
+
+    # 삭제 도구는 플래그 없이 항상 등록돼야 한다 (구 use_graph 게이팅 제거됨)
+    if {"delete_file", "delete_folder"} <= _tool_names:
+        ok("삭제 도구 상시 등록 확인"); results["pass"] += 1
+    else:
+        fail("삭제 도구 미등록 — tool_registry 확인"); results["fail"] += 1
+except Exception as e:
+    fail(f"TOOL-01 오류: {e}"); results["fail"] += 1
 
 print(f"\n{CYAN}{BOLD}[WEB-01]{RESET} fetch_web_info 도구 등록 확인")
 try:
