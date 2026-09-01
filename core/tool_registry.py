@@ -97,10 +97,9 @@ def get_all_tools() -> List[BaseTool]:
         create_calendar_event,
     ]
 
-    # 파일 삭제(위험 동작): HITL 승인이 있는 그래프 엔진에서만 노출한다.
-    # → 구 엔진(USE_GRAPH=false)에서는 삭제 도구 자체가 없어 "확인 없는 삭제"가 불가능.
-    from config.settings import get_settings
-    if getattr(get_settings(), "use_graph", False):
-        tools += [delete_file, delete_folder]
+    # 파일 삭제(위험 동작). 실행 전 반드시 사람 승인을 받는다.
+    # → core/graph.py 의 DANGEROUS_TOOLS 에 등록돼 hitl 노드가 interrupt 를 건다.
+    #   새 위험 도구를 추가할 땐 DANGEROUS_TOOLS 에도 반드시 추가할 것.
+    tools += [delete_file, delete_folder]
 
     return tools

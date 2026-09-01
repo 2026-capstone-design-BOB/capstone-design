@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     # 에이전트
     agent_max_iterations: int = 10   # 무한루프 방지
     agent_timeout: int = 30          # 초
-    use_graph: bool = True           # 그래프 코어(PluizGraphAgent) 기본 사용. False=구 엔진 폴백 (P1.5/P2)
+    # ※ use_graph 플래그는 M1-P5(엔진 단일화)에서 제거됨.
+    #   PluizGraphAgent가 유일한 엔진이다. → docs/design/M1_P5_엔진단일화.md
 
     # 커맨드 캐시 (P4)
     cache_learning: bool = True      # 동적 학습 on/off 스위치

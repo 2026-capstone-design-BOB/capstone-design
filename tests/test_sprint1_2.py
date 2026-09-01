@@ -51,7 +51,8 @@ header("PART A  정적 코드 검사 (서버 불필요)")
 print(f"\n{BOLD}▶ A-1. Python 파일 문법{RESET}")
 import py_compile
 for path in [
-    "core/agent.py",
+    "core/graph.py",
+    "core/graph_agent.py",
     "core/command_cache.py",
     "core/tool_registry.py",
     "tools/input_control.py",
@@ -75,9 +76,13 @@ else:
     # command_cache.py를 exec해서 함수 직접 테스트
     ns = {}
     try:
+        # command_cache.py의 _BASE_DIR은 __file__ 기준으로 계산되는데 exec 컨텍스트엔
+        # __file__이 없다. 실제 프로젝트 루트 리터럴로 치환해서 실행한다.
+        # ※ 아래 검색 문자열은 core/command_cache.py의 해당 줄과 정확히 일치해야 한다.
+        _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         exec(src_cc.replace(
-            "_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))",
-            f"_BASE_DIR = {repr(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))}"
+            "_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))",
+            f"_BASE_DIR = {_root!r}"
         ), ns)
         _sp = ns["_select_particle"]
         _APP_DISPLAY = ns["_APP_DISPLAY"]
@@ -140,7 +145,8 @@ print(f"\n{BOLD}▶ A-3. T03: get_clipboard_text 도구{RESET}")
 
 src_ic = open("tools/input_control.py", encoding="utf-8").read()
 src_tr = open("core/tool_registry.py", encoding="utf-8").read()
-src_ag = open("core/agent.py", encoding="utf-8").read()
+# M1-P5 엔진 단일화: 아래 검증 대상 로직은 core/agent.py → core/graph.py 로 이관됨
+src_ag = open("core/graph.py", encoding="utf-8").read()
 
 if "def get_clipboard_text()" in src_ic:
     ok("get_clipboard_text 도구 정의 존재")
@@ -157,10 +163,12 @@ if "get_clipboard_text" in src_tr and src_tr.count("get_clipboard_text") >= 2:
 else:
     fail("tool_registry 등록 누락")
 
-if '"클립보드"' in src_ag:
-    ok("agent.py _CONTROL_KEYWORDS에 '클립보드' 추가됨")
+# 구 엔진의 _CONTROL_KEYWORDS 재시도 로직은 그래프에 미이관(BACKLOG BL-04).
+# 클립보드 도구가 LLM에 노출되는지로 대체 검증한다.
+if "get_clipboard_text" in src_tr:
+    ok("get_clipboard_text가 도구 레지스트리에 노출됨")
 else:
-    fail("_CONTROL_KEYWORDS에 '클립보드' 없음")
+    fail("get_clipboard_text 미등록")
 
 if "pyperclip.paste()" in src_ic:
     ok("pyperclip.paste() 호출 코드 존재")
@@ -186,20 +194,17 @@ if "_SUCCESS_LIKE_RE = re.compile(" in src_ag:
 else:
     fail("_SUCCESS_LIKE_RE 없음")
 
-if "def _extract_tool_errors(" in src_ag:
-    ok("_extract_tool_errors() 메서드 정의됨")
+# 구 엔진의 _extract_tool_errors + _patch_response_on_error 는
+# 그래프에서 verify_output() 하나로 통합되어 output_guard 노드가 호출한다.
+if "def verify_output(" in src_ag:
+    ok("verify_output() 정의됨 (구 _extract_tool_errors + _patch_response_on_error 통합)")
 else:
-    fail("_extract_tool_errors() 없음")
+    fail("verify_output() 없음")
 
-if "def _patch_response_on_error(" in src_ag:
-    ok("_patch_response_on_error() 메서드 정의됨")
+if "verify_output(state[\"messages\"])" in src_ag:
+    ok("output_guard 노드에 검증 단계 삽입됨")
 else:
-    fail("_patch_response_on_error() 없음")
-
-if "_extract_tool_errors(result)" in src_ag:
-    ok("run_async()에 검증 단계 삽입됨")
-else:
-    fail("run_async() 검증 단계 없음")
+    fail("output_guard 검증 단계 없음")
 
 # 패턴 동작 단위 테스트
 _TOOL_ERROR_RE = re.compile(
