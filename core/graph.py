@@ -59,16 +59,41 @@ def interpret_confirmation(text: Any) -> bool:
     return False   # 애매 → 위험 동작이므로 취소가 안전
 
 
+def _deletion_is_recoverable() -> bool:
+    """삭제가 휴지통으로 가는지(복구 가능) 여부.
+
+    `tools/filesystem.py`의 `_to_trash()`는 send2trash 가 없으면 조용히
+    os.remove / shutil.rmtree 로 폴백해 **영구 삭제**한다. 사용자는 승인 시점에
+    그 차이를 알아야 하므로 여기서 미리 확인한다. (P3-3 정직 보고)
+    """
+    try:
+        import send2trash  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def _confirm_question(dcall: Optional[dict]) -> str:
-    """위험 도구 호출로부터 승인 질문 문구 생성."""
+    """위험 도구 호출로부터 승인 질문 문구 생성.
+
+    승인 '전에' 되돌릴 수 있는지를 알려준다. 휴지통이면 복구 가능하다고,
+    영구 삭제면 복구 불가라고 명확히 구분한다.
+    """
+    if _deletion_is_recoverable():
+        consequence = "휴지통으로 갑니다"
+    else:
+        consequence = "⚠️ 휴지통을 거치지 않고 영구 삭제돼요. 복구할 수 없어요"
+
     if not dcall:
-        return "정말 실행할까요? (되돌리기 어려워요)"
+        return f"정말 실행할까요? ({consequence})"
     name = dcall.get("name", "")
     args = dcall.get("args", {}) or {}
     target = args.get("file_path") or args.get("folder_path") or ""
-    kind = "폴더" if name == "delete_folder" else "파일"
+    # 조사 하드코딩('을(를)') 금지 — 대상이 둘뿐이라 각각 맞는 조사를 쓴다.
+    # ("파일"은 ㄹ 받침 → 을 / "폴더"는 받침 없음 → 를)
+    kind = "폴더를" if name == "delete_folder" else "파일을"
     base = os.path.basename(str(target).rstrip("/\\")) or str(target)
-    return f"'{base}' {kind}을(를) 정말 삭제할까요? (되돌리기 어려워요)"
+    return f"'{base}' {kind} 정말 삭제할까요? ({consequence})"
 
 
 # ── 상태 정의 ──────────────────────────────────────────────────────

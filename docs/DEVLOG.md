@@ -9,6 +9,75 @@
 
 ---
 
+## 2026-09-01 (계속) — 🚨 선언된 의존성 8개 미설치 발견 + 테스트 정직성 개선
+
+### 발단
+재실기 결과가 **FAIL 0**으로 나왔는데, 요약에 "pyperclip·pyautogui·ddgs 미설치"가
+주의사항으로 적혀 있었다. 확인해 보니 `requirements.txt`의 **8개 패키지가 실행 환경에
+없는 상태로 테스트가 전부 통과**하고 있었다.
+
+| 미설치 | 영향 |
+|---|---|
+| `pyautogui` | `type_text` · `press_key` 동작 안 함 |
+| `pyperclip` | `type_text`(한글) · `get_clipboard_text` 동작 안 함 |
+| **`send2trash`** | ⚠️ **삭제가 휴지통을 안 거치고 영구 삭제** |
+| `openpyxl` | `write_excel` 동작 안 함 |
+| `beautifulsoup4` | `crawl_page` 동작 안 함 |
+| `ddgs` | `fetch_web_info` 폴백만 |
+| `SpeechRecognition` | STT 온라인 경로 미동작 → whisper 폴백만 |
+| `sounddevice` | 웨이크워드 마이크 스트림 미동작 |
+
+도구 33개 중 9개가 실제로는 죽어 있거나 폴백으로만 동작했다.
+
+### 🚨 가장 위험했던 것 — send2trash
+`tools/filesystem.py`의 `_to_trash()`는 send2trash import 실패 시 **조용히
+`os.remove`/`shutil.rmtree`로 폴백**한다. HITL 질문은 `"정말 삭제할까요? (되돌리기
+어려워요)"`라 사용자는 **휴지통인지 영구 삭제인지 모른 채 승인**하고 있었다.
+`requirements.txt` 주석과 도구 docstring은 "안전한 휴지통 이동"이라고 약속하고 있었다.
+
+### 왜 테스트가 못 잡았나 — 구조적 결함
+`INPUT-03`은 이랬다:
+```python
+if "엔터" in r or "키" in r: ok(...); results["pass"] += 1
+else:                        ok("응답 수신"); results["pass"] += 1
+```
+**두 분기 모두 PASS.** 구조상 실패할 수 없었다. 에이전트가 "눌렀어요"라고 말한 것만
+확인했지, 실제로 눌렸는지는 보지 않았다. `WEB-02`도 폴백("가져오지 못했습니다")을
+PASS로 셌다.
+
+**기능이 망가졌는데 통과하는 테스트는 없는 것보다 나쁘다.**
+
+### 완료
+1. **의존성 8개 설치** (사용자 승인 후) — `_to_trash()`가 `'trash'` 반환 확인
+2. **HITL 질문 정직화** (`core/graph.py`)
+   - `_deletion_is_recoverable()` 추가 → 승인 **전에** 결과를 알린다
+   - 휴지통: `"'todo.txt' 파일을 정말 삭제할까요? (휴지통으로 갑니다)"`
+   - 영구: `"... (⚠️ 휴지통을 거치지 않고 영구 삭제돼요. 복구할 수 없어요)"`
+   - 조사 하드코딩 `을(를)` 제거 (T02 원칙)
+3. **신규 `tests/test_dependencies.py` 30개** — `requirements.txt` 선언 ↔ 실제 import
+   대조 + `_to_trash()`가 휴지통 쓰는지 + HITL 질문이 결과를 미리 알리는지.
+   실패 시 "무엇이 안 되는지"와 설치 명령까지 출력한다.
+   → **이 테스트가 내가 놓친 `SpeechRecognition`·`sounddevice` 2개를 추가로 찾아냈다.**
+4. **라이브 테스트 정직화** (`tests/test_commands.py`)
+   - `_dep()` / `skip()` 가드 추가 — 의존성 없으면 PASS 아닌 **SKIP(사유 명시)**
+   - `INPUT-03` → 클립보드 **왕복 검증**으로 교체(넣은 값을 도구가 읽어오는지).
+     결과를 실제로 읽을 수 있는 유일한 입력 도구라 이걸 골랐다.
+   - `INPUT-02` → 도구가 `[오류]` 반환하면 MANUAL이 아니라 **FAIL**
+   - `WEB-02` → 폴백을 PASS로 세지 않고, 미설치/네트워크를 구분해 SKIP
+
+### 검증
+- mock **198 → 228개** (18파일), 회귀 0건
+- 도구 33개, `DANGEROUS_TOOLS ⊆ 등록 도구` 유지
+- `test_dependencies.py`는 **CI에서 제외** — CI는 속도를 위해 langgraph·langchain-core만
+  설치하므로 항상 실패한다. 로컬 환경 점검용임을 워크플로와 문서에 명시.
+
+### 교훈
+"테스트 통과"와 "기능 동작"은 다르다. 도구가 예외를 삼키고 폴백하면 그 사이가 벌어지는데,
+**단언이 느슨하면(특히 모든 분기가 PASS면) 영영 못 잡는다.** 선언된 의존성과 실제 환경을
+대조하는 테스트가 이 층을 메운다.
+
+---
+
 ## 2026-09-01 (계속) — 라이브 실기 결과 반영 (실패 3건 원인 규명)
 
 사용자가 Windows에서 실행: `test_regression` 29/30 · `test_commands` 36 PASS/2 FAIL/14 MANUAL.
