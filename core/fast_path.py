@@ -22,13 +22,31 @@ import re
 from typing import Optional, Callable, Any
 
 
-# ── 복합 명령 감지 패턴 (agent.py와 동일 규칙) ──────────────────────
+# ── 복합 명령 감지 패턴 ────────────────────────────────────────────
 # "닫고/열고" 동사 연결형 + 문맥 참조형("방금","빼고" 등) → 캐시 바이패스
 _COMPOUND_CMD = re.compile(
     r'이랑|랑\s|하고\s|그리고\s|그리고$|,\s*그리고|,\s*그다음|다음에\s'
     r'|닫고\s|열고\s|켜고\s|끄고\s|보내고\s|저장하고\s|검색하고\s|만들고\s'
     r'|방금|아까|빼고|제외하고|것들|이것|그것|다\s*닫|전부\s*닫|모두\s*닫'
 )
+
+# ── 부정어 감지 (BL-02) ────────────────────────────────────────────
+# 캐시는 entity(계산기) + action(열어)만 보고 매칭하므로 부정어를 무시한다.
+# 그래서 "계산기 말고 다른거 열어"가 `계산기 열어줘`로 오매칭돼 계산기를 열었다.
+# 부정어가 있으면 의미가 뒤집히므로 캐시를 건너뛰고 LLM이 문장 전체를 해석하게 한다.
+#
+# ※ 어절 경계를 요구한다(뒤에 공백 또는 문장 끝). "말고"를 무조건 찾으면
+#   "말고기 검색해줘" 같은 정상 입력이 캐시를 못 타게 된다.
+_NEGATION_CMD = re.compile(
+    r'말고(?=\s|$)|말구(?=\s|$)|아니라(?=\s|$)|아니고(?=\s|$)'
+    r'|대신(?=\s|$)|대신에(?=\s|$)|이외(?=\s|$)|외에(?=\s|$)'
+    r'|하지\s*말|하지마|열지\s*마|끄지\s*마'
+)
+
+
+def has_negation(text: str) -> bool:
+    """부정어가 있어 캐시 매칭을 신뢰할 수 없는 입력인지. (BL-02)"""
+    return bool(_NEGATION_CMD.search(text))
 
 # 단어 하나짜리 앱 이름 — 2개 이상이면 다중 앱 명령
 _MULTI_APP_NAMES = frozenset([
@@ -43,8 +61,10 @@ def is_multi_app_command(text: str) -> bool:
 
 
 def is_compound_command(text: str) -> bool:
-    """복합/문맥참조 명령인지(=빠른 경로를 건너뛰고 LLM으로 보내야 하는지)."""
-    return bool(_COMPOUND_CMD.search(text)) or is_multi_app_command(text)
+    """복합/문맥참조/부정 명령인지(=빠른 경로를 건너뛰고 LLM으로 보내야 하는지)."""
+    return (bool(_COMPOUND_CMD.search(text))
+            or has_negation(text)
+            or is_multi_app_command(text))
 
 
 # 라우터 타입: user_input -> (결과 텍스트 | None)

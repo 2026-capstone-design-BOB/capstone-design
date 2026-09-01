@@ -23,25 +23,29 @@ _BLOCKED_PATH_PATTERNS: list[Tuple[str, str]] = [
 ]
 
 # 위험 명령어 패턴 (소문자 입력에 매칭, label)
+# ※ 명령어와 플래그 사이 공백은 \s* (선택)로 둔다 — "rm-rf" / "del/f" 처럼
+#   공백을 뺀 변형도 동일하게 위험하기 때문. 앞의 단어경계(\b)가 "warm-rf" 같은
+#   단어 내부 매칭을 막아 오탐을 방지한다. (BL-03)
+#   반대로 "net user x y"처럼 공백이 있어야 의미가 성립하는 건 \s+ 를 유지한다.
 _DANGEROUS_CMD_PATTERNS: list[Tuple[str, str]] = [
-    (r"\brm\s+-[rRfF]{1,3}\b",                      "rm -rf"),
-    (r"\bdel\s+/[fsqFSQ]",                          "del /f /s"),
-    (r"\bformat\s+[a-z]:",                          "format X:"),
+    (r"\brm\s*-[rRfF]{1,3}\b",                      "rm -rf"),
+    (r"\bdel\s*/[fsqFSQ]",                          "del /f /s"),
+    (r"\bformat\s*[a-z]:",                          "format X:"),
     (r"\breg\s+(delete|add)\b",                     "reg delete / reg add"),
-    (r"\bshutdown\s+/[frFR]\b",                     "shutdown /f /r"),
-    (r"\btaskkill\s+/[fiF]\b",                      "taskkill /f"),
+    (r"\bshutdown\s*/[frFR]\b",                     "shutdown /f /r"),
+    (r"\btaskkill\s*/[fiF]\b",                      "taskkill /f"),
     (r"\bnet\s+user\s+\S+\s+\S+",                  "net user (계정 변조)"),
     (r"\bnet\s+localgroup\s+administrators\b",      "net localgroup administrators"),
-    (r"\brmdir\s+/[sqSQ]\b",                        "rmdir /s /q"),
+    (r"\brmdir\s*/[sqSQ]\b",                        "rmdir /s /q"),
     (r"\bicacls\b|\bcacls\b",                       "icacls / cacls"),
     (r"\bdiskpart\b",                               "diskpart"),
     (r"\bbcdedit\b",                                "bcdedit"),
     (r"\bwmic\b.*\bdelete\b",                       "wmic ... delete"),
     (r"powershell.*-encodedcommand",                "PowerShell -EncodedCommand"),
     (r"powershell.*-executionpolicy\s+bypass",      "PowerShell -ExecutionPolicy Bypass"),
-    (r"\bcipher\s+/[wdWD]\b",                       "cipher /w /d"),
+    (r"\bcipher\s*/[wdWD]\b",                       "cipher /w /d"),
     (r"\bsc\s+(delete|stop|create)\b",              "sc delete/stop/create"),
-    (r"\bschtasks\s+/delete\b",                     "schtasks /delete"),
+    (r"\bschtasks\s*/delete\b",                     "schtasks /delete"),
     # PowerShell 단축 플래그 (인코딩/우회 시도)
     (r"powershell[^\n]*-ec\b",                           "PowerShell -ec (EncodedCommand 단축)"),
     (r"powershell[^\n]*-ep\s+bypass",                   "PowerShell -ep bypass"),
