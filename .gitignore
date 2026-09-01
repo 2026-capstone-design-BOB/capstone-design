@@ -1,0 +1,55 @@
+# 환경변수 / API 키 (절대 커밋 금지)
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.spec
+
+# 가상환경
+venv/
+.venv/
+env/
+
+# Electron / Node
+electron-ui/node_modules/
+node_modules/
+electron-ui/dist/
+electron-ui/out/
+
+# 로그 / 임시파일
+*.log
+*.tmp
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Whisper 모델 캐시 (용량 큼)
+models/
+*.bin
+*.pt
+
+# SQLite DB
+*.db
+*.sqlite
+
+# 오디오 임시파일
+*.mp3
+*.wav
+*.webm
