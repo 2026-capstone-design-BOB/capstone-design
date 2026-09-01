@@ -1,8 +1,54 @@
 # Pluiz v2 — 개발 일지 (DEVLOG)
 
-> 작업 진행을 시간순으로 누적 기록하는 개발 일지입니다.
+> 📍 [문서 허브](README.md) · 관련: [BACKLOG.md](BACKLOG.md) · [WORKFLOW.md](WORKFLOW.md)
+>
+> 작업 진행을 시간순으로 누적 기록하는 개발 일지입니다. **이 프로젝트의 단일 진실 공급원(SoT).**
 > 각 항목: **일시 / 목표 / 완료 스텝 / 검증 결과 / 특이사항**.
 > 가장 최신 항목이 위로 오도록 작성합니다.
+> 작성 규칙은 [WORKFLOW.md § DEVLOG 작성 규칙](WORKFLOW.md#devlog-작성-규칙) 참조.
+
+---
+
+## 2026-09-01 — 문서 체계 구축 + GitHub 정리
+
+### 배경
+문서가 흩어져 있고 상호 링크가 없어 "어디부터 읽어야 하는지"가 불분명했다.
+목표는 **"docs 보고 진행해줘" 한 마디로 작업이 시작되는 상태**.
+
+### 설계 원칙 — 한 사실은 한 문서에만
+직전에 `CLAUDE.md`가 코드와 크게 어긋나 있던 근본 원인은 **같은 사실이 여러 문서에
+중복**돼 한쪽만 갱신됐기 때문이다. 그래서 `CLAUDE.md`를 ~320줄 → 얇은 진입점으로
+축소하고, 상세는 각각 단독 책임 문서로 분리했다.
+
+### 신규 문서
+| 문서 | 책임 |
+|---|---|
+| `docs/README.md` | **문서 허브** — 인덱스 + "이 작업엔 이 문서" 라우팅 표 |
+| `docs/STRUCTURE.md` | 디렉토리 구조 + 배치 기준 + **구조적 제약과 그 이유** + 새 파일 배치 결정 트리 |
+| `docs/ARCHITECTURE.md` | 시스템 동작 (그래프·도구 33개·보안 4층·캐시). CLAUDE.md에서 이관 |
+| `docs/WORKFLOW.md` | 작업 루프·테스트·DEVLOG 규칙·커밋 컨벤션(Conventional Commits) |
+| `docs/CONTRIBUTING.md` | 팀 협업 규칙 (저장소 루트 README 98줄에서 이관) |
+| `README.md` | GitHub 첫 화면 — 프로젝트 소개 |
+
+### 이동
+- `DEVLOG.md` `BACKLOG.md` → `docs/` (루트에서)
+- `HANDOFF.md` → `archive/` (6월 스냅샷)
+
+> **⚠️ 옛 경로 추적용**: 이 항목보다 아래(=이전 날짜)의 로그가 언급하는 `DEVLOG.md`·
+> `BACKLOG.md`는 현재 `docs/` 아래에 있다. 과거 기록은 수정하지 않았다.
+
+### 커밋 정리
+미커밋 33건을 의미 단위 5커밋으로 분리(P4 기능 / CLAUDE 현행화 / 디렉토리 정리 /
+문서 체계 / README). 이후 커밋 메시지는 Conventional Commits를 따른다.
+
+### 발견 (환경)
+- 루트 `python`(anaconda base)에 langgraph 없음 → `envs/pluiz` 인터프리터 필요
+- Windows 콘솔 cp949 → 테스트 출력에 `PYTHONIOENCODING=utf-8` 필요
+- 둘 다 `WORKFLOW.md`·`CLAUDE.md`에 명시했다. 매번 다시 부딪히던 문제.
+
+### 다음
+GitHub 반영: `feature/byeonsoyun` 푸시 → `develop` 병합(`--allow-unrelated-histories`,
+옛 `src/capstone_pluiz` 제거) → `main` fast-forward.
 
 ---
 

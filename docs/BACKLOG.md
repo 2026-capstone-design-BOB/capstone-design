@@ -1,5 +1,7 @@
 # Pluiz v2 — 백로그 (Backlog)
 
+> 📍 [문서 허브](README.md) · 관련: [DEVLOG.md](DEVLOG.md) · [WORKFLOW.md](WORKFLOW.md)
+
 > **분류 원칙**
 > - **[즉시/위험]** 구조적 결함·상태/기억 오염 등 방치 시 technical debt가 되어
 >   이후 개발의 토대를 흔드는 항목 → **발견 즉시 수정**.
