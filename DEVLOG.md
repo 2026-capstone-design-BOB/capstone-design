@@ -6,6 +6,45 @@
 
 ---
 
+## 2026-09-01 — 디렉토리 정리: 발표자료 분리
+
+### 배경
+루트에 파일 49개가 평평하게 쌓여 실행 코드 · 발표자료 · 테스트 문서 · 레거시가 뒤섞여 있었다.
+발표자료는 6월 데모용 산출물이라 개발 코드와 생명주기가 다른데도 `main.py` 옆에
+`pluiz_paradigm_white.png`가 나란히 있는 상태였다.
+
+### 이동 (git mv — 이력 보존)
+
+| 이동 위치 | 파일 |
+|---|---|
+| `docs/design/` | `M1_아키텍처_설계.md` · `M1_P1.5_그래프이관_계획.md` · `M1_P4_캐시정책.md` (기존 `docs/` 루트에서) |
+| `docs/presentation/` | `STUDY_GUIDE.md` · `pluiz_QnA.md` · `pluiz_evolution.md` · `pluiz_presentation.html` · `architecture.html` · 다이어그램 SVG 6 + PNG 2 |
+| `docs/testing/` | `TEST_CASES.md` · `MANUAL_TEST_CASES.md` · `MANUAL_TESTS.md` |
+| `archive/` | `ui.html` (electron-ui로 대체된 구 브라우저 단독 UI) |
+
+> **⚠️ 옛 경로 추적용**: 이 항목보다 아래(=이전 날짜)의 로그에 나오는 `docs/M1_*.md`는
+> 전부 `docs/design/M1_*.md`로 옮겨졌다. 과거 기록은 당시 상태를 보존하기 위해 수정하지 않았다.
+
+### 부수 수정
+- `start.bat`: 낡은 안내 문구 `echo Open ui.html in browser...` 제거 (실제 UI는 launch.bat의 Electron).
+- `CLAUDE.md`: 디렉토리 트리 · 문서 위계 표 갱신, `docs/M1_*` → `docs/design/M1_*` 참조 수정.
+- `core/command_cache.py`: 독스트링의 정책 문서 경로 수정.
+
+### 하지 않은 것 (의도적)
+- **`test_*.py` 19개는 루트 유지.** 전부 `dirname(__file__)`을 프로젝트 루트로 가정하므로
+  `tests/`로 옮기려면 19개 모두 경로 부트스트랩 수정이 필요하다. 별도 단계로 분리.
+- `core/`·`services/` 등 패키지를 `src/`로 감싸지 않음 —
+  `electron-ui/main.js:52`가 `../services/wakeword.py`를 직접 참조한다.
+- 과거 DEVLOG 항목의 경로 표기는 수정하지 않음(날짜가 박힌 기록의 무결성 유지).
+
+### 검증
+- `py_compile` 전 파일 통과. mock 스위트 이동 전후 동일: graph_agent 6/6 · cache_learn 15/15 · hitl_agent 8/8.
+- `git status`에서 `R`(rename) 19건 인식, `D`(삭제)로 잘못 잡힌 건 0 → 이력 보존 확인.
+- `docs/presentation/pluiz_presentation.html`의 `src="pluiz_paradigm.svg"` 상대참조 유효(같은 폴더).
+- 루트 파일 49 → 32개.
+
+---
+
 ## 2026-08-19 10:32 KST — P4-4 경량 의미매칭 + P4-5 통합 점검
 
 ### P4-4 (`core/command_cache.py`)
