@@ -120,7 +120,7 @@ python tests/test_cache_learn.py      # 캐시 동적 학습
 python tests/test_guardrail_hybrid.py # 하이브리드 가드레일
 ```
 
-전체 mock 스위트 18파일 228개. push마다 CI가 자동 실행합니다.
+전체 mock 스위트 17파일 228개. push마다 CI가 자동 실행합니다.
 
 ---
 

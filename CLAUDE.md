@@ -5,6 +5,16 @@ FastAPI 서버(:8765) + Electron 오버레이 UI + LangGraph `StateGraph` 에이
 
 ---
 
+## 🚀 "docs 보고 진행해줘" 라고 하면
+
+1. [`docs/README.md`](docs/README.md) — **지금 상태** + **작업별 라우팅 표**
+2. [`docs/BACKLOG.md`](docs/BACKLOG.md) — 남은 일 (현재 [즉시/위험] 0건)
+3. [`docs/DEVLOG.md`](docs/DEVLOG.md) **최상단** — 직전 세션 캡스톤 요약
+
+이 셋만 읽으면 바로 작업할 수 있습니다.
+
+---
+
 ## 📖 먼저 [`docs/README.md`](docs/README.md)를 읽으세요
 
 이 파일은 **안내만 합니다.** 실제 내용은 전부 `docs/` 아래에 있습니다.
