@@ -226,6 +226,5 @@ LLM provider 추상화는 [`core/llm.py`](../core/llm.py)의 `build_llm()`이 �
 상세는 [BACKLOG.md](BACKLOG.md).
 
 - **BL-04** `/ws` 실제 토큰 스트리밍 미구현
-- **BL-06** `test_commands.py`·`test_regression.py`가 구 엔진 기준
 - **BL-07** 파일 찾기 UX (확장자 모를 때 헤맴)
 - 웨이크워드("소윤아") — 인식률 낮아 보류
