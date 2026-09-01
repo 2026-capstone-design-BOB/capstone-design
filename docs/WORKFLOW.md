@@ -75,9 +75,10 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_trim.py              # 히스토리 trim
 "$PY" tests/test_injection.py         # 프롬프트 인젝션
 "$PY" tests/test_sensitive.py         # 민감정보 보호
+"$PY" tests/test_bl02_bl03.py        # 위험명령 공백변형 · 캐시 부정어
 ```
 
-전체 mock 스위트는 15파일 158개. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
+전체 mock 스위트는 16파일 198개. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
 
 ### CI (GitHub Actions)
 
