@@ -9,6 +9,49 @@
 
 ---
 
+## 2026-09-01 (계속) — tests/ 분리 + CI 도입, 🚨 커밋된 API 키 발견
+
+### 🚨 보안 — tests/test_sensitive.py에 실제 형식 Google API 키 박혀 있었음
+마스킹 테스트가 `AIzaSyClLQ...`(실제 키 형식, `.env.example`의 값과 동일)를
+하드코딩하고 있었다. `main`까지 푸시된 상태였다.
+- 명백한 더미(`AIzaSyFAKE0000DUMMY...`)로 교체. 테스트는 마스킹 정규식에 걸리기만 하면 되므로 동작 동일.
+- **git 이력에는 남아 있다.** 해당 키는 폐기(revoke)해야 한다 — 사용자 조치 필요.
+- 재발 방지: CI `secret-guard` 잡 추가.
+
+### tests/ 디렉토리 분리
+- 루트 `test_*.py` 18개 → `tests/` (git mv, 이력 보존)
+- 루트 경로 계산 42곳을 `dirname(dirname(abspath(__file__)))`로 일괄 치환
+- 🐛 **기존 버그 발견·수정**: `test_injection`·`test_sensitive`가 `core/security.py`를
+  `encoding` 없이 `open()` → Windows cp949로 읽다 `UnicodeDecodeError`.
+  **이동 전부터 로컬에서 죽어 있던 것**(이동 때문 아님). `encoding="utf-8"` 추가로 해결.
+  → 두 파일이 살아나며 mock 통과 수 117 → **158**로 정상화.
+
+### CI 도입 (`.github/workflows/tests.yml`)
+| 잡 | 내용 |
+|---|---|
+| `mock-suite` | 문법 검사 + mock 15개 (Ubuntu, langgraph·langchain-core만 설치) |
+| `link-check` | `.md` 상대링크·이미지 참조 검증. 코드 블록은 제외(오탐 방지) |
+| `secret-guard` | `.env` 추적 · 실제 API 키 패턴 · 커밋된 `.pyc` |
+
+트리거: `main`·`develop`·`feature/**` push, PR, 수동.
+서버 필요한 `test_commands`·`test_regression`·`test_sprint1_2`는 제외.
+
+### 문서 갱신
+`CLAUDE.md`·`README.md`·`STRUCTURE.md`·`WORKFLOW.md`·`docs/README.md`의 테스트 경로 18곳.
+`STRUCTURE.md`의 "`test_*.py`는 루트" 제약은 해소됐으므로 새 제약(루트 계산 방식,
+`encoding="utf-8"` 필수)으로 교체. README에 CI 배지 추가.
+
+### 검증
+- mock 15개 전부 통과 (158개). 문법 검사 통과
+- CI 3개 잡 전부 로컬 재현 통과
+- 문서 링크 검사: 참조 125개 / 깨진 것 0
+
+### 남은 것
+- **사용자 조치**: 노출된 Gemini 키 폐기
+- BL-05(구 엔진 제거), README 데모 GIF
+
+---
+
 ## 2026-09-01 — 문서 체계 구축 + GitHub 정리
 
 ### 배경

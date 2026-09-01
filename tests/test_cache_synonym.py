@@ -3,9 +3,9 @@ P4-4 경량 의미 매칭(동의어 확장) 검증
 실행: python test_cache_synonym.py
 """
 import sys, os, tempfile
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-ns = {"__file__": os.path.join(os.path.dirname(__file__), "core", "command_cache.py")}
-exec(open(os.path.join(os.path.dirname(__file__), "core", "command_cache.py"), encoding="utf-8").read(), ns)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ns = {"__file__": os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "command_cache.py")}
+exec(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "command_cache.py"), encoding="utf-8").read(), ns)
 ns["CACHE_FILE"] = os.path.join(tempfile.mkdtemp(), "c.json")
 CommandCache = ns["CommandCache"]
 

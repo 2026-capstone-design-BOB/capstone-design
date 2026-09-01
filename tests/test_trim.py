@@ -4,9 +4,9 @@ graph._prepare_messages trim 검증 — 도구호출/도구결과 쌍이 안 잘
 실행: python test_trim.py
 """
 import sys, os, importlib.util
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 spec = importlib.util.spec_from_file_location(
-    "pluiz_graph", os.path.join(os.path.dirname(__file__), "core", "graph.py"))
+    "pluiz_graph", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "graph.py"))
 G = importlib.util.module_from_spec(spec); spec.loader.exec_module(G)
 
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage

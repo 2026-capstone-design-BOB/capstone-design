@@ -5,10 +5,10 @@ P2-2 그래프 HITL(interrupt) 검증 (동기 invoke, mock)
 실행: python test_hitl_graph.py
 """
 import sys, os, importlib.util
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 spec = importlib.util.spec_from_file_location(
-    "pluiz_graph", os.path.join(os.path.dirname(__file__), "core", "graph.py"))
+    "pluiz_graph", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "graph.py"))
 G = importlib.util.module_from_spec(spec); spec.loader.exec_module(G)
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage

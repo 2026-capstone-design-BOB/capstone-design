@@ -355,7 +355,7 @@ def test_cache_unit():
     """캐시 단위 테스트 (서버 없이 직접 import)."""
     try:
         import sys, os
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from core.command_cache import CommandCache
         cache = CommandCache()
 
@@ -414,7 +414,7 @@ def test_input_control_import():
     """tools/input_control.py 임포트 및 도구 등록 확인."""
     try:
         import sys, os
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from tools.input_control import type_text, press_key
         from core.tool_registry import get_all_tools
         tools = get_all_tools()
@@ -512,7 +512,7 @@ print(f"\n{BOLD}▶ fetch_web_info (웹 검색 결과 LLM 전달){RESET}")
 print(f"\n{CYAN}{BOLD}[WEB-01]{RESET} fetch_web_info 도구 등록 확인")
 try:
     import sys as _sys
-    _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    _sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from core.tool_registry import get_all_tools as _get_all_tools
     _names = [t.name for t in _get_all_tools()]
     if "fetch_web_info" in _names:

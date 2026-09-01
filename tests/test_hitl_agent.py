@@ -6,14 +6,14 @@ P2-3 오케스트레이터 레벨 HITL 흐름 검증 (실제 사용 경로, mock
 실행: python test_hitl_agent.py
 """
 import sys, os, asyncio, importlib.util
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def _load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec); sys.modules[name] = mod
     spec.loader.exec_module(mod); return mod
 
-base = os.path.join(os.path.dirname(__file__), "core")
+base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core")
 _load("core.graph", os.path.join(base, "graph.py"))
 _load("core.fast_path", os.path.join(base, "fast_path.py"))
 GA = _load("core.graph_agent", os.path.join(base, "graph_agent.py"))

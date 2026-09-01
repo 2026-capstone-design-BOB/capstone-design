@@ -3,12 +3,12 @@ P4-1 캐시 동적 학습 검증 (mock, OS·API 불필요)
 실행: python test_cache_learn.py
 """
 import sys, os, importlib.util, tempfile
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # command_cache.py 직접 로드 (임시 캐시파일로 격리)
 tmpdir = tempfile.mkdtemp()
-src = open(os.path.join(os.path.dirname(__file__), "core", "command_cache.py"), encoding="utf-8").read()
-ns = {"__file__": os.path.join(os.path.dirname(__file__), "core", "command_cache.py")}
+src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "command_cache.py"), encoding="utf-8").read()
+ns = {"__file__": os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "command_cache.py")}
 exec(src, ns)
 CommandCache = ns["CommandCache"]
 # 캐시 파일을 임시 경로로 (실제 seed json 오염 방지)

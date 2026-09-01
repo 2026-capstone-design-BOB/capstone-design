@@ -3,10 +3,10 @@ P1.5-a fast_path 어댑터 단위 테스트 (동기, mock, OS·API 불필요)
 실행: python test_fast_path.py
 """
 import sys, os, importlib.util
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 spec = importlib.util.spec_from_file_location(
-    "fast_path", os.path.join(os.path.dirname(__file__), "core", "fast_path.py"))
+    "fast_path", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "fast_path.py"))
 fp = importlib.util.module_from_spec(spec); spec.loader.exec_module(fp)
 
 

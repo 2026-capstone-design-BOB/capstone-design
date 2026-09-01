@@ -6,11 +6,11 @@ P3-2 민감정보 보호 검증 (규칙, mock — OS·API 불필요)
 실행: python test_sensitive.py
 """
 import sys, os, tempfile, importlib.util
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # security.py 직접 로드
 sec = {}
-exec(open(os.path.join(os.path.dirname(__file__), "core", "security.py")).read(), sec)
+exec(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "security.py"), encoding="utf-8").read(), sec)
 check_security = sec["check_security"]
 mask = sec["mask_sensitive_output"]
 
@@ -18,7 +18,7 @@ mask = sec["mask_sensitive_output"]
 import types
 sys.modules.setdefault("tools", types.ModuleType("tools"))
 spec = importlib.util.spec_from_file_location(
-    "tools.filesystem", os.path.join(os.path.dirname(__file__), "tools", "filesystem.py"))
+    "tools.filesystem", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "filesystem.py"))
 fs = importlib.util.module_from_spec(spec); spec.loader.exec_module(fs)
 
 
@@ -46,7 +46,7 @@ def run():
     # open_file(.env) → 거부 (임시 .env 만들어 시도)
     tmp = tempfile.mkdtemp()
     envp = os.path.join(tmp, ".env")
-    open(envp, "w").write("GEMINI_API_KEY=AIzaSECRET123")
+    open(envp, "w", encoding="utf-8").write("GEMINI_API_KEY=AIzaSECRET123")
     r = fs.open_file.invoke({"file_path": envp})
     check("open_file('.env') → 차단", "비밀" in r or "보안" in r)
     # create_file(.env) → 거부
@@ -58,8 +58,10 @@ def run():
           "*******" in mask("제 번호는 900101-1234567 입니다"))
     check("카드번호 마스킹",
           "****-****-****-" in mask("카드 1234-5678-9012-3456 결제"))
+    # ※ 실제 키를 쓰지 말 것. 마스킹 정규식(\bAIza[0-9A-Za-z_-]{20,}\b)에
+    #   걸리기만 하면 되므로 명백한 더미를 쓴다. (CI의 secret-guard 잡이 이를 강제)
     check("Google API키 마스킹",
-          "마스킹됨" in mask("키는 AIzaSyClLQeiHxPfZrnvgGh_jilJrg0eUdmMyao 예요"))
+          "마스킹됨" in mask("키는 AIzaSyFAKE0000DUMMY0000TESTKEY000000000 예요"))
     check("일반 텍스트 그대로",
           mask("메모장을 열었어요") == "메모장을 열었어요")
 

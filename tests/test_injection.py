@@ -3,9 +3,9 @@ P3-1 프롬프트 인젝션 방어 검증 (규칙, OS·API 불필요)
 실행: python test_injection.py
 """
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ns = {}
-exec(open(os.path.join(os.path.dirname(__file__), "core", "security.py")).read(), ns)
+exec(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "security.py"), encoding="utf-8").read(), ns)
 check_security = ns["check_security"]
 
 # (입력, 차단 기대여부)

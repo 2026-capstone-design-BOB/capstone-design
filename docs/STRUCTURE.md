@@ -48,7 +48,9 @@ C:\pluiz_v2\
 ├── setup.bat               # 환경 구축 (conda + pip)
 ├── launch.bat              # 서버 + Electron 동시 실행 ← 실제 사용
 ├── start.bat               # 서버만 실행
-├── test_*.py               # 자동 테스트 19개
+│
+├── .github/workflows/      # CI — mock 테스트 · 문서 링크 · 비밀정보 가드
+├── tests/                  # 자동 테스트 18개 (mock 15 + 서버 필요 3)
 │
 ├── config/                 # pydantic-settings
 ├── core/                   # 에이전트 엔진 · 보안 · 캐시
@@ -119,7 +121,8 @@ V1 → V2로 어떻게 발전했는지를 보여주는 게 이 프로젝트의 �
 |---|---|---|
 | `services/`·`electron-ui/`는 **루트 직속** | Electron이 `../services/wakeword.py`를 직접 찾는다. `src/` 같은 상위 폴더로 감싸면 웨이크워드가 죽는다 | [`electron-ui/main.js:52`](../electron-ui/main.js) |
 | `.env`는 **루트** | `env_file=".env"`가 **CWD 기준**으로 읽힌다 | [`config/settings.py`](../config/settings.py) |
-| `test_*.py`는 **루트** | 19개 전부 `dirname(__file__)`을 프로젝트 루트로 가정해 `core/`를 찾는다. `tests/`로 옮기려면 전부 `dirname(dirname(...))`으로 고쳐야 한다 | 모든 `test_*.py` 상단 |
+| `tests/`의 테스트는 **루트를 `dirname(dirname(abspath(__file__)))`로 계산** | 각 테스트가 `sys.path`와 `core/` 경로를 직접 만든다. 파일을 더 깊은 하위 폴더로 옮기면 `dirname`을 하나 더 씌워야 한다 | 모든 `tests/test_*.py` 상단 |
+| 테스트가 소스를 `open()`할 땐 **`encoding="utf-8"` 필수** | 한글이 든 소스를 Windows 기본 cp949로 읽으면 `UnicodeDecodeError`. 실제로 `test_injection`·`test_sensitive`가 이 때문에 로컬에서 죽어 있었다 | `tests/test_sensitive.py` |
 | `clear_cache.py`는 **루트** | 같은 이유 — `dirname(__file__)/cache/`를 참조 | [`clear_cache.py`](../clear_cache.py) |
 | `docs/presentation/`은 **평평하게** | `pluiz_presentation.html`이 `src="pluiz_paradigm.svg"`로 상대참조한다. 다이어그램을 하위 폴더로 나누면 슬라이드가 깨진다 | `docs/presentation/pluiz_presentation.html` |
 | `CLAUDE.md`는 **루트** | Claude Code가 루트에서 자동 로드한다 | 도구 규약 |
@@ -137,7 +140,7 @@ V1 → V2로 어떻게 발전했는지를 보여주는 게 이 프로젝트의 �
 │   ├─ 에이전트 흐름·보안·캐시 로직인가? ─────→ core/
 │   ├─ STT/TTS/웨이크워드인가? ──────────────→ services/
 │   ├─ 설정 스키마인가? ─────────────────────→ config/
-│   └─ 테스트 스크립트인가? ─────────────────→ 루트 (test_*.py, 위 제약 참조)
+│   └─ 테스트 스크립트인가? ─────────────────→ tests/  (위 제약 참조)
 │
 ├─ 문서인가?
 │   ├─ "왜 이렇게 만들었나" 설계 결정 ────────→ docs/design/  (ADR)

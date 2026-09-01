@@ -6,10 +6,10 @@ P1.5-b 그래프 노드 검증 (동기, mock — OS·API 불필요)
 실행: python test_graph_context.py
 """
 import sys, os, importlib.util
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 spec = importlib.util.spec_from_file_location(
-    "pluiz_graph", os.path.join(os.path.dirname(__file__), "core", "graph.py"))
+    "pluiz_graph", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "graph.py"))
 G = importlib.util.module_from_spec(spec); spec.loader.exec_module(G)
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage

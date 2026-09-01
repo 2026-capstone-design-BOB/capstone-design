@@ -3,10 +3,10 @@ P4-3 캐시 관리 로직 검증 (API가 호출하는 캐시 메서드, mock 캐
 실행: python test_cache_api.py
 """
 import sys, os, tempfile
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 tmp = tempfile.mkdtemp()
-ns = {"__file__": os.path.join(os.path.dirname(__file__), "core", "command_cache.py")}
-exec(open(os.path.join(os.path.dirname(__file__), "core", "command_cache.py"), encoding="utf-8").read(), ns)
+ns = {"__file__": os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "command_cache.py")}
+exec(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "command_cache.py"), encoding="utf-8").read(), ns)
 ns["CACHE_FILE"] = os.path.join(tmp, "c.json")
 CommandCache = ns["CommandCache"]
 

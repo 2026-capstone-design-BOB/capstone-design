@@ -1,0 +1,146 @@
+name: tests
+
+on:
+  push:
+    branches: [main, develop, "feature/**"]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  mock-suite:
+    name: mock 스위트 (OS 독립)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # mock 테스트는 llm·tools·security_check를 전부 주입받으므로
+      # Windows API나 LLM 키 없이 동작한다. requirements.txt 전체(playwright·
+      # faster-whisper·pyautogui 등)는 불필요하고 헤드리스에서 깨지므로 설치하지 않는다.
+      - name: 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install "langgraph>=0.2.0" "langchain-core>=0.3.0"
+
+      - name: 문법 검사
+        run: |
+          python -m py_compile main.py clear_cache.py
+          python -m py_compile core/*.py tools/*.py services/*.py config/*.py memory/*.py
+          python -m py_compile tests/*.py
+
+      # 서버가 떠 있어야 하는 test_commands / test_regression / test_sprint1_2 는 제외한다.
+      # (Windows 실기 검증용 — docs/WORKFLOW.md 참조)
+      - name: mock 테스트
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          set -e
+          fail=0
+          for f in tests/test_*.py; do
+            case "$(basename "$f")" in
+              test_commands.py|test_regression.py|test_sprint1_2.py)
+                echo "::notice::건너뜀 $(basename "$f") — 서버 실행 필요"
+                continue ;;
+            esac
+            echo "── $(basename "$f")"
+            if out=$(python "$f" 2>&1); then
+              echo "$out" | tail -1
+              echo "$out" | tail -1 | grep -q "통과" || { echo "::error::$(basename "$f") 결과 미확인"; fail=1; }
+            else
+              echo "$out" | tail -20
+              echo "::error::$(basename "$f") 실패"
+              fail=1
+            fi
+          done
+          exit $fail
+
+  link-check:
+    name: 문서 링크 검사
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 문서를 옮길 때 상대링크가 조용히 깨지는 걸 막는다.
+      - name: 상대링크·이미지 참조 검증
+        run: |
+          python - <<'EOF'
+          import os, re, glob, sys
+
+          LINK = re.compile(r'\[([^\]]*)\]\(([^)#]+?)(#[^)]*)?\)')
+          IMG  = re.compile(r'src="([^"]+)"')
+          FENCE  = re.compile(r'```.*?```', re.S)
+          INLINE = re.compile(r'`[^`\n]*`')
+
+          def strip_code(s):
+              """코드 블록/인라인 코드를 제거. 문서가 예시로 인용한 경로를
+              실제 참조로 오인하지 않도록 한다."""
+              return INLINE.sub('', FENCE.sub('', s))
+
+          files = glob.glob('*.md') + glob.glob('docs/**/*.md', recursive=True) + glob.glob('archive/*.md')
+          bad = tot = 0
+          for f in files:
+              base = os.path.dirname(f)
+              text = strip_code(open(f, encoding='utf-8').read())
+              targets  = [(m.group(2).strip(), '링크')   for m in LINK.finditer(text)]
+              targets += [(m.group(1).strip(), '이미지') for m in IMG.finditer(text)]
+              for t, kind in targets:
+                  if t.startswith(('http://', 'https://', 'mailto:', 'data:')):
+                      continue
+                  tot += 1
+                  if not os.path.exists(os.path.normpath(os.path.join(base, t))):
+                      bad += 1
+                      print(f"::error file={f}::깨진 {kind} -> {t}")
+          print(f"참조 {tot}개 검사 / 깨진 것 {bad}개")
+          sys.exit(1 if bad else 0)
+          EOF
+
+  secret-guard:
+    name: 비밀정보 커밋 방지
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # .env 가 추적되면 API 키가 그대로 공개된다. develop에 루트 .gitignore가
+      # 없어 실제로 위험했던 적이 있어 CI로 고정한다. (docs/DEVLOG.md 2026-09-01)
+      - name: .env 추적 여부
+        run: |
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "::error::.env 가 git에 추적되고 있습니다. git rm --cached .env 후 .gitignore 확인"
+            exit 1
+          fi
+          echo ".env 미추적 — 정상"
+
+      # 실제 키가 소스에 박히는 걸 막는다. 테스트용 더미는 이름에
+      # FAKE/DUMMY/EXAMPLE/PLACEHOLDER 를 넣어 구분한다.
+      # (2026-09-01: tests/test_sensitive.py에 실제 형식 키가 박혀 있던 걸 발견해 도입)
+      - name: 실제 API 키 패턴 스캔
+        run: |
+          hits=$(git grep -nIE '(AIza[0-9A-Za-z_-]{30,}|sk-[0-9A-Za-z]{40,})' -- . ':!.github/**' \
+                 | grep -viE 'FAKE|DUMMY|EXAMPLE|PLACEHOLDER|YOUR_|<.*>' || true)
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::실제 API 키로 보이는 문자열이 커밋돼 있습니다. 더미로 교체하고 해당 키를 폐기하세요"
+            exit 1
+          fi
+          echo "API 키 패턴 없음 — 정상"
+
+      - name: .pyc 커밋 여부
+        run: |
+          n=$(git ls-files | grep -cE '__pycache__|\.pyc$' || true)
+          if [ "$n" -gt 0 ]; then
+            echo "::error::컴파일 캐시 $n개가 커밋돼 있습니다"
+            git ls-files | grep -E '__pycache__|\.pyc$'
+            exit 1
+          fi
+          echo ".pyc 미커밋 — 정상"

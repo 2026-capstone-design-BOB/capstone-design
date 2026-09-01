@@ -3,14 +3,14 @@ P3-3 검증: 출력 마스킹 연결 + 자기검증 프롬프트 + open_app UWP 
 실행: python test_p3_3.py
 """
 import sys, os, asyncio, importlib.util
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def _load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec); sys.modules[name] = mod
     spec.loader.exec_module(mod); return mod
 
-base = os.path.join(os.path.dirname(__file__), "core")
+base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core")
 # core.security 실제 로드해야 마스킹 연결 검증됨 (graph_agent가 lazy import)
 import types
 # 'core' 패키지를 가벼운 stub으로 (무거운 __init__ 회피) + 실제 서브모듈 주입
