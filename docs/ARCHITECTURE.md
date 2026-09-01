@@ -31,10 +31,9 @@ LLM provider는 `gemini` / `claude` / `openai` 전환 가능 ([`config/settings.
   │
   ├─ main.py: check_security()              ← 1차 코드 필터
   │
-  └─ core/factory.py: get_active_agent()
-        USE_GRAPH=true(기본) → PluizGraphAgent / false → PluizAgent(구 엔진)
+  └─ core/graph_agent.py: get_graph_agent()  ← 단일 엔진
         │
-        └─ core/graph_agent.py (오케스트레이터)
+        └─ PluizGraphAgent (오케스트레이터)
              ├─ hybrid_guard_check()      ← 의심 입력만 LLM 판정 (8초 타임아웃, 실패 시 skip)
              ├─ graph.invoke()를 asyncio.to_thread로 실행
              ├─ mask_sensitive_output()   ← 출력 마스킹
@@ -116,11 +115,14 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 | 시스템 | 10 | `volume_up/down/set` `mute_toggle` `brightness_up/down` `take_screenshot` `get_battery_status` `get_current_time` `get_running_apps` |
 | 입력 | 3 | `type_text` `press_key` `get_clipboard_text` |
 | 캘린더 | 1 | `create_calendar_event` |
-| **삭제** | **2** | `delete_file` `delete_folder` — **`USE_GRAPH=true`일 때만 등록** |
+| **삭제** | **2** | `delete_file` `delete_folder` — **HITL 승인 필수** |
 
-> **삭제 도구 게이팅**: HITL 승인이 있는 그래프 엔진에서만 노출된다
-> ([`tool_registry.py:100-104`](../core/tool_registry.py)). 구 엔진에는 도구 자체가 없어
-> "확인 없는 삭제"가 구조적으로 불가능하다. 프롬프트로 부탁하는 대신 **도구를 주지 않는** 방식.
+> **삭제 도구 안전장치**: `core/graph.py`의 `DANGEROUS_TOOLS`에 등록돼 있어
+> `hitl` 노드가 `interrupt()`로 실행을 멈추고 사람 승인을 받는다. 프롬프트로 부탁하는
+> 대신 **그래프 구조가 강제**한다.
+>
+> ⚠️ **새 위험 도구를 추가할 땐 `DANGEROUS_TOOLS`에 반드시 추가할 것.**
+> 여기 빠지면 승인 없이 실행된다. → [design/M1_P5_엔진단일화.md](design/M1_P5_엔진단일화.md#3-4-안전장치는-어디로-갔나)
 
 도구 추가 절차는 [WORKFLOW.md § 새 도구 추가](WORKFLOW.md#새-도구-추가).
 
@@ -205,14 +207,17 @@ LLM API 없이 자주 쓰는 명령을 즉시 실행한다. 저지연 + 오프�
 
 ---
 
-## 엔진 이중화 (한시적)
+## 엔진 (단일)
 
-`USE_GRAPH` 플래그로 신/구 엔진을 고른다 ([`core/factory.py`](../core/factory.py)).
+`PluizGraphAgent`가 유일한 엔진이다. 구 엔진(`PluizAgent`, 771줄)과 `USE_GRAPH`
+플래그는 M1-P5에서 제거됐다.
 
-- **`true`(기본)** — `PluizGraphAgent`. 그래프 + HITL + 삭제 도구
-- **`false`** — `PluizAgent` ([`core/agent.py`](../core/agent.py), 771줄). 비상 폴백
+구 엔진 소스는 **[`archive/core_agent_v1.py`](../archive/core_agent_v1.py)** 에
+그대로 남아 있고, 제거 배경·기능 대응표·복원 방법은
+**[design/M1_P5_엔진단일화.md](design/M1_P5_엔진단일화.md)** 에 정리돼 있다.
 
-구 엔진은 롤백 낙하산 목적으로 보존 중이며, 제거는 BACKLOG **BL-05**로 관리한다.
+LLM provider 추상화는 [`core/llm.py`](../core/llm.py)의 `build_llm()`이 담당한다
+(원래 구 엔진 안에 있던 것을 분리).
 
 ---
 
@@ -223,7 +228,6 @@ LLM API 없이 자주 쓰는 명령을 즉시 실행한다. 저지연 + 오프�
 - **BL-02** 캐시 부정어 오매칭 — "계산기 **말고** 다른거 열어" → 계산기를 엶
 - **BL-03** 보안필터가 공백 없는 변형(`rm-rf`) 미포착
 - **BL-04** `/ws` 실제 토큰 스트리밍 미구현
-- **BL-05** 구 엔진 제거 → 그래프 단일화
 - **BL-06** `test_commands.py`·`test_regression.py`가 구 엔진 기준
 - **BL-07** 파일 찾기 UX (확장자 모를 때 헤맴)
 - 웨이크워드("소윤아") — 인식률 낮아 보류
