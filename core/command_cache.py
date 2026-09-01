@@ -10,16 +10,25 @@ Pluiz 오프라인 커맨드 캐시
   Stage 2 — SequenceMatcher 퍼지 매칭 (임계값 0.80):
              intent 추출 실패 시 fallback.
 
-동적 캐싱 비활성화 (파라미터 오염 문제로 시드 기반만 사용).
+동적 학습 (P4, 정책: docs/design/M1_P4_캐시정책.md):
+  LLM이 성공 실행한 **화이트리스트 도구**(LEARNABLE_TOOLS) 명령만 1회 즉시 학습한다.
+  사용자 '표현'만 저장하고 **파라미터는 저장하지 않아** 오염을 원천 차단한다.
+  (폴더명·검색어·set_volume 숫자 등 자유 파라미터 명령은 학습 거부)
+  시드/동적은 source로 분리되어 동적만 원버튼 롤백 가능(clear_dynamic).
 """
 
 import json
 import os
 import re
 import asyncio
+from datetime import datetime
 from dataclasses import dataclass, asdict, field
 from difflib import SequenceMatcher
 from typing import Optional
+
+
+def _now_iso() -> str:
+    return datetime.now().isoformat(timespec="seconds")
 
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_FILE = os.path.join(_BASE_DIR, "cache", "command_cache.json")
@@ -61,6 +70,26 @@ class CacheEntry:
     response_template: str
     hit_count: int = 0
     is_seed: bool = False
+    # P4: 동적 학습 감사/관리용 (기본값 → 기존 JSON 하위호환)
+    source: str = "seed"        # "seed" | "dynamic"
+    learned_at: str = ""        # 학습 시각 ISO
+    last_used: str = ""         # 마지막 사용 시각 ISO
+
+
+# ── P4: 동적 학습 정책 상수 ───────────────────────────────────────
+# 학습 대상 화이트리스트 (파라미터 없음/고정어휘 제어 도구만).
+# 자유 파라미터 도구(폴더명·검색어·set_volume 숫자·type_text 등)는 제외 → 오염 원천 차단.
+LEARNABLE_TOOLS = frozenset([
+    "open_app", "close_app", "maximize_window", "minimize_window", "show_desktop",
+    "volume_up", "volume_down", "mute_toggle", "brightness_up", "brightness_down",
+    "take_screenshot", "get_battery_status", "get_current_time", "get_running_apps",
+    "open_recent_file",
+])
+# 이 도구들의 args 중 '자유 파라미터'로 간주해 학습을 막을 키
+_FREE_PARAM_KEYS = frozenset(["query", "url", "level", "name", "content", "text",
+                              "headers", "rows", "destination", "origin", "file_path",
+                              "folder_path", "save_path"])
+DEFAULT_MAX_DYNAMIC = 200       # 동적 학습 상한 (settings로 오버라이드)
 
 
 # ── 시드 데이터 ────────────────────────────────────────────────────
@@ -116,6 +145,7 @@ APP_ENTITIES: list[tuple[str, str, str]] = [
     ("마이크로소프트엣지", "edge",   "엣지"),
     ("엣지",          "edge",        "엣지"),
     ("메모장",        "notepad",     "메모장"),
+    ("노트패드",      "notepad",     "메모장"),   # P4-4 동의어
     ("계산기",        "calculator",  "계산기"),
     ("파일 탐색기",   "explorer",    "파일 탐색기"),
     ("파일탐색기",    "explorer",    "파일 탐색기"),
@@ -151,6 +181,7 @@ SYSTEM_ENTITIES: list[tuple[str, str]] = [
     ("바탕화면",      "desktop"),
     ("스크린샷",      "screenshot"),
     ("화면 캡처",     "screenshot"),
+    ("화면 찍",       "screenshot"),   # P4-4 동의어 ("화면 찍어")
     ("배터리",        "battery"),
     ("시간",          "time"),
     ("시계",          "time"),
@@ -167,12 +198,14 @@ ALL_ENTITIES: list[tuple[str, str]] = (
 
 # 동작 유형 패턴 (우선순위 순서: 더 구체적인 것 먼저)
 ACTION_PATTERNS: list[tuple[str, list[str]]] = [
-    ("volume_up",        ["볼륨 올", "소리 올", "볼륨 높", "소리 높", "볼륨 크게", "소리 크게"]),
-    ("volume_down",      ["볼륨 내", "소리 내", "볼륨 낮", "소리 낮", "볼륨 작게", "소리 작게"]),
+    ("volume_up",        ["볼륨 올", "소리 올", "볼륨 높", "소리 높", "볼륨 크게", "소리 크게",
+                          "볼륨 키", "소리 키", "키워", "키우"]),                     # P4-4
+    ("volume_down",      ["볼륨 내", "소리 내", "볼륨 낮", "소리 낮", "볼륨 작게", "소리 작게",
+                          "볼륨 줄", "소리 줄", "줄여", "줄이"]),                     # P4-4
     ("mute",             ["음소거"]),
     ("brightness_up",    ["밝기 올", "밝기 높", "화면 밝게", "밝게 해", "밝혀줘"]),
     ("brightness_down",  ["밝기 내", "밝기 낮", "화면 어둡", "어둡게 해"]),
-    ("screenshot",       ["스크린샷", "화면 캡처", "캡처해줘"]),
+    ("screenshot",       ["스크린샷", "화면 캡처", "캡처해줘", "찍어"]),   # P4-4 "찍어"
     ("time",             ["몇 시", "몇시", "현재 시간", "지금 시간"]),
     ("battery",          ["배터리 얼마", "배터리 확인", "배터리 남았"]),
     ("running_apps",     ["뭐 켜져", "켜져 있", "실행 중인 앱", "어떤 앱"]),
@@ -183,7 +216,8 @@ ACTION_PATTERNS: list[tuple[str, list[str]]] = [
     ("close",            ["꺼줘", "닫아줘", "종료해줘", "닫줘", "꺼 줘", "종료 해줘",
                           "꺼", "닫아", "종료"]),
     ("open",             ["열어줘", "켜줘", "실행해줘", "시작해줘", "띄워줘",
-                          "열어 줘", "켜 줘", "실행 해줘", "열어", "켜", "실행", "시작"]),
+                          "열어 줘", "켜 줘", "실행 해줘", "열어", "켜", "실행", "시작",
+                          "띄워", "오픈", "열기"]),                     # P4-4 동의어
     ("recent_file",      ["최근에 열었던", "최근 파일", "최근에 열"]),
 ]
 
@@ -205,6 +239,16 @@ class CommandCache:
         self._intent_index: dict[tuple[str, str], CacheEntry] = {}
         # BUG-10: execute() 호출마다 get_all_tools()를 재생성하지 않도록 캐싱
         self._tools_map: dict = {}
+        # P4: 동적 학습 설정(settings 오버라이드, 실패 시 기본값)
+        self._max_dynamic = DEFAULT_MAX_DYNAMIC
+        self._learning_enabled = True
+        try:
+            from config.settings import get_settings
+            s = get_settings()
+            self._max_dynamic = int(getattr(s, "cache_max_dynamic", DEFAULT_MAX_DYNAMIC))
+            self._learning_enabled = bool(getattr(s, "cache_learning", True))
+        except Exception:
+            pass
         self._load()
         self._seed()
         self._build_intent_index()
@@ -314,20 +358,29 @@ class CommandCache:
             print(f"[CommandCache] [S1-intent] {intent} → {matched.pattern!r}")
             return matched, 0.90
 
-        # Stage 2: SequenceMatcher fallback
+        # Stage 2: 의미 유사도 fallback (학습 표현 포함 전체 캐시 대상)
         best_entry: Optional[CacheEntry] = None
         best_score = 0.0
         for key, entry in self._cache.items():
-            score = SequenceMatcher(None, normalized, key).ratio()
+            score = self._similarity(normalized, key)
             if score > best_score:
                 best_score = score
                 best_entry = entry
 
         if best_score >= SIMILARITY_THRESHOLD and best_entry is not None:
-            print(f"[CommandCache] [S2-fuzzy] score={best_score:.2f} → {best_entry.pattern!r}")
+            print(f"[CommandCache] [S2-sim] score={best_score:.2f} → {best_entry.pattern!r}")
             return best_entry, best_score
 
         return None
+
+    def _similarity(self, a: str, b: str) -> float:
+        """Stage-2 의미 유사도 (0~1). 교체 지점(swap point).
+
+        현재: 경량(글자 유사도 SequenceMatcher). 오프라인·무설치.
+        후속(P4-A): 이 메서드만 로컬 임베딩 코사인 유사도로 교체하면 의미매칭이 강화됨.
+        (find() 등 나머지 로직은 그대로 재사용)
+        """
+        return SequenceMatcher(None, a, b).ratio()
 
     # ── 도구 직접 실행 ────────────────────────────────────────────
 
@@ -378,13 +431,119 @@ class CommandCache:
     # ── 캐싱 ──────────────────────────────────────────────────────
 
     def save(self, user_input: str, tool_calls: list, response: str):
-        """동적 캐싱 비활성화 (파라미터 오염 문제)."""
-        pass
+        """(구) 동적 캐싱 진입점 — P4 learn()으로 대체. 하위호환용 위임."""
+        self.learn(user_input, tool_calls)
 
     def increment_hit(self, pattern: str):
         if pattern in self._cache:
             self._cache[pattern].hit_count += 1
+            self._cache[pattern].last_used = _now_iso()
             self._persist()
+
+    # ── P4: 안전한 동적 학습 ──────────────────────────────────────
+
+    def _is_learnable(self, tool_calls: list) -> bool:
+        """화이트리스트 단일 도구 + 자유 파라미터 없음일 때만 학습 허용(오염 차단)."""
+        if not tool_calls or len(tool_calls) != 1:
+            return False
+        call = tool_calls[0]
+        if call.get("name", "") not in LEARNABLE_TOOLS:
+            return False
+        for k, v in (call.get("args") or {}).items():
+            if k == "app":                      # 고정어휘 앱 이름(성공 실행=유효) 허용
+                continue
+            if k == "amount":                   # 볼륨 기본량(10)만 허용, 숫자 지정은 거부
+                if str(v) != "10":
+                    return False
+                continue
+            return False                        # 그 외 파라미터 → 학습 거부
+        return True
+
+    def learn(self, user_input: str, tool_calls: list) -> bool:
+        """LLM이 성공 실행한 화이트리스트 제어명령의 '사용자 표현'을 학습한다.
+        파라미터는 저장하지 않음(오염 차단). 반환: 새로 학습했으면 True."""
+        if not self._learning_enabled:
+            return False
+        if not self._is_learnable(tool_calls):
+            return False
+        key = self._normalize(user_input)
+        if not key or len(key) < 2:
+            return False
+        now = _now_iso()
+        if key in self._cache:                  # 이미 알고 있음 → 사용 기록만 갱신
+            e = self._cache[key]
+            e.hit_count += 1
+            e.last_used = now
+            self._persist()
+            return False
+        entry = CacheEntry(
+            pattern=key, tool_calls=tool_calls,
+            response_template="✓ 실행했어요.",
+            hit_count=1, is_seed=False,
+            source="dynamic", learned_at=now, last_used=now,
+        )
+        self._cache[key] = entry
+        intent = self._extract_intent(key)      # 인텐트 추출되면 인덱스에도 반영
+        if intent and intent not in self._intent_index:
+            self._intent_index[intent] = entry
+        self._evict_if_over_cap()
+        self._persist()
+        print(f"[CommandCache] 학습: {key!r} → {[c.get('name') for c in tool_calls]}")
+        return True
+
+    def _evict_if_over_cap(self):
+        """동적 항목이 상한 초과 시 정리: hit 적고 오래 안 쓴 것부터(LRU+LFU)."""
+        dyn = [(k, e) for k, e in self._cache.items() if e.source == "dynamic"]
+        if len(dyn) <= self._max_dynamic:
+            return
+        dyn.sort(key=lambda kv: (kv[1].hit_count, kv[1].last_used or ""))
+        for k, _ in dyn[: len(dyn) - self._max_dynamic]:
+            del self._cache[k]
+
+    # ── P4: 관리 (시드 보호) ──────────────────────────────────────
+
+    def delete_entry(self, pattern: str) -> bool:
+        """동적 항목 개별 삭제. 시드는 보호(거부)."""
+        key = self._normalize(pattern)
+        e = self._cache.get(key)
+        if not e or e.is_seed:
+            return False
+        del self._cache[key]
+        self._build_intent_index()
+        self._persist()
+        return True
+
+    def clear_dynamic(self) -> int:
+        """동적 학습 전체 초기화(오염 롤백 원버튼). 시드 유지. 삭제 개수 반환."""
+        keys = [k for k, e in self._cache.items() if e.source == "dynamic"]
+        for k in keys:
+            del self._cache[k]
+        self._build_intent_index()
+        self._persist()
+        return len(keys)
+
+    def stats(self) -> dict:
+        seed = sum(1 for e in self._cache.values() if e.is_seed)
+        dyn = sum(1 for e in self._cache.values() if e.source == "dynamic")
+        return {"total": len(self._cache), "seed": seed,
+                "dynamic": dyn, "max_dynamic": self._max_dynamic,
+                "learning_enabled": self._learning_enabled}
+
+    def list_dynamic(self) -> list[dict]:
+        return [{"pattern": e.pattern,
+                 "tools": [c.get("name") for c in e.tool_calls],
+                 "hit_count": e.hit_count,
+                 "learned_at": e.learned_at, "last_used": e.last_used}
+                for e in self._cache.values() if e.source == "dynamic"]
+
+    def list_seeds(self) -> list[dict]:
+        return [{"pattern": e.pattern,
+                 "tools": [c.get("name") for c in e.tool_calls],
+                 "hit_count": e.hit_count}
+                for e in self._cache.values() if e.is_seed]
+
+    def learnable_tools(self) -> list[str]:
+        return sorted(LEARNABLE_TOOLS)
 
     # ── 영속화 ────────────────────────────────────────────────────
 

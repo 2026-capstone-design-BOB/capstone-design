@@ -6,6 +6,111 @@
 
 ---
 
+## 2026-08-19 10:32 KST — P4-4 경량 의미매칭 + P4-5 통합 점검
+
+### P4-4 (`core/command_cache.py`)
+- **동의어 확장**(인텐트 어휘): 앱 "노트패드"→메모장, open "띄워/오픈/열기",
+  volume "키워/키우/줄여/줄이(+소리 키/볼륨 줄)", screenshot "찍어/화면 찍".
+  → "노트패드 열어"·"소리 키워봐"·"화면 찍어봐"가 이제 **Stage-1 인텐트로 즉시 히트**
+  (예전엔 LLM 경유 → 학습 대상이었음).
+- **Stage-2 교체점 분리**: `_similarity(a,b)` 메서드로 캡슐화(현재 SequenceMatcher).
+  후속 P4-A는 이 메서드만 로컬 임베딩 코사인으로 교체 → 나머지 로직 재사용.
+
+### 검증
+- `test_cache_synonym.py` 15/15: 새 동의어 히트 6 + 시드 회귀 6 + 오작동방지 2 + 교체점 1.
+
+### P4-5 통합 점검
+- 전체 컴파일 OK. **M1 누적 mock 스위트 15파일 158개 전부 그린**
+  (맥락·그래프·HITL·삭제·trim·보안4층·캐시학습/연결/API/동의어).
+
+### 남은 것
+- P4-6: 사용자 Windows 실기(동의어 히트·학습→오프라인·대시보드) → P4/M1 완료 캡스톤.
+- (선택) P4-A: `_similarity`를 로컬 임베딩으로 교체.
+
+---
+
+## 2026-08-19 10:25 KST — P4-3+: 캐시 개발 대시보드(HTML)
+
+### 완료 (`main.py`, `core/command_cache.py`)
+- `GET /cache/ui` — **개발용 HTML 대시보드**: 통계 카드, 동적 학습 테이블(행별 삭제 버튼),
+  시드 테이블(읽기전용), 학습 가능 도구, **CacheEntry 스키마·타입 표 + API 표**.
+  삭제/초기화는 페이지에서 fetch(DELETE)로 바로 실행.
+- `GET /cache` 확장: `seeds`·`learnable_tools` 포함.
+- `command_cache`: `list_seeds()`·`learnable_tools()` 추가.
+
+### 검증
+- 컴파일 OK. /cache 응답 필드(stats·dynamic·seeds·learnable) 형태 확인.
+- 실기: 브라우저 `http://127.0.0.1:8765/cache/ui` 접속 → 조회·삭제·초기화.
+
+### 다음
+P4-4: 경량 의미 매칭 강화 → P4-5 통합검증 → P4-6 실기/M1 캡스톤.
+
+---
+
+## 2026-08-19 10:15 KST — P4-3: 캐시 관리 API
+
+### 완료 (`main.py`)
+- `GET /cache` — 통계(stats) + 동적 학습 목록(list_dynamic). 브라우저에서 바로 조회.
+- `DELETE /cache` — 동적 전체 초기화(오염 롤백, 시드 유지).
+- `DELETE /cache/entry?pattern=` — 동적 개별 삭제(시드 보호).
+
+### 검증
+- `test_cache_api.py` 12/12: 조회·개별삭제(시드보호)·전체초기화·시드유지.
+- 회귀: cache_learn 15/15, cache_wire 3/3. 컴파일 OK.
+
+### 실기(사용자)
+- 브라우저에서 `http://127.0.0.1:8765/cache` → 학습된 명령 목록·통계 확인 가능.
+- 잘못 학습된 항목: `DELETE /cache/entry?pattern=...` 또는 `DELETE /cache`로 전체 초기화.
+
+### 다음
+P4-4: 경량 의미 매칭 강화(학습표현·동의어 반영) → P4-5 통합검증 → P4-6 실기/M1 캡스톤.
+
+---
+
+## 2026-08-19 10:10 KST — P4-2: 학습 연결 (오케스트레이터)
+
+### 완료 (`core/graph_agent.py`)
+- `run_async` 성공 완료 시 `_maybe_learn(user_input, result)` 호출:
+  결과 messages에서 도구 호출 추출 → 도구 오류(✗/[오류]) 있으면 학습 금지 →
+  `cache.learn()`에 전달(최종 자격 판단은 캐시 정책).
+- fast_path 히트(도구호출 없음)·보안차단·interrupt·resume(삭제 등)은 자연히 학습 제외.
+
+### 검증
+- `test_cache_wire.py` 3/3: 성공 화이트리스트→학습 / 파라미터(폴더)→거부 / 실행실패(✗)→거부.
+- 회귀: graph_agent 6/6, hitl_agent 8/8, cache_learn 15/15. 컴파일 OK.
+
+### 이제 실기 가능
+- "메모장 띄워봐"(새 표현) 성공 → 캐시 학습 → 다음부터 오프라인·즉시 실행.
+
+### 다음
+P4-3: 캐시 관리 API(/cache 조회·삭제) → P4-4 경량 매칭 → P4-5 검증 → P4-6 실기.
+
+---
+
+## 2026-08-19 09:57 KST — P4 착수(캐시 정책 확정) + P4-1: 안전한 동적 학습
+
+### 정책 확정
+- `docs/M1_P4_캐시정책.md` 고정. 원칙: 비파괴적 확장 / 시드·동적 분리 / 오염 원천차단
+  (자유 파라미터 미학습) / 매칭 Stage 분리(후에 임베딩 교체).
+- 결정: D1 상한 200(settings) · D2 LRU+hit보호 · D3 1회 성공 즉시 학습 · D4 관리 API(+시드보호).
+
+### P4-1 완료 (`core/command_cache.py`, `config/settings.py`)
+- `CacheEntry`에 `source/learned_at/last_used` 추가(기존 JSON 하위호환).
+- `LEARNABLE_TOOLS` 화이트리스트 + `_is_learnable`(단일 도구·자유파라미터 거부·볼륨 기본량만).
+- `learn()`(1회 성공 즉시, 파라미터 미저장), `_evict_if_over_cap`(LRU+LFU),
+  관리: `delete_entry`(시드보호)·`clear_dynamic`(오염 롤백)·`stats`·`list_dynamic`.
+- settings: `cache_learning`(스위치)·`cache_max_dynamic`(상한).
+- `save()`는 `learn()`으로 위임(구 no-op 대체).
+
+### 검증
+- `test_cache_learn.py` 15/15: 학습자격(오염차단)·시드분리·개별/전체삭제·상한LRU·학습스위치.
+- 회귀: 시드 매칭 5/5, 그래프 스위트(graph_agent/hitl/guardrail) 그린. 컴파일 OK.
+
+### 다음
+P4-2: graph_agent가 LLM 성공 실행한 화이트리스트 명령을 `learn()` 호출로 연결.
+
+---
+
 ## 2026-08-14 10:51 KST — ✅ P3(OWASP 보안 가드레일) 완료 — 캡스톤
 
 ### P3가 한 일 (요약)

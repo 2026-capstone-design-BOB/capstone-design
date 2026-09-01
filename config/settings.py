@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     agent_timeout: int = 30          # 초
     use_graph: bool = True           # 그래프 코어(PluizGraphAgent) 기본 사용. False=구 엔진 폴백 (P1.5/P2)
 
+    # 커맨드 캐시 (P4)
+    cache_learning: bool = True      # 동적 학습 on/off 스위치
+    cache_max_dynamic: int = 200     # 동적 학습 상한(초과 시 LRU 정리)
+
     # STT
     whisper_model: str = "base"      # tiny / base / small / medium
     whisper_language: str = "ko"

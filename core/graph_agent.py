@@ -201,12 +201,46 @@ class PluizGraphAgent:
         except Exception as e:
             print(f"[PluizGraphAgent] 출력 마스킹 생략(무시): {e}")
 
+        # P4-2: LLM이 성공 실행한 화이트리스트 제어명령의 사용자 표현을 학습(맞춤형·오프라인 확대)
+        self._maybe_learn(user_input, result)
+
         try:
             self.session_memory.save(user_input, response)
         except Exception as e:
             print(f"[PluizGraphAgent] session_memory 저장 실패(무시): {e}")
 
         return response
+
+    def _maybe_learn(self, user_input: str, result: Any) -> None:
+        """그래프 실행 결과에서 도구 호출을 추출해, 성공 + 화이트리스트면 캐시에 학습.
+        - fast_path 히트(도구호출 없음)·보안차단·오류는 자연히 제외됨.
+        - 실제 학습 자격(단일 화이트리스트 도구·자유파라미터 없음)은 cache.learn()이 최종 판단."""
+        cache = getattr(self, "cache", None)
+        if cache is None or not isinstance(result, dict):
+            return
+        try:
+            from langchain_core.messages import ToolMessage
+            msgs = result.get("messages", [])
+            tool_calls = []
+            for m in msgs:
+                for c in (getattr(m, "tool_calls", None) or []):
+                    if isinstance(c, dict):
+                        tool_calls.append({"name": c.get("name", ""), "args": c.get("args", {}) or {}})
+                    else:
+                        tool_calls.append({"name": getattr(c, "name", ""), "args": getattr(c, "args", {}) or {}})
+            if not tool_calls:
+                return
+            # 도구 실행 실패 시 학습 금지
+            for m in msgs:
+                if isinstance(m, ToolMessage):
+                    c = m.content
+                    if isinstance(c, list):
+                        c = " ".join(str(b) for b in c)
+                    if str(c).strip()[:1] in ("✗",) or str(c).strip().startswith(("[오류", "오류", "Error", "[error")):
+                        return
+            cache.learn(user_input, tool_calls)
+        except Exception as e:
+            print(f"[PluizGraphAgent] 학습 시도 실패(무시): {e}")
 
     async def stream(self, user_input: str, thread_id: str = "default") -> AsyncGenerator[str, None]:
         """스트리밍 실행 (동일 시그니처). P1.5-c: 결과를 단일 청크로 반환.

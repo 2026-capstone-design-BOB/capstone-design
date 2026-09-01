@@ -265,6 +265,128 @@ async def delete_favorite(index: int):
     return {"status": "not_found"}
 
 
+# ── 캐시 대시보드 HTML (개발용) ───────────────────────────────────
+_CACHE_DASHBOARD_HTML = """<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pluiz 캐시 대시보드 (dev)</title>
+<style>
+  :root{--bg:#0f1115;--card:#1a1e26;--line:#2a2f3a;--fg:#e6e8ec;--mut:#9aa3b2;--acc:#5b8cff;--seed:#8a8f9a;--dyn:#33c48d;--danger:#ff6b6b}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;padding:20px}
+  h1{font-size:18px;margin:0 0 4px} h2{font-size:15px;margin:22px 0 8px;color:var(--fg)}
+  .mut{color:var(--mut)} code{background:#0b0d11;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-family:ui-monospace,Consolas,monospace}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:96px}
+  .stat b{display:block;font-size:22px} .stat span{color:var(--mut);font-size:12px}
+  .bar{display:flex;gap:8px;margin:10px 0 4px;flex-wrap:wrap}
+  button{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer;font-size:13px}
+  button:hover{border-color:var(--acc)} button.danger{border-color:var(--danger);color:var(--danger)}
+  table{width:100%;border-collapse:collapse;margin-top:6px;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}
+  th{color:var(--mut);font-weight:500;background:#151922} tr:last-child td{border-bottom:none}
+  .pill{font-size:11px;padding:1px 7px;border-radius:20px;border:1px solid var(--line)}
+  .pill.dyn{color:var(--dyn);border-color:#1e5b45} .pill.seed{color:var(--seed)}
+  .del{color:var(--danger);border-color:#5b2323;padding:3px 9px}
+  .empty{color:var(--mut);padding:14px;text-align:center}
+</style></head>
+<body>
+  <h1>Pluiz 캐시 대시보드 <span class="mut" style="font-size:12px">/cache/ui · 개발용</span></h1>
+  <div class="mut">학습된 명령을 조회·삭제하고 스키마를 확인. 시드는 삭제 보호됨.</div>
+  <div class="stats" id="stats"></div>
+  <div class="bar">
+    <button onclick="load()">↻ 새로고침</button>
+    <button class="danger" onclick="clearDynamic()">동적 전체 초기화</button>
+    <span class="mut" id="msg"></span>
+  </div>
+
+  <h2>동적 학습 <span class="mut" id="dcount"></span></h2>
+  <table><thead><tr><th>표현(pattern)</th><th>도구</th><th>hit</th><th>learned_at</th><th>last_used</th><th></th></tr></thead>
+    <tbody id="dyn"></tbody></table>
+
+  <h2>시드 <span class="mut" id="scount"></span> <span class="mut">(고정·삭제 보호)</span></h2>
+  <table><thead><tr><th>표현</th><th>도구</th><th>hit</th></tr></thead><tbody id="seed"></tbody></table>
+
+  <h2>학습 가능 도구 (whitelist)</h2>
+  <div id="wl" class="mut"></div>
+
+  <h2>데이터 스키마 · CacheEntry</h2>
+  <table><thead><tr><th>필드</th><th>타입</th><th>설명</th></tr></thead><tbody>
+    <tr><td><code>pattern</code></td><td>str</td><td>정규화된 사용자 표현(키)</td></tr>
+    <tr><td><code>tool_calls</code></td><td>list[{name:str, args:dict}]</td><td>캐노니컬 도구 호출(파라미터 미저장)</td></tr>
+    <tr><td><code>response_template</code></td><td>str</td><td>응답 문구</td></tr>
+    <tr><td><code>hit_count</code></td><td>int</td><td>사용 횟수(LRU 보호 기준)</td></tr>
+    <tr><td><code>is_seed</code></td><td>bool</td><td>시드 여부 → true면 삭제 보호</td></tr>
+    <tr><td><code>source</code></td><td>"seed" | "dynamic"</td><td>출처</td></tr>
+    <tr><td><code>learned_at</code></td><td>str (ISO8601)</td><td>학습 시각</td></tr>
+    <tr><td><code>last_used</code></td><td>str (ISO8601)</td><td>마지막 사용 시각</td></tr>
+  </tbody></table>
+
+  <h2>API</h2>
+  <table><thead><tr><th>메서드</th><th>경로</th><th>설명</th></tr></thead><tbody>
+    <tr><td>GET</td><td><code>/cache</code></td><td>통계+동적+시드 (JSON)</td></tr>
+    <tr><td>DELETE</td><td><code>/cache</code></td><td>동적 전체 초기화(시드 유지)</td></tr>
+    <tr><td>DELETE</td><td><code>/cache/entry?pattern=</code></td><td>동적 개별 삭제(시드 거부)</td></tr>
+  </tbody></table>
+
+<script>
+const $=id=>document.getElementById(id);
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+async function load(){
+  const r=await fetch('/cache'); const d=await r.json();
+  const s=d.stats;
+  $('stats').innerHTML=[['total',s.total],['seed',s.seed],['dynamic',s.dynamic],['max_dynamic',s.max_dynamic],['learning',s.learning_enabled]]
+    .map(([k,v])=>`<div class="stat"><b>${esc(v)}</b><span>${k}</span></div>`).join('');
+  $('dcount').textContent='('+d.dynamic.length+')'; $('scount').textContent='('+d.seeds.length+')';
+  $('dyn').innerHTML=d.dynamic.length? d.dynamic.map(e=>`<tr>
+    <td>${esc(e.pattern)} <span class="pill dyn">dynamic</span></td><td>${esc((e.tools||[]).join(', '))}</td>
+    <td>${esc(e.hit_count)}</td><td class="mut">${esc(e.learned_at||'')}</td><td class="mut">${esc(e.last_used||'')}</td>
+    <td><button class="del" onclick="delEntry('${esc(e.pattern)}')">삭제</button></td></tr>`).join('')
+    : '<tr><td colspan=6 class="empty">학습된 동적 항목 없음</td></tr>';
+  $('seed').innerHTML=d.seeds.map(e=>`<tr><td>${esc(e.pattern)} <span class="pill seed">seed</span></td>
+    <td>${esc((e.tools||[]).join(', '))}</td><td>${esc(e.hit_count)}</td></tr>`).join('');
+  $('wl').innerHTML=(d.learnable_tools||[]).map(t=>`<code>${esc(t)}</code>`).join(' ');
+}
+async function delEntry(p){ if(!confirm('삭제: '+p+' ?'))return;
+  await fetch('/cache/entry?pattern='+encodeURIComponent(p),{method:'DELETE'}); $('msg').textContent='삭제됨: '+p; load(); }
+async function clearDynamic(){ if(!confirm('동적 학습 전체 초기화? (시드는 유지)'))return;
+  const r=await fetch('/cache',{method:'DELETE'}); const d=await r.json(); $('msg').textContent=(d.removed||0)+'개 초기화됨'; load(); }
+load();
+</script></body></html>"""
+
+
+# ── 캐시 관리 (P4-3) ──────────────────────────────────────────────
+
+@app.get("/cache")
+async def cache_view():
+    """캐시 통계 + 동적/시드 목록 (JSON API). 사람이 보긴 /cache/ui 권장."""
+    from core.command_cache import get_cache
+    c = get_cache()
+    return {"stats": c.stats(), "dynamic": c.list_dynamic(),
+            "seeds": c.list_seeds(), "learnable_tools": c.learnable_tools()}
+
+
+@app.get("/cache/ui")
+async def cache_dashboard():
+    """개발용 캐시 대시보드(HTML) — 조회·삭제·초기화 + 스키마/타입 문서."""
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(_CACHE_DASHBOARD_HTML)
+
+
+@app.delete("/cache")
+async def cache_clear_dynamic():
+    """동적 학습 전체 초기화(오염 롤백). 시드는 유지."""
+    from core.command_cache import get_cache
+    removed = get_cache().clear_dynamic()
+    return {"status": "ok", "removed": removed}
+
+
+@app.delete("/cache/entry")
+async def cache_delete_entry(pattern: str):
+    """동적 항목 개별 삭제(?pattern=). 시드는 보호(거부)."""
+    from core.command_cache import get_cache
+    ok = get_cache().delete_entry(pattern)
+    return {"status": "ok" if ok else "not_found_or_seed", "pattern": pattern}
+
+
 # ── WebSocket (실시간 스트리밍) ───────────────────────────────────
 
 @app.websocket("/ws")
