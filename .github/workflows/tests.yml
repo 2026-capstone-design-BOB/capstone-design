@@ -34,8 +34,11 @@ jobs:
           python -m py_compile core/*.py tools/*.py services/*.py config/*.py memory/*.py
           python -m py_compile tests/*.py
 
-      # 서버가 떠 있어야 하는 test_commands / test_regression / test_sprint1_2 는 제외한다.
-      # (Windows 실기 검증용 — docs/WORKFLOW.md 참조)
+      # 제외 대상:
+      # - test_commands / test_regression / test_sprint1_2 : 서버 실행 필요 (Windows 실기용)
+      # - test_dependencies : requirements.txt 전체가 설치된 **로컬 개발 환경**을 검사한다.
+      #   이 잡은 의도적으로 langgraph·langchain-core 만 설치하므로 여기선 항상 실패한다.
+      #   (설치 여부는 개발자가 로컬에서 확인 — docs/WORKFLOW.md)
       - name: mock 테스트
         env:
           PYTHONIOENCODING: utf-8
@@ -46,6 +49,9 @@ jobs:
             case "$(basename "$f")" in
               test_commands.py|test_regression.py|test_sprint1_2.py)
                 echo "::notice::건너뜀 $(basename "$f") — 서버 실행 필요"
+                continue ;;
+              test_dependencies.py)
+                echo "::notice::건너뜀 test_dependencies.py — 로컬 전체 설치 환경 전용"
                 continue ;;
             esac
             echo "── $(basename "$f")"

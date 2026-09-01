@@ -84,6 +84,25 @@ def remove_if_exists(path: str):
 # ── 테스트 케이스 ──────────────────────────────────────────────────
 results = {"pass": 0, "fail": 0, "skip": 0, "manual": 0}
 
+
+# ── 의존성 가드 ───────────────────────────────────────────────────
+# 2026-09-01: requirements.txt 의 패키지 8개가 미설치인 채로 테스트가 전부
+# 통과했다. 도구가 예외를 삼키고 폴백하는데 테스트는 "응답이 왔다"만 봤기 때문이다.
+# 기능이 망가졌는데 통과하는 테스트는 없는 것보다 나쁘다.
+# → 의존성이 없으면 PASS 가 아니라 SKIP(사유 명시)으로 처리한다.
+#   (설치 여부 자체는 tests/test_dependencies.py 가 검사한다)
+import importlib.util as _ilu
+
+
+def _dep(module: str) -> bool:
+    """모듈이 실제 import 가능한지."""
+    return _ilu.find_spec(module) is not None
+
+
+def skip(case: str, reason: str):
+    print(f"  {YELLOW}→ SKIP{RESET}  {case}: {reason}")
+    results["skip"] += 1
+
 def run(name: str, cmd: str, verify=None, wait: float = 1.5, cleanup=None, manual: bool = False):
     print(f"\n{CYAN}{BOLD}[{name}]{RESET} {cmd!r}")
     response = send(cmd)
@@ -451,22 +470,47 @@ notepad_ok = (
     "실행" in r1 or "열었" in r1 or "가져왔" in r1
     or "이미" in r1 or is_running("notepad.exe")
 )
-if notepad_ok:
-    r2 = send("메모장에 'Pluiz 테스트' 라고 입력해줘")
-    info(f"입력 응답: {r2[:80]}")
-    print(f"  {YELLOW}⚠ MANUAL{RESET}  메모장에 텍스트 실제 입력됐는지 시각 확인 필요"); results["manual"] += 1
-    time.sleep(0.5)
+if not notepad_ok:
+    fail(f"메모장 열기 실패: {r1[:60]}"); results["fail"] += 1
+elif not (_dep("pyautogui") and _dep("pyperclip")):
+    skip("INPUT-02", "pyautogui/pyperclip 미설치 — type_text 동작 불가")
     kill("notepad.exe")
 else:
-    fail(f"메모장 열기 실패: {r1[:60]}"); results["fail"] += 1
+    r2 = send("메모장에 'Pluiz 테스트' 라고 입력해줘")
+    info(f"입력 응답: {r2[:80]}")
+    # 도구가 의존성 문제로 실패하면 [오류]를 반환한다 — 그건 MANUAL 이 아니라 FAIL.
+    if "[오류]" in r2 or "설치되지 않았습니다" in r2:
+        fail(f"type_text 오류 반환: {r2[:70]}"); results["fail"] += 1
+    else:
+        print(f"  {YELLOW}⚠ MANUAL{RESET}  메모장에 텍스트 실제 입력됐는지 시각 확인 필요")
+        results["manual"] += 1
+    time.sleep(0.5)
+    kill("notepad.exe")
 
-print(f"\n{CYAN}{BOLD}[INPUT-03]{RESET} press_key 에이전트 경유 테스트")
-r = send("엔터 키 눌러줘")
-info(f"응답: {r[:80]}")
-if "엔터" in r or "enter" in r.lower() or "✓" in r or "키" in r:
-    ok("press_key 명령 처리됨"); results["pass"] += 1
+print(f"\n{CYAN}{BOLD}[INPUT-03]{RESET} 클립보드 왕복 검증 (도구가 실제로 동작하는지)")
+# ⚠️ 예전 버전은 "엔터 키 눌러줘" 응답에 '키'가 있으면 PASS, 없어도 PASS 였다.
+#    두 분기 모두 통과라 구조상 실패할 수 없었고, 실제로 pyautogui 가 없어
+#    아무 키도 안 눌리는 상태에서도 통과했다.
+#    → 결과를 실제로 읽어 확인할 수 있는 클립보드로 왕복 검증한다.
+if not _dep("pyperclip"):
+    skip("INPUT-03", "pyperclip 미설치 — get_clipboard_text 동작 불가")
 else:
-    ok("응답 수신"); results["pass"] += 1
+    try:
+        import pyperclip as _pc
+        from tools.input_control import get_clipboard_text as _gct
+
+        _marker = f"pluiz_clip_{int(time.time())}"
+        _pc.copy(_marker)
+        _out = _gct.invoke({})
+        info(f"도구 반환: {str(_out)[:80]}")
+        if "[오류]" in str(_out):
+            fail(f"get_clipboard_text 오류 반환: {str(_out)[:70]}"); results["fail"] += 1
+        elif _marker in str(_out):
+            ok("클립보드에 넣은 값을 도구가 그대로 읽어옴"); results["pass"] += 1
+        else:
+            fail(f"클립보드 내용 불일치 (기대: {_marker})"); results["fail"] += 1
+    except Exception as e:
+        fail(f"INPUT-03 오류: {e}"); results["fail"] += 1
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -577,19 +621,27 @@ except Exception as e:
     fail(f"도구 레지스트리 오류: {e}"); results["fail"] += 1
 
 print(f"\n{CYAN}{BOLD}[WEB-02]{RESET} fetch_web_info 직접 호출 테스트")
-try:
-    from tools.web import fetch_web_info as _fwi
-    result = _fwi.invoke({"query": "파이썬 최신 버전"})
-    info(f"결과 앞부분: {str(result)[:120]}")
-    if "가져오지 못했습니다" in str(result):
-        info("⚠ fallback 동작 (ddgs 미설치 또는 네트워크)")
-        ok("fetch_web_info 실행됨 (네트워크 조건 제한)"); results["pass"] += 1
-    elif result:
-        ok("fetch_web_info 실행 및 결과 반환 확인"); results["pass"] += 1
-    else:
-        fail("결과 없음"); results["fail"] += 1
-except Exception as e:
-    fail(f"fetch_web_info 실행 오류: {e}"); results["fail"] += 1
+# ⚠️ 예전 버전은 폴백("가져오지 못했습니다")도 PASS 로 셌다. ddgs 가 없어
+#    검색이 전혀 안 되는 상태에서도 통과해 문제를 가렸다.
+#    → 미설치면 SKIP, 설치돼 있는데 폴백이면 원인을 구분해 보고한다.
+if not _dep("ddgs"):
+    skip("WEB-02", "ddgs 미설치 — fetch_web_info 가 폴백 API로만 동작")
+else:
+    try:
+        from tools.web import fetch_web_info as _fwi
+        result = str(_fwi.invoke({"query": "파이썬 최신 버전"}))
+        info(f"결과 앞부분: {result[:120]}")
+        if "가져오지 못했습니다" in result:
+            # ddgs 는 있는데 결과가 없다 → 네트워크 문제일 가능성이 크다.
+            # 기능 실패이므로 PASS 로 세지 않는다.
+            info("⚠ ddgs 설치돼 있는데 결과 없음 — 네트워크 확인 필요")
+            skip("WEB-02", "검색 결과 없음 (네트워크 제약으로 판단)")
+        elif result.strip():
+            ok("fetch_web_info 실제 검색 결과 반환 확인"); results["pass"] += 1
+        else:
+            fail("결과 없음"); results["fail"] += 1
+    except Exception as e:
+        fail(f"fetch_web_info 실행 오류: {e}"); results["fail"] += 1
 
 print(f"\n{CYAN}{BOLD}[WEB-03]{RESET} 웹 검색 후 파일 저장 복합 시나리오")
 WEB_FILE = os.path.join(DESKTOP, "python_info.txt")

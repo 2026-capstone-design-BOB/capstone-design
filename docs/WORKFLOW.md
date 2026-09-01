@@ -76,9 +76,28 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_injection.py         # 프롬프트 인젝션
 "$PY" tests/test_sensitive.py         # 민감정보 보호
 "$PY" tests/test_bl02_bl03.py        # 위험명령 공백변형 · 캐시 부정어
+"$PY" tests/test_dependencies.py     # ★ requirements.txt 선언 = 실제 설치인지
 ```
 
-전체 mock 스위트는 16파일 198개. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
+전체 mock 스위트는 18파일 228개. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
+
+### ⚠️ 의존성이 없으면 도구가 조용히 죽는다
+
+도구들은 패키지가 없어도 예외를 삼키고 폴백한다. 그래서 **기능이 안 되는데
+테스트는 통과**할 수 있다. 2026-09-01 실기에서 requirements.txt 의 8개 패키지가
+미설치인 채로 전부 통과했다.
+
+가장 위험한 건 `send2trash` 다. 없으면 `_to_trash()` 가 `os.remove` 로 폴백해
+**휴지통을 거치지 않고 영구 삭제**한다.
+
+```bash
+python tests/test_dependencies.py     # 선언 ↔ 실제 대조. 환경 세팅 후 꼭 한 번
+```
+
+이 테스트는 **CI에서 제외**된다. CI는 속도를 위해 langgraph·langchain-core 만
+설치하므로 항상 실패하기 때문이다. 로컬 환경 점검용이다.
+
+라이브 테스트는 의존성이 없으면 PASS 가 아니라 **SKIP(사유 명시)** 으로 처리한다.
 
 ### CI (GitHub Actions)
 
