@@ -46,6 +46,10 @@ _IMPORT_NAME = {
     "langchain-anthropic": "langchain_anthropic",
     "uvicorn[standard]": "uvicorn",
     "Pillow": "PIL",
+    # ⚠️ scikit-learn은 하이픈→언더스코어 규칙이 안 통한다 (import는 sklearn).
+    #    학습 전용 의존성이다 — 추론은 numpy로 하므로 배포에는 불필요.
+    #    → docs/design/M2_웨이크워드_전용모델.md
+    "scikit-learn": "sklearn",
 }
 
 # 이 도구가 죽으면 무엇이 안 되는지 — 실패 메시지에 같이 보여준다
