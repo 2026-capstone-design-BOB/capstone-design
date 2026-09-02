@@ -23,7 +23,7 @@
 | **도구** | **34개** (삭제 2개는 HITL 승인 필수 · `describe_screen`은 화면을 외부 LLM에 전송) |
 | **보안** | **5층 방어** — 0 로컬 API 접근 제어(토큰) · 1 규칙 · 2 하이브리드 LLM 판정 · 3 HITL · 4 출력 마스킹 → [ARCHITECTURE](ARCHITECTURE.md#보안--5층-방어) |
 | **테스트** | mock **20파일 343개** + 라이브 3스위트. CI는 그중 19파일 311개 자동 실행 (`test_dependencies` 32개는 로컬 전용) — **이 숫자의 출처는 이 표 하나다** |
-| **라이브 실측** | 2026-09-02 · 3스위트 전부 **FAIL 0** — `regression` 30/30 · `commands` 39P/15MANUAL · `sprint1_2` 55/55 → [DEVLOG](DEVLOG.md).<br>BL-14 수정 후 `sprint1_2` **55/55 재실측**(인증 켠 상태) + 접근제어 16항목 실측.<br>⚠️ **리뷰 수정(HITL·턴 경계)과 `regression`/`commands`는 아직 라이브 미검증** → [TASKS.md](TASKS.md) ① |
+| **라이브 실측** | 2026-09-02 · 3스위트 전부 **FAIL 0** — `regression` 30/30 · `commands` 39P/15MANUAL · `sprint1_2` 55/55 → [DEVLOG](DEVLOG.md).<br>BL-14 수정 후 `sprint1_2` **55/55 재실측**(인증 켠 상태) + 접근제어 16항목 실측.<br>**HITL 오승인 수정도 라이브 18/18 검증됨**.<br>⚠️ `regression`/`commands` 스위트와 마이크 실기는 아직 미검증 → [TASKS.md](TASKS.md) ① |
 | **CI** | GitHub Actions 3잡 — mock · 문서링크 · 비밀정보 가드 |
 | **브랜치** | `main` = `develop` = 최신. 작업은 `feature/byeonsoyun` |
 | **[즉시/위험]** | **0건** (BL-14 해결) → [BACKLOG](BACKLOG.md) |
