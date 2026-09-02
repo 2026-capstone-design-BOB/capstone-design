@@ -67,7 +67,10 @@ def make():
     return GA.PluizGraphAgent(
         llm=DeleteLLM(), tools=[delete_file],
         security_check=fake_security, fast_resolve=fake_fast_resolve,
-        session_memory=mem, settings=FakeSettings()), mem
+        session_memory=mem, settings=FakeSettings(),
+        # 가짜 경로('바탕화면/test.txt')를 쓰므로 존재 확인을 통과시킨다.
+        # 이걸 안 넣으면 hitl이 "대상 없음"으로 보고 승인 절차 자체를 건너뛴다.
+        target_exists=lambda dcall: True), mem
 
 
 async def run():

@@ -40,10 +40,11 @@ def fake_security(text): return (False, "")
 def fake_fast_resolve(text): return None
 
 
-def build():
+def build(target_exists=None):
     return G.build_pluiz_graph(
         llm=FakeLLM(), tools=[delete_file],
-        security_check=fake_security, fast_resolve=fake_fast_resolve)
+        security_check=fake_security, fast_resolve=fake_fast_resolve,
+        target_exists=target_exists)
 
 
 def run():
@@ -76,12 +77,16 @@ def run():
     check("거부 시 미실행", executed == [])
     check("취소 응답", "취소" in G.extract_response(r3))
 
+    # ⚠️ 재질문 경로는 **진짜 알아들을 수 없는 답**으로 검증해야 한다.
+    #    예전엔 여기에 "네이버 열어줘"를 썼는데, 그건 애매한 게 아니라 다른 명령이다.
+    #    그 기대 때문에 "명령을 삼키는 동작"이 PASS로 찍히고 있었다(실기에서 발견).
+    #    STT 잡음은 실제로 이렇게 들어온다: "베이", "지호 맘몬", "오 오 오"
     print("=== 애매한 답 → 즉시 취소하지 않고 재질문 ===")
     executed.clear()
     g3 = build()
     cfg3 = {"configurable": {"thread_id": "unclear"}}
     g3.invoke({"messages": [HumanMessage("바탕화면 test.txt 삭제해줘")]}, cfg3)
-    r4 = g3.invoke(Command(resume="네이버 열어줘"), cfg3)      # 승인 아님
+    r4 = g3.invoke(Command(resume="지호 맘몬"), cfg3)          # STT 잡음
     itr4 = r4.get("__interrupt__")
     check("애매한 답 → 미실행", executed == [])
     check("애매한 답 → 재질문(대기 유지)", bool(itr4))
@@ -95,10 +100,50 @@ def run():
     g4 = build()
     cfg4 = {"configurable": {"thread_id": "unclear2"}}
     g4.invoke({"messages": [HumanMessage("바탕화면 test.txt 삭제해줘")]}, cfg4)
-    g4.invoke(Command(resume="음소거 해줘"), cfg4)
-    r6 = g4.invoke(Command(resume="그래프 그려줘"), cfg4)
+    g4.invoke(Command(resume="베이"), cfg4)
+    r6 = g4.invoke(Command(resume="오 오 오"), cfg4)
     check("두 번 애매 → 미실행", executed == [])
     check("두 번 애매 → 취소 응답", "취소" in G.extract_response(r6))
+
+    # 🚨 실기에서 나온 결함 — 승인 대기 중 "네이버 열어줘"가 재질문으로 처리돼
+    #    사용자가 같은 말을 두 번 해야 했다. 이제는 삭제를 취소하고 그 명령을 실행한다.
+    print("=== 승인 대기 중 다른 명령 → 삭제 취소 + 그 명령 실행 ===")
+    executed.clear()
+    g5 = build()
+    cfg5 = {"configurable": {"thread_id": "other_cmd"}}
+    g5.invoke({"messages": [HumanMessage("바탕화면 test.txt 삭제해줘")]}, cfg5)
+    r7 = g5.invoke(Command(resume="네이버 열어줘"), cfg5)
+    check("다른 명령 → 삭제 미실행", executed == [])
+    check("다른 명령 → 재질문하지 않는다 (대기 종료)", not r7.get("__interrupt__"))
+    msgs7 = r7.get("messages", [])
+    check("다른 명령이 HumanMessage로 들어간다 (이번 턴이 된다)",
+          any(type(m).__name__ == "HumanMessage" and "네이버" in G._msg_text(m)
+              for m in msgs7))
+    check("취소 사실을 응답에 알린다", "취소" in G.extract_response(r7))
+
+    print("=== classify_confirmation — 다른 명령 vs 애매 ===")
+    for cmd in ["네이버 열어줘", "음소거 해줘", "진행 상황 알려줘",
+                "그래프 그려줘", "네이버 열어 달라니까", "메모장 켜줄래"]:
+        check(f"'{cmd}' → other_command",
+              G.classify_confirmation(cmd) == "other_command")
+    for noise in ["지호 맘몬", "베이", "오 오 오", "글쎄", "음"]:
+        check(f"'{noise}'(STT 잡음) → unclear",
+              G.classify_confirmation(noise) == "unclear")
+
+    # 대상이 없으면 **묻지 않는다** — 예전엔 묻고 승인받은 뒤에야 "없네요"라고 했다.
+    print("=== 삭제 대상이 없으면 승인을 묻지 않는다 ===")
+    executed.clear()
+    g6 = build(target_exists=lambda dcall: False)
+    cfg6 = {"configurable": {"thread_id": "not_found"}}
+    r8 = g6.invoke({"messages": [HumanMessage("바탕화면 test.txt 삭제해줘")]}, cfg6)
+    check("없는 대상 → interrupt 없음(안 물어봄)", not r8.get("__interrupt__"))
+    check("없는 대상 → 삭제 미실행", executed == [])
+
+    executed.clear()
+    g7 = build(target_exists=lambda dcall: True)
+    cfg7 = {"configurable": {"thread_id": "found"}}
+    r9 = g7.invoke({"messages": [HumanMessage("바탕화면 test.txt 삭제해줘")]}, cfg7)
+    check("있는 대상 → 평소대로 승인 질문", bool(r9.get("__interrupt__")))
 
     print("=== classify_confirmation ===")
     check("'응' → approve", G.classify_confirmation("응") == "approve")

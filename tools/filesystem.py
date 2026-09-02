@@ -137,6 +137,61 @@ def find_file(name: str = "", extension: str = "", location: str = "downloads") 
 
 
 @tool
+def list_directory(location: str = "desktop", only: str = "all") -> str:
+    """폴더 안에 무엇이 있는지 **이름을 나열**합니다.
+    사용자가 정확한 이름을 모를 때("바탕화면에 뭐 있어?", "폴더 목록 보여줘",
+    "거기서 내가 고를게") 쓰세요. find_file은 이름이나 확장자를 알아야 하지만
+    이 도구는 몰라도 됩니다.
+    location: desktop / documents / downloads / pictures 또는 절대경로. 기본 바탕화면.
+    only: "all"(기본) / "folders"(폴더만) / "files"(파일만)
+    """
+    base = _resolve_location(location)
+    if not base:
+        return f"✗ '{location}'은(는) 지원하지 않는 위치입니다."
+    if not os.path.isdir(base):
+        return f"✗ '{location}' 폴더가 없습니다: {base}"
+
+    try:
+        names = sorted(os.listdir(base), key=str.lower)
+    except PermissionError:
+        return f"✗ '{location}'을(를) 읽을 권한이 없습니다."
+
+    folders, files = [], []
+    for n in names:
+        full = os.path.join(base, n)
+        # LLM02: 비밀/자격증명 파일은 목록에서도 제외한다 (find_file과 같은 정책)
+        if _is_secret_path(full):
+            continue
+        # 숨김 파일·시스템 파일은 사용자가 말하는 대상이 아니다
+        if n.startswith(".") or n.lower() in ("desktop.ini", "thumbs.db"):
+            continue
+        (folders if os.path.isdir(full) else files).append(n)
+
+    want = (only or "all").lower().strip()
+    if want == "folders":
+        groups = [("폴더", folders)]
+    elif want == "files":
+        groups = [("파일", files)]
+    else:
+        groups = [("폴더", folders), ("파일", files)]
+
+    if not any(items for _, items in groups):
+        return f"✓ '{location}'에 표시할 항목이 없습니다."
+
+    LIMIT = 40   # 음성으로 읽어주기엔 이것도 많다. 넘으면 개수만 알린다.
+    out = [f"✓ {location} 목록:"]
+    for label, items in groups:
+        if not items:
+            continue
+        out.append(f"[{label} {len(items)}개]")
+        for n in items[:LIMIT]:
+            out.append(f"  - {n}")
+        if len(items) > LIMIT:
+            out.append(f"  ... 외 {len(items) - LIMIT}개")
+    return "\n".join(out)
+
+
+@tool
 def open_recent_file() -> str:
     """
     최근에 열었던 파일 목록을 보여주고 탐색기로 최근 파일 폴더를 엽니다.

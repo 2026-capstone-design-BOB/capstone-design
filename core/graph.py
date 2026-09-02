@@ -58,7 +58,7 @@ _REJECT_RE = re.compile(r'아니|취소|하지\s*마|하지마|싫|안\s*돼|안
 #
 # 그래서 지금은 **발화를 어절로 쪼개, 모든 어절이 긍정어일 때만** 승인으로 본다.
 #   "응" · "네 삭제해줘" · "오케이 지워"        → 승인
-#   "네이버 열어줘" · "음소거 해줘"             → 승인 아님(→ 재질문)
+#   "네이버 열어줘" · "음소거 해줘"             → 승인 아님(→ other_command)
 _AFFIRM_WORDS = frozenset([
     "응", "어", "네", "넵", "예", "옙", "그래", "그럼", "좋아", "좋아요",
     "오케이", "콜", "ok", "okay", "yes", "y", "ㅇㅇ", "알겠어", "알았어",
@@ -67,13 +67,40 @@ _AFFIRM_WORDS = frozenset([
 ])
 _TOKEN_SPLIT_RE = re.compile(r'[\s,.!?~…·]+')
 
+# 명령형 어미. "승인도 거부도 아닌데 **명백히 다른 명령**"을 가려내는 데 쓴다.
+#
+# ⚠️ 왜 필요한가 — 오승인을 막으려다 반대편으로 넘어갔던 흔적이다.
+#    승인 대기 중에 "네이버 열어줘"라고 하면 옛날엔 승인으로 읽혀 **삭제됐고**,
+#    그걸 고친 뒤에는 unclear로 처리돼 **재질문만 하고 명령을 삼켰다.**
+#    실기에서 사용자가 같은 말을 두 번 해야 했다:
+#      "네이버 열어줘"      → (삭제할까요? 다시 질문)
+#      "네이버 열어 달라니까" → ✓ 네이버 열림
+#    승인도 거부도 아니면서 **명령의 꼴을 갖췄으면** 삭제를 취소하고 그 명령을 실행한다.
+#
+# 오분류의 방향이 안전하다: 명령으로 잘못 봐도 **삭제는 취소되는 쪽**이다.
+# 그래서 조금 느슨해도 된다. 다만 STT 잡음("베이", "지호 맘몬")까지 명령으로 보면
+# 재질문 기회를 잃으므로, **2어절 이상 + 명령형 어미**를 함께 요구한다.
+_COMMAND_TAIL_RE = re.compile(
+    r'(줘|줄래|주라|주세요|주실래|줄레|달라|달라니까|다오|해라|하렴|보여|알려|'
+    r'틀어|찾아|열어|닫아|켜라|꺼라|실행|시작|종료|검색)\s*$'
+)
+
+
+def _looks_like_command(tokens: list[str], text: str) -> bool:
+    """승인 응답이 아니라 **새 명령**으로 보이는가."""
+    if len(tokens) < 2:
+        return False
+    return bool(_COMMAND_TAIL_RE.search(text))
+
 
 def classify_confirmation(text: Any) -> str:
-    """승인 응답을 3분류한다: 'approve' | 'reject' | 'unclear'.
+    """승인 응답을 4분류한다: 'approve' | 'reject' | 'other_command' | 'unclear'.
 
-    'unclear'는 **승인도 취소도 아니다** — hitl 노드가 다시 물어본다.
-    예전처럼 bool 두 갈래로 강제하면, 사용자가 승인과 무관한 새 명령을 말했을 때
-    그 명령이 조용히 삼켜지거나(취소로 처리) 삭제가 실행돼 버린다.
+    - 'other_command'는 승인도 거부도 아니지만 **명백히 다른 명령**이다.
+      hitl 노드가 삭제를 취소하고 **그 명령을 실행**한다. 재질문하면 사용자가
+      같은 말을 두 번 해야 한다(실기에서 실제로 겪었다).
+    - 'unclear'는 알아들을 수 없는 답이다 — hitl 노드가 다시 물어본다.
+      예전처럼 bool 두 갈래로 강제하면 삭제가 실행되거나 명령이 조용히 사라진다.
     """
     t = str(text).strip().lower()
     if not t:
@@ -83,13 +110,15 @@ def classify_confirmation(text: Any) -> str:
     tokens = [w for w in _TOKEN_SPLIT_RE.split(t) if w]
     if tokens and all(w in _AFFIRM_WORDS for w in tokens):
         return "approve"
+    if _looks_like_command(tokens, t):
+        return "other_command"
     return "unclear"
 
 
 def interpret_confirmation(text: Any) -> bool:
     """승인 여부(bool). 승인이 **명확할 때만** True. 애매하면 False(안전).
 
-    3분류가 필요하면 `classify_confirmation`을 쓴다.
+    4분류가 필요하면 `classify_confirmation`을 쓴다.
     """
     return classify_confirmation(text) == "approve"
 
@@ -106,6 +135,15 @@ def _deletion_is_recoverable() -> bool:
         return True
     except Exception:
         return False
+
+
+def _target_name(dcall: Optional[dict]) -> str:
+    """위험 도구 호출에서 사용자에게 보여줄 대상 이름(경로의 마지막 조각)."""
+    if not dcall:
+        return ""
+    args = dcall.get("args", {}) or {}
+    target = args.get("file_path") or args.get("folder_path") or ""
+    return os.path.basename(str(target).rstrip("/\\")) or str(target)
 
 
 def _confirm_question(dcall: Optional[dict]) -> str:
@@ -127,8 +165,7 @@ def _confirm_question(dcall: Optional[dict]) -> str:
     # 조사 하드코딩('을(를)') 금지 — 대상이 둘뿐이라 각각 맞는 조사를 쓴다.
     # ("파일"은 ㄹ 받침 → 을 / "폴더"는 받침 없음 → 를)
     kind = "폴더를" if name == "delete_folder" else "파일을"
-    base = os.path.basename(str(target).rstrip("/\\")) or str(target)
-    return f"'{base}' {kind} 정말 삭제할까요? ({consequence})"
+    return f"'{_target_name(dcall)}' {kind} 정말 삭제할까요? ({consequence})"
 
 
 # 승인 대기 중 애매한 답이 왔을 때 다시 묻는 최대 횟수(첫 질문 포함).
@@ -150,6 +187,10 @@ class PluizState(MessagesState):
               'blocked' | 'fast_hit' | 'to_agent'
     """
     decision: str
+    # 승인 대기 중에 다른 명령이 들어와 삭제를 취소했을 때 세운다.
+    # output_guard가 최종 응답 앞에 "삭제는 취소했어요"를 붙인다 — 이걸 안 알리면
+    # 사용자는 삭제가 어떻게 됐는지 모른 채 새 명령의 결과만 보게 된다.
+    deletion_cancelled: bool
 
 
 # ── 시스템 프롬프트 (날짜 갱신) ───────────────────────────────────
@@ -324,6 +365,7 @@ def build_pluiz_graph(
     fast_resolve: Optional[Callable[[str], Any]] = None,
     checkpointer: Optional[Any] = None,
     dangerous_tools: Optional[set] = None,
+    target_exists: Optional[Callable[[dict], bool]] = None,
 ):
     """Pluiz StateGraph를 구성해 compiled graph를 반환한다. (async 노드)
 
@@ -334,6 +376,9 @@ def build_pluiz_graph(
         fast_resolve(text) -> Optional[str] | Awaitable: 캐시/라우터 즉시 처리 결과,
             처리 불가 시 None. (동기·비동기 모두 허용)
         checkpointer: 대화 영속성. 없으면 MemorySaver 기본 생성.
+        target_exists(dangerous_tool_call) -> bool: 삭제 대상이 실제로 있는지.
+            None이면 확인하지 않는다(mock 테스트 기본값). 없는 대상이면 승인을
+            묻지 않고 바로 "못 찾았다"로 답한다 — 묻고 나서 없다고 하면 헷갈린다.
     """
     tools = tools or []
     dangerous = dangerous_tools if dangerous_tools is not None else DANGEROUS_TOOLS
@@ -371,8 +416,17 @@ def build_pluiz_graph(
     def output_guard(state: PluizState) -> dict:
         """OWASP LLM05 + reflection 자리. T04 보정 + 빈응답 복구."""
         corrected = verify_output(state["messages"])
+        note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
         if corrected is not None:
-            return {"messages": [AIMessage(content=corrected)]}
+            return {"messages": [AIMessage(content=note + corrected)],
+                    "deletion_cancelled": False}
+        if note:
+            # 새 명령의 답변 앞에 취소 사실을 붙인다. 안 붙이면 사용자는 삭제가
+            # 어떻게 됐는지 모른 채 새 명령의 결과만 보게 된다.
+            last = state["messages"][-1]
+            if isinstance(last, AIMessage):
+                return {"messages": [AIMessage(content=note + _msg_text(last))],
+                        "deletion_cancelled": False}
         return {}
 
     def hitl(state: PluizState) -> dict:
@@ -389,9 +443,31 @@ def build_pluiz_graph(
         calls = list(getattr(last, "tool_calls", []) or [])
         dcall = next((c for c in calls if c.get("name") in dangerous), None)
 
+        def _close_calls(reason: str) -> list:
+            """매달린 tool_calls를 ToolMessage로 마감(히스토리 오염 방지)."""
+            return [ToolMessage(content=reason, tool_call_id=c["id"])
+                    for c in calls if c.get("id")]
+
+        # ── 대상이 존재하지 않으면 **묻지 않는다** ──────────────────
+        # 예전엔 없는 폴더인데도 "정말 삭제할까요?"를 먼저 묻고, 승인한 뒤에야
+        # "없는 것 같아요"라고 답했다(실기에서 확인). 순서가 거꾸로였다.
+        # 없는 대상은 삭제될 것도 없으니 승인이 무의미하고, 사용자만 헷갈린다.
+        if target_exists is not None and dcall is not None:
+            try:
+                found = target_exists(dcall)
+            except Exception as e:
+                print(f"[graph.hitl] 대상 확인 실패(무시): {type(e).__name__}: {e}")
+                found = True          # 확인 못 하면 원래대로 승인 절차를 밟는다
+            if not found:
+                base = _target_name(dcall)
+                return {"messages": _close_calls(
+                    f"✗ '{base}'을(를) 찾을 수 없습니다. 삭제하지 않았습니다."
+                ), "decision": "not_found"}
+
         # 그래프를 멈추고 사용자에게 질문(오케스트레이터가 질문을 UI로 전달)
         question = _confirm_question(dcall)
         verdict = "unclear"
+        answer: Any = ""
         for _ in range(_MAX_CONFIRM_ASKS):
             answer = interrupt({"question": question})
             verdict = classify_confirmation(answer)
@@ -402,9 +478,18 @@ def build_pluiz_graph(
         if verdict == "approve":
             return {"decision": "approved"}
 
-        # 거부/애매: 매달린 tool_calls를 ToolMessage로 마감(오염 방지) + 취소 응답
-        cancel = [ToolMessage(content="사용자가 삭제를 취소했습니다.", tool_call_id=c["id"])
-                  for c in calls if c.get("id")]
+        # ── 승인 대기 중에 들어온 **다른 명령** ────────────────────
+        # 삭제를 취소하고 그 명령을 처리한다. 재질문하면 사용자가 같은 말을
+        # 두 번 해야 한다(실기에서 실제로 겪었다). HumanMessage로 넣으므로
+        # 여기서부터가 "이번 턴"이 된다 — 의미상 새 명령이 맞다(절대규칙 6).
+        if verdict == "other_command":
+            msgs = _close_calls("사용자가 다른 명령을 내려 삭제를 취소했습니다.")
+            msgs.append(HumanMessage(content=str(answer)))
+            return {"messages": msgs, "decision": "other_command",
+                    "deletion_cancelled": True}
+
+        # 거부/애매: 취소 응답
+        cancel = _close_calls("사용자가 삭제를 취소했습니다.")
         cancel.append(AIMessage(content=(
             "네, 삭제를 취소했어요." if verdict == "reject"
             else "답을 알아듣지 못해서 삭제는 취소했어요. 방금 하신 말씀을 다시 한 번 말씀해 주세요."
@@ -428,7 +513,13 @@ def build_pluiz_graph(
         return "output_guard"
 
     def route_after_hitl(state: PluizState) -> str:
-        return "tools" if state.get("decision") == "approved" else "output_guard"
+        d = state.get("decision")
+        if d == "approved":
+            return "tools"
+        # 다른 명령 / 대상 없음 → LLM이 이어서 처리한다(명령 실행 · 자연스러운 안내)
+        if d in ("other_command", "not_found"):
+            return "agent"
+        return "output_guard"
 
     # ── 조립 ───────────────────────────────────────────────────────
     g = StateGraph(PluizState)
@@ -448,8 +539,11 @@ def build_pluiz_graph(
                                 {"agent": "agent", "output_guard": "output_guard"})
         g.add_conditional_edges("agent", route_after_agent,
                                 {"tools": "tools", "hitl": "hitl", "output_guard": "output_guard"})
+        # "agent"가 목적지에 있는 이유: 승인 대기 중 **다른 명령**이 들어왔거나
+        # 삭제 **대상이 없을 때** LLM이 이어서 처리해야 한다.
         g.add_conditional_edges("hitl", route_after_hitl,
-                                {"tools": "tools", "output_guard": "output_guard"})
+                                {"tools": "tools", "agent": "agent",
+                                 "output_guard": "output_guard"})
         g.add_edge("tools", "agent")
     else:
         g.add_conditional_edges("fast_path", route_after_fast,

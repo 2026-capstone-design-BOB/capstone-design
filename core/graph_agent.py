@@ -38,6 +38,23 @@ def _prod_llm(settings):
     from core.llm import build_llm
     return build_llm(settings)
 
+def _prod_target_exists(dcall: dict) -> bool:
+    """삭제 대상이 실제로 존재하는가. (hitl 노드가 승인을 묻기 **전에** 확인)
+
+    없는 대상인데 "정말 삭제할까요?"를 먼저 묻고 승인한 뒤에야 "없네요"라고
+    답하던 문제를 막는다. 경로 해석은 도구와 **같은 규칙**을 써야 하므로
+    `tools/filesystem.py`의 것을 그대로 재사용한다 — 여기서 따로 구현하면
+    "바탕화면/..." 해석이 어긋나 엉뚱한 판정이 난다.
+    """
+    import os
+    from tools.filesystem import _resolve_location_in_path
+
+    args = dcall.get("args", {}) or {}
+    target = args.get("file_path") or args.get("folder_path") or ""
+    if not target:
+        return True            # 판단할 수 없으면 원래대로 승인 절차를 밟는다
+    return os.path.exists(_resolve_location_in_path(str(target)))
+
 def _prod_tools():
     from core.tool_registry import get_all_tools
     return get_all_tools()
@@ -79,6 +96,7 @@ class PluizGraphAgent:
         session_memory: Any = None,
         checkpointer: Any = None,
         settings: Any = None,
+        target_exists: Optional[Callable[[dict], bool]] = None,
     ):
         self.settings = settings if settings is not None else _prod_settings()
         self.llm = llm if llm is not None else _prod_llm(self.settings)
@@ -90,6 +108,9 @@ class PluizGraphAgent:
                                else _prod_session_memory())
         self.checkpointer = checkpointer or MemorySaver()
         self._fast_resolve = fast_resolve or self._default_fast_resolve
+        # 삭제 대상 존재 확인 (hitl이 묻기 전에). mock 테스트는 가짜 경로를 쓰므로
+        # 주입할 수 있어야 한다 — 안 그러면 "없는 대상"으로 판정돼 승인 절차가 통째로 건너뛰어진다.
+        self.target_exists = target_exists if target_exists is not None else _prod_target_exists
 
         self.graph = self._build()
         print(f"[PluizGraphAgent] 초기화 완료 | tools={len(self.tools)}개")
@@ -100,6 +121,7 @@ class PluizGraphAgent:
             security_check=self.security_check,
             fast_resolve=self._fast_resolve,
             checkpointer=self.checkpointer,
+            target_exists=self.target_exists,
         )
 
     def _default_fast_resolve(self, text: str) -> Optional[str]:

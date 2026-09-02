@@ -20,9 +20,9 @@
 |---|---|
 | **엔진** | `PluizGraphAgent` **단일**. 구 엔진은 M1-P5에서 제거 → [design/M1_P5_엔진단일화.md](design/M1_P5_엔진단일화.md) |
 | **M1 진행** | P0 진단 → P1 맥락 → P1.5 그래프 이관 → P2 HITL → P3 OWASP → P4 캐시학습 → **P5 엔진단일화 · 전부 완료** |
-| **도구** | **34개** (삭제 2개는 HITL 승인 필수 · `describe_screen`은 화면을 외부 LLM에 전송) |
+| **도구** | **35개** (삭제 2개는 HITL 승인 필수 · `describe_screen`은 화면을 외부 LLM에 전송) |
 | **보안** | **5층 방어** — 0 로컬 API 접근 제어(토큰) · 1 규칙 · 2 하이브리드 LLM 판정 · 3 HITL · 4 출력 마스킹 → [ARCHITECTURE](ARCHITECTURE.md#보안--5층-방어) |
-| **테스트** | mock **20파일 347개** + 라이브 3스위트. CI는 그중 19파일 315개 자동 실행 (`test_dependencies` 32개는 로컬 전용) — **이 숫자의 출처는 이 표 하나다** |
+| **테스트** | mock **21파일 384개** + 라이브 3스위트. CI는 그중 20파일 352개 자동 실행 (`test_dependencies` 32개는 로컬 전용) — **이 숫자의 출처는 이 표 하나다** |
 | **라이브 실측** | **2026-09-02 · 3스위트 전부 FAIL 0** (인증 켠 상태) — `regression` **35/35**(AUTH-01~04 포함) · `commands` 39P/0F/15MANUAL · `sprint1_2` 55/55 → [DEVLOG](DEVLOG.md).<br>더해서 접근제어 16항목 · HITL 오승인 5시나리오 18/18 실측.<br>⚠️ **마이크·UI 시각 확인만 미검증** → [TASKS.md](TASKS.md) ① |
 | **CI** | GitHub Actions 3잡 — mock · 문서링크 · 비밀정보 가드 |
 | **브랜치** | `main` = `develop` = 최신. 작업은 `feature/byeonsoyun` |
@@ -49,7 +49,7 @@
 
 | 하려는 작업 | 읽을 문서 |
 |---|---|
-| **새 도구 추가** | [ARCHITECTURE.md § 도구](ARCHITECTURE.md#도구-34개) → [WORKFLOW.md § 도구 추가 절차](WORKFLOW.md#새-도구-추가) |
+| **새 도구 추가** | [ARCHITECTURE.md § 도구](ARCHITECTURE.md#도구-35개) → [WORKFLOW.md § 도구 추가 절차](WORKFLOW.md#새-도구-추가) |
 | **버그 수정** | [BACKLOG.md](BACKLOG.md)에서 항목 확인 → [WORKFLOW.md § 작업 루프](WORKFLOW.md#작업-루프) |
 | **새 파일을 어디 둘지 모를 때** | [STRUCTURE.md § 배치 결정 트리](STRUCTURE.md#새-파일-배치-결정-트리) |
 | **에이전트 동작(그래프) 수정** | [ARCHITECTURE.md § 그래프](ARCHITECTURE.md#그래프-파이프라인) → [design/M1_아키텍처_설계.md](design/M1_아키텍처_설계.md) |
