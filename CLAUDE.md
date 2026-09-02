@@ -58,7 +58,11 @@ FastAPI 서버(:8765) + Electron 오버레이 UI + LangGraph `StateGraph` 에이
 5. **`services/`·`electron-ui/`를 `src/` 같은 폴더로 감싸지 말 것** — Electron이
    `../services/wakeword.py`를 직접 참조합니다. → [STRUCTURE.md § 구조적 제약](docs/STRUCTURE.md#구조적-제약--옮기면-깨지는-것들)
 
-6. **테스트에서 소스를 열 땐 `encoding="utf-8"`를 붙일 것** — 한글이 든 소스를
+6. **"이번 턴"을 판단할 땐 `current_turn_messages()`를 쓸 것** — `state["messages"]`는
+   thread 전체 히스토리다. 그냥 훑으면 과거 턴의 도구 오류·도구 호출이 현재 응답과
+   캐시 학습을 오염시킨다. → [design/M1_아키텍처_설계.md § 5-A](docs/design/M1_아키텍처_설계.md)
+
+7. **테스트에서 소스를 열 땐 `encoding="utf-8"`를 붙일 것** — 한글이 든 소스를
    Windows 기본 cp949로 읽으면 `UnicodeDecodeError`가 납니다.
    `tests/`의 테스트는 루트를 `dirname(dirname(abspath(__file__)))`로 계산합니다.
 

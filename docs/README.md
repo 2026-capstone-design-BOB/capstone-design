@@ -11,6 +11,8 @@
 
 2026.06.15 데모 완료. 이후 강의 개념(LangGraph·HITL·OWASP 가드레일)을 구조에 적용하는
 **Milestone 1**을 진행했고, **2026-09-02 라이브 실측(FAIL 0)으로 M1 완료를 확인**했다.
+같은 날 코드 리뷰로 **HITL 오승인·"턴 경계" 결함을 수정**했다(mock 검증 완료,
+**실기 확인은 남음** → [TASKS.md](TASKS.md) ①).
 다음은 로드맵상 **9월 Phase 2 — 화면 이해(Vision)** 다. → [ROADMAP.md](ROADMAP.md)
 
 | 항목 | 상태 |
@@ -18,11 +20,11 @@
 | **엔진** | `PluizGraphAgent` **단일**. 구 엔진은 M1-P5에서 제거 → [design/M1_P5_엔진단일화.md](design/M1_P5_엔진단일화.md) |
 | **M1 진행** | P0 진단 → P1 맥락 → P1.5 그래프 이관 → P2 HITL → P3 OWASP → P4 캐시학습 → **P5 엔진단일화 · 전부 완료** |
 | **도구** | **34개** (삭제 2개는 HITL 승인 필수 · `describe_screen`은 화면을 외부 LLM에 전송) |
-| **테스트** | mock **19파일 273개** + 라이브 3스위트. CI는 그중 18파일(서버·로컬전용 제외) 자동 실행 |
-| **라이브 실측** | 2026-09-02 · 3스위트 전부 **FAIL 0** — `regression` 30/30 · `commands` 39P/15MANUAL · `sprint1_2` 55/55 → [DEVLOG](DEVLOG.md) |
+| **테스트** | mock **19파일 301개** + 라이브 3스위트. CI는 그중 18파일 269개 자동 실행 (`test_dependencies` 32개는 로컬 전용) — **이 숫자의 출처는 이 표 하나다** |
+| **라이브 실측** | 2026-09-02 · 3스위트 전부 **FAIL 0** — `regression` 30/30 · `commands` 39P/15MANUAL · `sprint1_2` 55/55 → [DEVLOG](DEVLOG.md).<br>⚠️ **그 뒤의 리뷰 수정(HITL·턴 경계)은 아직 라이브 미검증** → [TASKS.md](TASKS.md) ① |
 | **CI** | GitHub Actions 3잡 — mock · 문서링크 · 비밀정보 가드 |
 | **브랜치** | `main` = `develop` = 최신. 작업은 `feature/byeonsoyun` |
-| **[즉시/위험]** | **0건** |
+| **[즉시/위험]** | **1건** — BL-14 로컬 서버 CORS·무인증 → [BACKLOG](BACKLOG.md) |
 
 ### 바로 시작하려면
 
@@ -45,7 +47,7 @@
 
 | 하려는 작업 | 읽을 문서 |
 |---|---|
-| **새 도구 추가** | [ARCHITECTURE.md § 도구](ARCHITECTURE.md#도구-33개) → [WORKFLOW.md § 도구 추가 절차](WORKFLOW.md#새-도구-추가) |
+| **새 도구 추가** | [ARCHITECTURE.md § 도구](ARCHITECTURE.md#도구-34개) → [WORKFLOW.md § 도구 추가 절차](WORKFLOW.md#새-도구-추가) |
 | **버그 수정** | [BACKLOG.md](BACKLOG.md)에서 항목 확인 → [WORKFLOW.md § 작업 루프](WORKFLOW.md#작업-루프) |
 | **새 파일을 어디 둘지 모를 때** | [STRUCTURE.md § 배치 결정 트리](STRUCTURE.md#새-파일-배치-결정-트리) |
 | **에이전트 동작(그래프) 수정** | [ARCHITECTURE.md § 그래프](ARCHITECTURE.md#그래프-파이프라인) → [design/M1_아키텍처_설계.md](design/M1_아키텍처_설계.md) |

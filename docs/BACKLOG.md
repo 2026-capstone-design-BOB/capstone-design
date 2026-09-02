@@ -14,11 +14,44 @@
 
 ## [즉시/위험] — 미해결
 
-현재 없음. (맥락 버그(P1), 타임아웃 부재(BL-01), API 키 노출(BL-09) 해결 완료)
+### BL-14 — 로컬 서버가 **아무 웹페이지에서나** 조작 가능하다
+- **증상**: `main.py`의 CORS가 `allow_origins=["*"]`이고 **인증이 없다.**
+  사용자가 열어 둔 아무 웹사이트가 다음 한 줄로 PC 제어 명령을 넣을 수 있다.
+  ```js
+  fetch('http://127.0.0.1:8765/chat', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({text:'...'})})
+  ```
+- **무엇이 통과하나**: 삭제는 HITL이 막지만 `open_app`·`type_text`·`open_url`·
+  **`describe_screen`(화면을 외부 LLM으로 전송)** 은 전부 통과한다.
+  `POST /api/config`는 `.env`를 덮어쓰는데, `provider`가 `Literal` 검증 없이
+  `f"{req.provider.upper()}_API_KEY"`로 쓰여 개행이 섞이면 `.env` 인젝션도 된다.
+- **왜 [즉시/위험]인가**: OWASP 4층 방어를 내세우는 프로젝트인데 **가장 큰 구멍이
+  가드레일 바깥**에 있다. 서버 바인딩은 `127.0.0.1`이라 LAN 노출은 없지만,
+  브라우저는 로컬호스트에 접근할 수 있어 방어가 되지 않는다.
+- **해결 방향**: ① `allow_origins`를 Electron origin으로 축소
+  ② 서버 기동 시 랜덤 토큰 발급 → Electron만 보유 → 헤더 검사(실패 시 401)
+  ③ `ConfigRequest.provider`를 `Literal["gemini","claude","openai"]`로
+  → 막고 나면 ARCHITECTURE § 보안에 **"5층: 로컬 API 접근 제어"** 로 쓸 수 있다.
+- **성격**: 보안. (2026-09-02 코드 리뷰 중 발견)
 
 ---
 
 ## [TODO/품질] — 개발 목표 완료 후 정리
+
+### BL-15 — fast_path가 명령을 **조용히 절단**한다 (측정 지표 없음)
+- **증상**: `core/fast_path.py`의 `is_compound_command()`는 손으로 쓴 정규식 목록이라
+  여기를 빠져나가면 캐시가 **0.90 확신으로** 실행하고 LLM은 문장을 보지도 못한다.
+  - 예: `"메모장 열어서 회의록 적어줘"` → `열어서`가 `_COMPOUND_CMD`에 없다
+    → entity(메모장)+action(open) 히트 → **메모장만 열고 뒷문장은 사라진다**
+  - 사용자는 "왜 안 적혔지?"만 겪고, 로그에는 `[S1-intent]` 성공으로 남는다
+- **왜 문제인가**: BL-02(부정어 오매칭)·BL-12(type_text 거짓 성공)와 **같은 계열**이다.
+  캐시가 틀렸다는 걸 아무도 모른다.
+- **해결 방향**: 먼저 **재는 것**부터. `core/logger.py`로 캐시 히트/미스·단계(S1/S2)·
+  점수·입력 길이를 남겨 오히트 빈도를 파악한 뒤 대응을 정한다.
+  ⚠️ 이 로그는 **임베딩 캐시(10월)의 선행조건**이기도 하다 — 지금 교체하면
+  "좋아졌다"를 숫자로 말할 근거가 없다.
+- **성격**: 정직성 + 관측성. (2026-09-02 코드 리뷰 중 발견)
 
 ### BL-11 — 라이브 테스트가 git 추적 파일(`cache/command_cache.json`)을 더럽힌다
 - **증상**: `tests/test_commands.py` · `tests/test_regression.py`를 돌리면 캐시 파일이

@@ -79,7 +79,7 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_dependencies.py     # ★ requirements.txt 선언 = 실제 설치인지
 ```
 
-전체 mock 스위트는 **17파일 228개**. 이 중 `test_dependencies.py`(30개)는 로컬 전용이라
+전체 mock 스위트는 **19파일 301개**([README 상태표](README.md#지금-상태-2026-09-02-기준)가 출처). 이 중 `test_dependencies.py`(32개)는 로컬 전용이라
 CI는 16파일 198개를 돌린다. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
 
 ### ⚠️ 의존성이 없으면 도구가 조용히 죽는다
