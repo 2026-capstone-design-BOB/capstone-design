@@ -45,18 +45,53 @@ from langchain_core.messages import (
 # 이 도구 호출은 실행 전 hitl 노드에서 사용자 승인을 받는다.
 DANGEROUS_TOOLS = {"delete_file", "delete_folder"}
 
-_APPROVE_RE = re.compile(r'응|네|예|그래|좋아|해\s*줘|해도\s*돼|맞아|오케이|okay|ok|ㅇㅇ|진행|삭제해|지워')
 _REJECT_RE = re.compile(r'아니|취소|하지\s*마|하지마|싫|안\s*돼|안돼|관둬|그만|멈춰|ㄴㄴ|말아')
+
+# 승인으로 인정하는 어휘. **부분 문자열 검사를 하지 않는다.**
+#
+# ⚠️ 예전에는 r'응|네|예|그래|해\s*줘|진행|…' 을 search() 로 훑었는데, 그러면
+#    승인 대기 중에 사용자가 말한 **평범한 명령이 승인으로 읽혔다**:
+#      "네이버 열어줘"(네) · "음소거 해줘"(해 줘) · "그래프 그려줘"(그래)
+#      "진행 상황 알려줘"(진행) · "응용 프로그램 목록"(응) · "예약 확인해줘"(예)
+#    실측 결과 일상 명령 10개 중 6개가 오승인 → 삭제가 그대로 실행됐다.
+#    "애매하면 취소"라는 안전 기본값이 무력화된 것이다.
+#
+# 그래서 지금은 **발화를 어절로 쪼개, 모든 어절이 긍정어일 때만** 승인으로 본다.
+#   "응" · "네 삭제해줘" · "오케이 지워"        → 승인
+#   "네이버 열어줘" · "음소거 해줘"             → 승인 아님(→ 재질문)
+_AFFIRM_WORDS = frozenset([
+    "응", "어", "네", "넵", "예", "옙", "그래", "그럼", "좋아", "좋아요",
+    "오케이", "콜", "ok", "okay", "yes", "y", "ㅇㅇ", "알겠어", "알았어",
+    "알겠습니다", "맞아", "맞어", "그렇게", "해", "해줘", "해주세요", "돼", "된다",
+    "삭제", "삭제해", "삭제해줘", "지워", "지워줘", "진행", "진행해", "승인",
+])
+_TOKEN_SPLIT_RE = re.compile(r'[\s,.!?~…·]+')
+
+
+def classify_confirmation(text: Any) -> str:
+    """승인 응답을 3분류한다: 'approve' | 'reject' | 'unclear'.
+
+    'unclear'는 **승인도 취소도 아니다** — hitl 노드가 다시 물어본다.
+    예전처럼 bool 두 갈래로 강제하면, 사용자가 승인과 무관한 새 명령을 말했을 때
+    그 명령이 조용히 삼켜지거나(취소로 처리) 삭제가 실행돼 버린다.
+    """
+    t = str(text).strip().lower()
+    if not t:
+        return "unclear"
+    if _REJECT_RE.search(t):          # 거부어 우선 (모순 시 안전한 쪽)
+        return "reject"
+    tokens = [w for w in _TOKEN_SPLIT_RE.split(t) if w]
+    if tokens and all(w in _AFFIRM_WORDS for w in tokens):
+        return "approve"
+    return "unclear"
 
 
 def interpret_confirmation(text: Any) -> bool:
-    """승인 응답 해석. 거부어 우선 검사 → 승인어 → 애매하면 안전하게 취소(False)."""
-    t = str(text).strip().lower()
-    if _REJECT_RE.search(t):
-        return False
-    if _APPROVE_RE.search(t):
-        return True
-    return False   # 애매 → 위험 동작이므로 취소가 안전
+    """승인 여부(bool). 승인이 **명확할 때만** True. 애매하면 False(안전).
+
+    3분류가 필요하면 `classify_confirmation`을 쓴다.
+    """
+    return classify_confirmation(text) == "approve"
 
 
 def _deletion_is_recoverable() -> bool:
@@ -94,6 +129,17 @@ def _confirm_question(dcall: Optional[dict]) -> str:
     kind = "폴더를" if name == "delete_folder" else "파일을"
     base = os.path.basename(str(target).rstrip("/\\")) or str(target)
     return f"'{base}' {kind} 정말 삭제할까요? ({consequence})"
+
+
+# 승인 대기 중 애매한 답이 왔을 때 다시 묻는 최대 횟수(첫 질문 포함).
+# 2를 넘기면 사용자를 붙잡아 두는 꼴이라, 그 다음은 취소로 끝낸다.
+_MAX_CONFIRM_ASKS = 2
+
+
+def _reask_question(dcall: Optional[dict]) -> str:
+    """애매한 답이 왔을 때의 재질문. 무엇을 물었는지 다시 알려준다."""
+    return (f"{_confirm_question(dcall)} "
+            "삭제하려면 '네', 그만두려면 '아니오'라고 말씀해 주세요.")
 
 
 # ── 상태 정의 ──────────────────────────────────────────────────────
@@ -303,21 +349,37 @@ def build_pluiz_graph(
     def hitl(state: PluizState) -> dict:
         """위험 도구 실행 전 사람 승인(HITL, Lab19). interrupt로 그래프를 일시정지.
         재개 시 응답을 해석해 승인이면 tools로, 거부면 취소 응답.
-        (interrupt는 동기 호출이라 동기 노드로 둔다 — config 컨텍스트 보장)"""
+        (interrupt는 동기 호출이라 동기 노드로 둔다 — config 컨텍스트 보장)
+
+        승인도 거부도 아닌 답(unclear)이면 **한 번 더 물어본다.** 여기서 바로
+        취소해 버리면, 사용자가 승인과 무관한 새 명령을 말했을 때 그 명령이
+        조용히 사라진다(발화가 Command(resume)로 소비되기 때문). 재질문으로
+        사용자가 상황을 인지할 기회를 준다. 끝까지 애매하면 **취소**(안전 기본값).
+        """
         last = state["messages"][-1]
         calls = list(getattr(last, "tool_calls", []) or [])
         dcall = next((c for c in calls if c.get("name") in dangerous), None)
 
         # 그래프를 멈추고 사용자에게 질문(오케스트레이터가 질문을 UI로 전달)
-        answer = interrupt({"question": _confirm_question(dcall)})
+        question = _confirm_question(dcall)
+        verdict = "unclear"
+        for _ in range(_MAX_CONFIRM_ASKS):
+            answer = interrupt({"question": question})
+            verdict = classify_confirmation(answer)
+            if verdict != "unclear":
+                break
+            question = _reask_question(dcall)
 
-        if interpret_confirmation(answer):
+        if verdict == "approve":
             return {"decision": "approved"}
 
-        # 거부: 매달린 tool_calls를 ToolMessage로 마감(오염 방지) + 취소 응답
+        # 거부/애매: 매달린 tool_calls를 ToolMessage로 마감(오염 방지) + 취소 응답
         cancel = [ToolMessage(content="사용자가 삭제를 취소했습니다.", tool_call_id=c["id"])
                   for c in calls if c.get("id")]
-        cancel.append(AIMessage(content="네, 삭제를 취소했어요."))
+        cancel.append(AIMessage(content=(
+            "네, 삭제를 취소했어요." if verdict == "reject"
+            else "답을 알아듣지 못해서 삭제는 취소했어요. 방금 하신 말씀을 다시 한 번 말씀해 주세요."
+        )))
         return {"messages": cancel, "decision": "rejected"}
 
     # ── 라우팅 ─────────────────────────────────────────────────────

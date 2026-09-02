@@ -76,7 +76,48 @@ def run():
     check("거부 시 미실행", executed == [])
     check("취소 응답", "취소" in G.extract_response(r3))
 
-    print("=== interpret_confirmation ===")
+    print("=== 애매한 답 → 즉시 취소하지 않고 재질문 ===")
+    executed.clear()
+    g3 = build()
+    cfg3 = {"configurable": {"thread_id": "unclear"}}
+    g3.invoke({"messages": [HumanMessage("바탕화면 test.txt 삭제해줘")]}, cfg3)
+    r4 = g3.invoke(Command(resume="네이버 열어줘"), cfg3)      # 승인 아님
+    itr4 = r4.get("__interrupt__")
+    check("애매한 답 → 미실행", executed == [])
+    check("애매한 답 → 재질문(대기 유지)", bool(itr4))
+    q4 = itr4[0].value.get("question", "") if itr4 else ""
+    check("재질문이 예/아니오를 요구", "아니오" in q4)
+    r5 = g3.invoke(Command(resume="응"), cfg3)                # 이제 승인
+    check("재질문 후 승인 → 실행됨", executed == ["바탕화면/test.txt"])
+
+    print("=== 끝까지 애매 → 취소(안전 기본값) ===")
+    executed.clear()
+    g4 = build()
+    cfg4 = {"configurable": {"thread_id": "unclear2"}}
+    g4.invoke({"messages": [HumanMessage("바탕화면 test.txt 삭제해줘")]}, cfg4)
+    g4.invoke(Command(resume="음소거 해줘"), cfg4)
+    r6 = g4.invoke(Command(resume="그래프 그려줘"), cfg4)
+    check("두 번 애매 → 미실행", executed == [])
+    check("두 번 애매 → 취소 응답", "취소" in G.extract_response(r6))
+
+    print("=== classify_confirmation ===")
+    check("'응' → approve", G.classify_confirmation("응") == "approve")
+    check("'네 삭제해줘' → approve", G.classify_confirmation("네 삭제해줘") == "approve")
+    check("'아니' → reject", G.classify_confirmation("아니") == "reject")
+    check("'아니 삭제해'(모순) → reject", G.classify_confirmation("아니 삭제해") == "reject")
+    check("'글쎄'(애매) → unclear", G.classify_confirmation("글쎄") == "unclear")
+
+    # 🚨 회귀 방지 — 승인 대기 중 사용자가 말한 **평범한 명령**이 승인으로 읽히던 버그.
+    #    옛 정규식은 부분 문자열(네/해 줘/그래/진행/응/예)만 보고 삭제를 실행했다.
+    print("=== 일상 명령이 승인으로 오인되지 않는다 (회귀) ===")
+    for cmd in ["네이버 열어줘", "음소거 해줘", "그래프 그려줘",
+                "진행 상황 알려줘", "응용 프로그램 목록", "예약 확인해줘",
+                "메모장 켜줘", "볼륨 올려줘"]:
+        check(f"'{cmd}' → 승인 아님",
+              G.classify_confirmation(cmd) != "approve"
+              and G.interpret_confirmation(cmd) is False)
+
+    print("=== interpret_confirmation (하위호환) ===")
     check("'응' → True", G.interpret_confirmation("응") is True)
     check("'아니' → False", G.interpret_confirmation("아니") is False)
     check("'아니 삭제해'(모순) → False", G.interpret_confirmation("아니 삭제해") is False)
