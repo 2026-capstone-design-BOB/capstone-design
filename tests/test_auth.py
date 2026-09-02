@@ -48,6 +48,25 @@ check("파일 없으면 read_token == ''", auth.read_token() == "")
 auth.clear_token()  # 두 번 불러도 죽지 않아야 한다
 check("clear_token 재호출해도 예외 없음", True)
 
+# ── 서버를 두 번 띄웠을 때 (2026-09-02 실측으로 발견한 사고) ──────────
+# uvicorn은 소켓을 잡기 전에 lifespan을 돌린다. 두 번째 인스턴스가 포트 바인딩에
+# 실패해 죽으면서 **살아 있는 첫 번째의 토큰 파일을 지우면** UI가 끊긴다.
+live = auth.issue_token()
+auth.clear_token(expected="다른-서버의-토큰")
+check("clear_token(expected 불일치) → 지우지 않는다", auth.read_token() == live)
+auth.clear_token(expected=live)
+check("clear_token(expected 일치) → 지운다", auth.read_token() == "")
+
+check("port_in_use: 아무도 없는 포트는 False", not auth.port_in_use("127.0.0.1", 59999))
+import socket as _socket  # noqa: E402
+
+_srv = _socket.socket()
+_srv.bind(("127.0.0.1", 0))
+_srv.listen(1)
+check("port_in_use: 열려 있는 포트는 True",
+      auth.port_in_use("127.0.0.1", _srv.getsockname()[1]))
+_srv.close()
+
 os.environ["PLUIZ_AUTH_TOKEN"] = "FIXED-TOKEN-FOR-TEST"
 check("env 지정 시 issue_token이 그 값을 쓴다", auth.issue_token() == "FIXED-TOKEN-FOR-TEST")
 check("env 지정 시 read_token도 그 값", auth.read_token() == "FIXED-TOKEN-FOR-TEST")

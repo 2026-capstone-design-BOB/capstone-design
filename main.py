@@ -37,8 +37,19 @@ async def lifespan(_app: FastAPI):
     웹페이지는 로컬 파일을 못 읽는다 — 그게 이 방어의 근거다.
     """
     global _AUTH_TOKEN
-    _AUTH_TOKEN = auth.issue_token()
     s = get_settings()
+
+    # ⚠️ 발급 **전에** 포트를 확인한다. uvicorn은 소켓을 잡기 전에 lifespan을 돌리므로,
+    # 서버가 이미 떠 있는데 또 띄우면 두 번째가 죽으면서 **첫 번째의 토큰 파일을
+    # 덮어쓰고 지운다.** 그러면 멀쩡히 돌던 UI가 재연결에서 토큰을 잃는다.
+    # (launch.bat을 두 번 실행하면 실제로 일어난다 — 2026-09-02 실측으로 발견)
+    if auth.port_in_use(s.server_host, s.server_port):
+        print(f"[auth] ⚠️ {s.server_host}:{s.server_port} 에 이미 서버가 있습니다. "
+              f"토큰을 건드리지 않고 종료합니다 (기존 서버와 UI는 그대로 동작).")
+        yield
+        return
+
+    _AUTH_TOKEN = auth.issue_token()
     if s.auth_enabled:
         print(f"[auth] 접근 토큰 발급됨 → {auth.token_path()}")
         print(f"[auth] 캐시 대시보드: http://{s.server_host}:{s.server_port}"
@@ -48,7 +59,8 @@ async def lifespan(_app: FastAPI):
     try:
         yield
     finally:
-        auth.clear_token()
+        # 내 토큰일 때만 지운다 (위와 같은 이유의 2차 방어)
+        auth.clear_token(expected=_AUTH_TOKEN)
 
 
 app = FastAPI(title="Pluiz v2", version="2.0.0", lifespan=lifespan)

@@ -65,12 +65,33 @@ def read_token() -> str:
         return ""
 
 
-def clear_token() -> None:
-    """서버 종료 시 정리. 실패해도 무시한다 — 다음 기동이 어차피 덮어쓴다."""
+def clear_token(expected: str = "") -> None:
+    """서버 종료 시 정리. 실패해도 무시한다 — 다음 기동이 어차피 덮어쓴다.
+
+    `expected`를 주면 **파일 내용이 그 값일 때만** 지운다. 서버를 두 번 띄웠을 때
+    두 번째(포트 바인딩에 실패해 바로 죽는) 인스턴스가 **살아 있는 첫 번째의 토큰
+    파일을 지워버리는 사고**를 막는다. 그러면 돌던 UI가 재연결에서 토큰을 못 찾는다.
+    """
     try:
+        if expected and read_token() != expected:
+            return
         os.remove(token_path())
     except OSError:
         pass
+
+
+def port_in_use(host: str, port: int) -> bool:
+    """이미 그 주소에서 무언가 응답하는가 (= 서버가 이미 떠 있는가).
+
+    토큰을 발급하기 **전에** 확인해야 한다. uvicorn은 소켓을 잡기 전에 lifespan을
+    돌리기 때문에, 확인 없이 발급하면 두 번째 인스턴스가 죽으면서 첫 번째의 토큰을
+    덮어써 UI를 끊어버린다. (2026-09-02 실측으로 발견)
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.3)
+        return s.connect_ex((host, port)) == 0
 
 
 def is_exempt(path: str) -> bool:
