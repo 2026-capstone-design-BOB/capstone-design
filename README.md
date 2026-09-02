@@ -143,7 +143,11 @@ python tests/test_guardrail_hybrid.py # 하이브리드 가드레일
 ## 프로젝트 정보
 
 2026학년도 졸업 캡스톤 디자인. 1학기 데모(2026.06.15) 완료 후,
-계절학기 AI Agent 강의 개념(LangGraph · HITL · OWASP Guardrail · RAG)을
-구조에 적용하는 개선 마일스톤을 진행 중입니다.
+계절학기 AI Agent 강의 개념(LangGraph · HITL · OWASP Guardrail)을
+구조에 적용하는 개선 마일스톤(M1)을 마쳤습니다.
+
+목표는 **"Windows 위에서 동작하는 이식 가능한 개인 적응형 에이전트"** 입니다 —
+화면을 보고 상황을 이해하고, 쓸수록 사용자를 알아가며, 오프라인에서도 동작하는
+설치형 소프트웨어. 학기 계획과 진행 상황은 [docs/ROADMAP.md](docs/ROADMAP.md)에 있습니다.
 
 발표 자료와 V0 → V1 → V2 발전사는 [docs/presentation/](docs/presentation/)에 있습니다.

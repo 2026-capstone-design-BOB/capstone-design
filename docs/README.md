@@ -9,9 +9,9 @@
 
 **Pluiz** — 한국어 음성 명령으로 Windows PC를 제어하는 AI 에이전트. 졸업 캡스톤.
 
-2026.06.15 데모 완료. 이후 강의 개념(LangGraph·HITL·OWASP·RAG)을 구조에 적용하는
+2026.06.15 데모 완료. 이후 강의 개념(LangGraph·HITL·OWASP 가드레일)을 구조에 적용하는
 **Milestone 1**을 진행했고, **2026-09-02 라이브 실측(FAIL 0)으로 M1 완료를 확인**했다.
-남은 항목은 전부 [TODO/품질]이다.
+다음은 로드맵상 **9월 Phase 2 — 화면 이해(Vision)** 다. → [ROADMAP.md](ROADMAP.md)
 
 | 항목 | 상태 |
 |---|---|
@@ -26,9 +26,10 @@
 
 ### 바로 시작하려면
 
-1. [BACKLOG.md](BACKLOG.md) — 남은 일 (전부 [TODO/품질], 서로 막지 않음)
-2. [DEVLOG.md](DEVLOG.md) 최상단 — 직전에 무슨 일이 있었는지
-3. [WORKFLOW.md](WORKFLOW.md) — 작업 루프 · 테스트 실행법 · 커밋 규칙
+1. [ROADMAP.md](ROADMAP.md) — **어디로 가는가.** 학기 목표와 계획 대비 실제 진행
+2. [BACKLOG.md](BACKLOG.md) — 지금 걸려 있는 개별 항목 (BL-xx)
+3. [DEVLOG.md](DEVLOG.md) 최상단 — 직전에 무슨 일이 있었는지
+4. [WORKFLOW.md](WORKFLOW.md) — 작업 루프 · 테스트 실행법 · 커밋 규칙
 
 > ⚠️ **환경 두 가지를 먼저 확인하세요** (매번 걸리던 것)
 > - 루트 `python`(anaconda base)에는 langgraph가 없다 → `conda activate pluiz`
@@ -53,6 +54,7 @@
 | **테스트 작성·실행** | [WORKFLOW.md § 테스트](WORKFLOW.md#테스트) · 수동 항목은 [testing/](testing/) |
 | **환경이 이상할 때 (도구가 조용히 안 됨)** | `python tests/test_dependencies.py` → [WORKFLOW.md § 의존성](WORKFLOW.md#️-의존성이-없으면-도구가-조용히-죽는다) |
 | **커밋·브랜치·PR** | [WORKFLOW.md § 커밋 컨벤션](WORKFLOW.md#커밋-컨벤션) · [CONTRIBUTING.md](CONTRIBUTING.md) |
+| **다음에 뭘 만들지 / 학기 목표 확인** | [ROADMAP.md](ROADMAP.md) |
 | **발표·제출 자료 준비** | [presentation/](presentation/) |
 
 ---
@@ -67,6 +69,7 @@
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 시스템이 **어떻게 동작하는가**. 그래프 파이프라인·도구·보안·캐시 | 동작 변경 시 |
 | [WORKFLOW.md](WORKFLOW.md) | **어떻게 작업하는가**. 작업 루프·테스트·DEVLOG 규칙·커밋 컨벤션 | 절차 변경 시 |
 | [DEVLOG.md](DEVLOG.md) | 개발 일지. **단일 진실 공급원(SoT)** | 작업할 때마다 |
+| [ROADMAP.md](ROADMAP.md) | **어디로 가는가.** 최종 시스템 목표·학기 계획·계획 대비 실제 | 학기 단위 |
 | [BACKLOG.md](BACKLOG.md) | 미해결 항목. [즉시/위험] vs [TODO/품질] | 발견·해결 시 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 팀 협업 규칙 (브랜치 구조·작업 루틴·충돌 해결) | 거의 없음 |
 
@@ -91,6 +94,9 @@
 ### 발표 자료 — [presentation/](presentation/)
 
 2026.06.15 데모 시점 산출물. 개발 코드와 생명주기가 달라 분리 보관.
+
+> ⚠️ **여기는 과거 스냅샷이다.** 슬라이드에 방학·2학기 로드맵이 들어 있었으나,
+> 계획은 [ROADMAP.md](ROADMAP.md)가 담당한다. 슬라이드는 갱신하지 않는다.
 
 - [STUDY_GUIDE.md](presentation/STUDY_GUIDE.md) — 발표용 기술 가이드 (948줄, 심사 Q&A 대비)
 - [pluiz_QnA.md](presentation/pluiz_QnA.md) — 예상 질문 답변서 (정당성·차별성·기여도)
