@@ -21,10 +21,49 @@
 
 ## 🔵 지금 하는 중
 
-- [ ] 🔵 **웨이크워드 마이크 실측** — ⚠️ **사용자가 직접 "플루이즈"라고 말해야 한다.**
-      코드 쪽은 전부 끝났다(아래 참조). 남은 건 실제 인식률 확인뿐이다.
-      `launch.bat` 실행 → 마이크에 "플루이즈" / "헤이 플루이즈" → 창이 뜨는지 확인.
-      안 뜨면 Electron 콘솔의 `[wake]` 로그를 보면 원인이 나온다.
+- [ ] 🔵 **웨이크워드 전용 모델 학습 — 사용자 음성 녹음 대기**
+
+  **결정 완료**: Whisper로는 감지율 69%가 천장이라 전용 키워드 스포팅 모델로 간다.
+  근거·구조·데이터 설계는 전부 [design/M2_웨이크워드_전용모델.md](design/M2_웨이크워드_전용모델.md)에 있다.
+
+  **코드는 다 됐다.** 막힌 건 딱 하나 — **사용자가 "플루이즈"를 2분 30초간 녹음**해야 한다.
+  edge-tts 한국어 목소리가 2개뿐이라 합성음만 쓰면 그 목소리에 과적합된다.
+
+  <details><summary><b>▶ 재개 절차 (이것만 그대로 하면 된다)</b></summary>
+
+  ```bash
+  conda activate pluiz && export PYTHONIOENCODING=utf-8
+  ```
+
+  **1단계 — 사용자 음성 녹음 (2분 30초)**
+  아래를 실행하고, "플루이즈"를 4초 간격으로 30~35번 반복한다.
+  또렷하게/평소처럼/빠르게/느리게, 가까이/멀리, "헤이 플루이즈"·"플루이즈야"도 섞어서.
+
+  ```python
+  # 저장 위치는 아무데나. 아래 2단계에 그 경로를 넣는다.
+  import numpy as np, sounddevice as sd
+  SR, SECS = 16000, 150
+  a = sd.rec(int(SR*SECS), samplerate=SR, channels=1, dtype='float32'); sd.wait()
+  np.save('wake_voice.npy', a.flatten())
+  print('RMS', float(np.sqrt(np.mean(a**2))))   # 0.005 이상이면 충분
+  ```
+
+  **2단계 — 학습** (합성음은 `cache/wakeword_tts/`에 이미 일부 있고 자동으로 이어서 만든다)
+  ```bash
+  python scripts/train_wakeword.py --user-audio wake_voice.npy
+  ```
+  임계값별 감지율/오탐율 표가 출력되고 `services/wakeword_model.npz`가 생성된다.
+
+  **3단계 — 런타임 연결** (아직 안 한 일)
+  `services/wakeword.py`가 지금은 Whisper 경로다. 모델이 생기면
+  `_transcribe` 대신 임베딩 → MLP 추론으로 갈아끼운다. Whisper 경로는 폴백으로 남긴다.
+
+  **4단계 — 실측** `launch.bat` 실행 → "플루이즈" → 창이 뜨는지. 로그는 `logs/pluiz.log`.
+
+  </details>
+
+- [ ] **웨이크워드 런타임을 전용 모델로 교체** — 위 3단계. 학습이 끝나야 시작할 수 있다
+- [ ] **오탐 임계값 실사용 조정** — 학습 스크립트 출력표를 보고 정한다
 
 ---
 
@@ -43,6 +82,10 @@
 - [x] **🚨 Electron이 잘못된 python을 쓰던 문제** — `python`(anaconda base)엔
       sounddevice·faster-whisper가 없어 **웨이크워드가 한 번도 안 돌았다.**
       `resolvePython()`이 후보를 실제로 검사해 고르도록 수정 (2026-09-02)
+- [x] **Whisper 경로 실측 튜닝** — 슬라이딩 윈도우(2초 창/0.6초 간격) · 환각 필터 ·
+      base 모델(tiny보다 5배 빠름) · hotwords 끔 · 변형 거리 2. **감지 69%가 천장** (2026-09-02)
+- [x] **전용 모델 학습 파이프라인** — `scripts/wakeword_data.py` · `scripts/train_wakeword.py`.
+      openWakeWord 임베딩 + scikit-learn MLP, torch 불필요 (2026-09-02)
 - [ ] **UI에 웨이크워드 설정 화면** — API는 열려 있고 `electron-ui/renderer`에 입력란만 붙이면 된다
 
 ### Phase 2 본체

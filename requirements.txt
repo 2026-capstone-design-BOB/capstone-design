@@ -41,3 +41,11 @@ Pillow>=10.0.0            # 스크린샷 (전체/창별 캡처)
 httpx>=0.27.0             # crawl_page — 웹 페이지 본문 크롤링
 beautifulsoup4>=4.12.0    # crawl_page — HTML 파싱
 openpyxl>=3.1.0           # write_excel — 엑셀 파일 생성
+
+# ── 웨이크워드 전용 모델 (학습 + 추론) ──────────────────────────────
+# openwakeword: 사전학습 음향 임베딩(ONNX). onnxruntime은 faster-whisper가 이미 가져온다.
+# scikit-learn: **학습할 때만** 필요하다. 추론은 numpy 행렬곱으로 직접 한다
+#               (services/wakeword_model.npz 의 가중치 사용) → 배포 시 제외 가능.
+# → docs/design/M2_웨이크워드_전용모델.md
+openwakeword>=0.6.0
+scikit-learn>=1.3.0
