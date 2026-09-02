@@ -17,8 +17,8 @@
 |---|---|
 | **엔진** | `PluizGraphAgent` **단일**. 구 엔진은 M1-P5에서 제거 → [design/M1_P5_엔진단일화.md](design/M1_P5_엔진단일화.md) |
 | **M1 진행** | P0 진단 → P1 맥락 → P1.5 그래프 이관 → P2 HITL → P3 OWASP → P4 캐시학습 → **P5 엔진단일화 · 전부 완료** |
-| **도구** | 33개 (삭제 2개는 HITL 승인 필수) |
-| **테스트** | mock **17파일 228개** + 라이브 3스위트. CI는 그중 16파일 198개 자동 실행 |
+| **도구** | **34개** (삭제 2개는 HITL 승인 필수 · `describe_screen`은 화면을 외부 LLM에 전송) |
+| **테스트** | mock **18파일 240개** + 라이브 3스위트. CI는 그중 17파일(서버·로컬전용 제외) 자동 실행 |
 | **라이브 실측** | 2026-09-02 · 3스위트 전부 **FAIL 0** — `regression` 30/30 · `commands` 39P/15MANUAL · `sprint1_2` 55/55 → [DEVLOG](DEVLOG.md) |
 | **CI** | GitHub Actions 3잡 — mock · 문서링크 · 비밀정보 가드 |
 | **브랜치** | `main` = `develop` = 최신. 작업은 `feature/byeonsoyun` |

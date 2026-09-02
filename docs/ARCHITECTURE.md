@@ -103,7 +103,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 
 ---
 
-## 도구 (33개)
+## 도구 (34개)
 
 [`core/tool_registry.py`](../core/tool_registry.py)에 단일 등록.
 
@@ -115,6 +115,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 | 시스템 | 10 | `volume_up/down/set` `mute_toggle` `brightness_up/down` `take_screenshot` `get_battery_status` `get_current_time` `get_running_apps` |
 | 입력 | 3 | `type_text` `press_key` `get_clipboard_text` |
 | 캘린더 | 1 | `create_calendar_event` |
+| 화면 이해 | 1 | `describe_screen` — ⚠️ **화면 내용을 외부 LLM로 전송** (아래 참조) |
 | **삭제** | **2** | `delete_file` `delete_folder` — **HITL 승인 필수** |
 
 > **삭제 도구 안전장치**: `core/graph.py`의 `DANGEROUS_TOOLS`에 등록돼 있어
@@ -124,7 +125,35 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 > ⚠️ **새 위험 도구를 추가할 땐 `DANGEROUS_TOOLS`에 반드시 추가할 것.**
 > 여기 빠지면 승인 없이 실행된다. → [design/M1_P5_엔진단일화.md](design/M1_P5_엔진단일화.md#3-4-안전장치는-어디로-갔나)
 
+> **`describe_screen` 개인정보 주의 (OWASP LLM02)**
+> 스크린샷을 Vision LLM에 보내므로, 화면에 비밀번호·계좌·주민번호가 떠 있으면
+> **그것도 함께 외부로 나간다.** 완화책은 두 가지다.
+> - 도구 설명에 *"사용자가 화면 내용을 물어볼 때만"* 을 못박아 LLM의 임의 호출을 억제
+> - 반환된 설명은 `mask_sensitive_output()`을 거쳐 나간다 — **출력 노출은 막지만
+>   전송 자체는 막지 못한다.** 원천 차단하려면 로컬 Vision 모델이 필요하다(범위 밖).
+>
+> 전송 전 축소(긴 변 1600px)와 임시파일 사용·삭제는 [`tools/vision.py`](../tools/vision.py) 참조.
+
 도구 추가 절차는 [WORKFLOW.md § 새 도구 추가](WORKFLOW.md#새-도구-추가).
+
+---
+
+## 로깅
+
+[`core/logger.py`](../core/logger.py) — `get_logger("이름")` 하나만 쓴다.
+
+| 대상 | 레벨 | 형식 |
+|---|---|---|
+| 콘솔 | `LOG_LEVEL` (기본 INFO) | `[이름] 메시지` — 기존 `print` 관습과 동일 |
+| 파일 `logs/pluiz.log` | DEBUG | 시각·레벨·이름 + 스택트레이스. 5MB×3 로테이션, **UTF-8** |
+
+**전면 교체가 아니다.** 코드베이스의 `print` 71개는 그대로 두고, Vision처럼 실패가 잦고
+원인이 눈에 안 보이는 새 기능부터 붙인다. 로드맵의 "로깅 시스템 도입"(방학 미착수분)을
+9월 작업에 필요한 만큼만 당겨온 것이다.
+
+> ⚠️ 콘솔이 cp949라 한글이 깨질 수 있다. 파일 핸들러는 `encoding="utf-8"` 필수이고,
+> 콘솔 핸들러는 인코딩 실패로 **기능을 죽이지 않도록** 예외를 삼킨다.
+> 로깅이 기능을 망가뜨리는 건 본말전도다.
 
 ---
 
