@@ -64,8 +64,29 @@ _AFFIRM_WORDS = frozenset([
     "오케이", "콜", "ok", "okay", "yes", "y", "ㅇㅇ", "알겠어", "알았어",
     "알겠습니다", "맞아", "맞어", "그렇게", "해", "해줘", "해주세요", "돼", "된다",
     "삭제", "삭제해", "삭제해줘", "지워", "지워줘", "진행", "진행해", "승인",
+    # 삭제 승인의 변형들. STT는 "지워 버려"·"삭제해 봐"처럼 띄어서 적어 오는데,
+    # _JOIN_AUX_RE가 붙여 준 뒤 여기서 걸린다.
+    "지워버려", "지워버려요", "지워봐", "삭제해버려", "삭제해봐", "해버려",
+    "없애", "없애줘", "치워", "치워줘", "웅", "네네", "응응", "그래그래",
+    "삭제해주세요", "지워주세요", "없애주세요", "삭제하세요", "지우세요",
 ])
 _TOKEN_SPLIT_RE = re.compile(r'[\s,.!?~…·]+')
+
+# 보조용언 앞의 띄어쓰기를 붙인다. 사람은 "지워 줘"라고 말하고 STT도 그렇게 적는데,
+# 어절로 쪼개면 "지워" + "줘"가 되어 "줘"가 긍정어 목록에 없다는 이유로 승인이 깨졌다.
+#
+# ⚠️ 실기에서 이것 때문에 **승인이 무한 루프**를 돌았다 (2026-09-02):
+#     "응 지워 줘"        → other_command 로 오분류 → 삭제 취소 후 재실행
+#     "그래 정말 삭제해 줘" → 같은 이유로 또 취소
+#   사용자는 네 번을 말하고 나서야 삭제됐다. ("내 말이 말 같지가 않아")
+_JOIN_AUX_RE = re.compile(r'(\S)\s+(줘|줄래|주라|주세요|주시겠어요|봐|버려|버려요|둬)\b')
+
+# 승인의 세기를 더할 뿐 의미를 바꾸지 않는 말. **이것만 있으면 승인이 아니다.**
+# ("정말?" 한 마디를 승인으로 읽으면 안 되므로, 걷어낸 뒤 핵심 긍정어가 남아야 한다)
+_FILLER_WORDS = frozenset([
+    "정말", "진짜", "그냥", "빨리", "당장", "어서", "얼른", "좀", "다",
+    "지금", "제발", "이제", "그", "저", "음", "아", "일단", "그리고",
+])
 
 # 명령형 어미. "승인도 거부도 아닌데 **명백히 다른 명령**"을 가려내는 데 쓴다.
 #
@@ -82,7 +103,7 @@ _TOKEN_SPLIT_RE = re.compile(r'[\s,.!?~…·]+')
 # 재질문 기회를 잃으므로, **2어절 이상 + 명령형 어미**를 함께 요구한다.
 _COMMAND_TAIL_RE = re.compile(
     r'(줘|줄래|주라|주세요|주실래|줄레|달라|달라니까|다오|해라|하렴|보여|알려|'
-    r'틀어|찾아|열어|닫아|켜라|꺼라|실행|시작|종료|검색)\s*$'
+    r'봐|봐라|보자|틀어|찾아|열어|닫아|켜라|꺼라|실행|시작|종료|검색)\s*$'
 )
 
 
@@ -107,8 +128,14 @@ def classify_confirmation(text: Any) -> str:
         return "unclear"
     if _REJECT_RE.search(t):          # 거부어 우선 (모순 시 안전한 쪽)
         return "reject"
+
+    # "지워 줘" → "지워줘" 로 붙인 뒤 어절을 나눈다 (위 _JOIN_AUX_RE 주석 참조)
+    t = _JOIN_AUX_RE.sub(r'\1\2', t)
     tokens = [w for w in _TOKEN_SPLIT_RE.split(t) if w]
-    if tokens and all(w in _AFFIRM_WORDS for w in tokens):
+
+    # 강조어("정말"·"그냥"…)를 걷어내고 **남은 말이 전부 긍정어일 때만** 승인.
+    core = [w for w in tokens if w not in _FILLER_WORDS]
+    if core and all(w in _AFFIRM_WORDS for w in core):
         return "approve"
     if _looks_like_command(tokens, t):
         return "other_command"
@@ -207,6 +234,13 @@ def build_system_prompt() -> str:
         f"현재 날짜/시간: {date_str} {time_str}\n"
         "응답은 1~2문장으로 짧고 친근한 구어체로. 도구 실행 결과는 핵심만 요약.\n"
         "PC 제어 명령은 반드시 도구를 호출해서 실행하고, 도구 없이 '실행했어요'라고만 답하지 마세요.\n"
+        # 삭제는 시스템(hitl 노드)이 반드시 확인을 받는다. LLM이 먼저 되물으면
+        # 사용자가 같은 말을 두 번 해야 한다 — 실기에서 실제로 겪은 불편이다.
+        "삭제 요청을 받으면 '삭제할까요?'라고 되묻지 말고 바로 삭제 도구를 호출하세요. "
+        "확인 절차는 시스템이 자동으로 진행합니다.\n"
+        # 창 규칙: 기본은 기존 창 재사용. "새로/하나 더/새 탭"일 때만 new=True.
+        "앱을 열 땐 open_app을 그대로 부르세요(이미 켜져 있으면 그 창을 앞으로 가져옵니다). "
+        "사용자가 '새로 열어줘'·'하나 더'·'새 탭'처럼 새 창/탭을 원할 때만 new=True를 주세요.\n"
         "이전 대화 맥락을 활용하세요. '그거', '아까 그거' 같은 지칭은 직전 대화를 참고해 해석하세요.\n"
         "사용자가 '안 됐어/안 열렸어/실행 안 됨'처럼 실패를 알리면, 같은 답을 반복하지 말고 "
         "get_running_apps로 실제 실행 여부를 확인한 뒤 다른 방법으로 다시 시도하세요. "
@@ -389,9 +423,12 @@ def build_pluiz_graph(
         """OWASP LLM01/02 자리. 현재는 코드 레벨 보안 검사."""
         text = _last_human_text(state["messages"])
         blocked, reason = security_check(text)
+        # 지난 턴에 켜진 채 남아 있을 수 있는 플래그를 새 턴 시작 시 끈다.
+        # (승인 질문 상태로 턴이 끝나면 output_guard를 거치지 않아 값이 살아남는다)
         if blocked:
-            return {"messages": [AIMessage(content=reason)], "decision": "blocked"}
-        return {"decision": ""}
+            return {"messages": [AIMessage(content=reason)], "decision": "blocked",
+                    "deletion_cancelled": False}
+        return {"decision": "", "deletion_cancelled": False}
 
     def fast_path(state: PluizState) -> dict:
         """캐시/라우터 빠른 경로. 히트 시 결과를 messages에 기록(맥락 통합 핵심)."""
@@ -462,7 +499,7 @@ def build_pluiz_graph(
                 base = _target_name(dcall)
                 return {"messages": _close_calls(
                     f"✗ '{base}'을(를) 찾을 수 없습니다. 삭제하지 않았습니다."
-                ), "decision": "not_found"}
+                ), "decision": "not_found", "deletion_cancelled": False}
 
         # 그래프를 멈추고 사용자에게 질문(오케스트레이터가 질문을 UI로 전달)
         question = _confirm_question(dcall)
@@ -476,7 +513,9 @@ def build_pluiz_graph(
             question = _reask_question(dcall)
 
         if verdict == "approve":
-            return {"decision": "approved"}
+            # ⚠️ 반드시 끈다. 예전엔 앞 턴에서 켜진 값이 살아남아, **실제로 삭제해 놓고**
+            #    "삭제는 취소했어요. …휴지통으로 옮겼어요" 라고 답했다(실기에서 확인).
+            return {"decision": "approved", "deletion_cancelled": False}
 
         # ── 승인 대기 중에 들어온 **다른 명령** ────────────────────
         # 삭제를 취소하고 그 명령을 처리한다. 재질문하면 사용자가 같은 말을
@@ -494,7 +533,7 @@ def build_pluiz_graph(
             "네, 삭제를 취소했어요." if verdict == "reject"
             else "답을 알아듣지 못해서 삭제는 취소했어요. 방금 하신 말씀을 다시 한 번 말씀해 주세요."
         )))
-        return {"messages": cancel, "decision": "rejected"}
+        return {"messages": cancel, "decision": "rejected", "deletion_cancelled": False}
 
     # ── 라우팅 ─────────────────────────────────────────────────────
     def route_after_guard(state: PluizState) -> str:

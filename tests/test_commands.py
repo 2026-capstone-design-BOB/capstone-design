@@ -95,6 +95,7 @@ def remove_if_exists(path: str):
 
 # ── 테스트 케이스 ──────────────────────────────────────────────────
 results = {"pass": 0, "fail": 0, "skip": 0, "manual": 0}
+NL = chr(10)   # f-string 안에서 개행을 쓰기 위한 상수
 
 
 # ── 의존성 가드 ───────────────────────────────────────────────────
@@ -196,6 +197,36 @@ run("A-05 메모장 닫기",
 run("A-06 바탕화면 보기",
     "바탕화면 보여줘",
     verify=None, manual=True)
+
+# ── A-07: 기존 창 재사용 (2026-09-02 실기 회귀) ───────────────────
+# 메모장이 이미 떠 있는데 "열어줘"라고 하면, open_app이 UWP 셸 명령
+# (`notepad.exe`)을 다시 실행해 **새 창을 만들면서** "앞으로 가져왔습니다"라고
+# 답했다. 사용자는 메모장이 계속 쌓이는 걸 봐야 했다.
+print(f"{NL}{BOLD}▶ 창 재사용 규칙 (A-07){RESET}")
+
+
+def _notepad_procs() -> int:
+    return sum(1 for p in psutil.process_iter(["name"])
+               if (p.info["name"] or "").lower() == "notepad.exe")
+
+
+try:
+    send("메모장 열어줘")
+    time.sleep(1.5)
+    before = _notepad_procs()
+    resp = send("메모장 열어줘")          # 두 번째 — 새 창이 생기면 안 된다
+    time.sleep(1.5)
+    after = _notepad_procs()
+    reused = after <= before
+    if reused:
+        ok(f"A-07 기존 창 재사용 (프로세스 {before} → {after})")
+    else:
+        fail(f"A-07 새 창이 생겼다 ({before} → {after}) [{resp[:60]}]")
+    results["pass" if reused else "fail"] += 1
+except Exception as e:
+    fail(f"A-07 오류: {e}"); results["fail"] += 1
+finally:
+    kill("notepad.exe")
 
 
 # ── 시스템 정보 ────────────────────────────────────────────────────

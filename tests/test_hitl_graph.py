@@ -25,16 +25,30 @@ def delete_file(file_path: str) -> str:
 
 
 class FakeLLM:
-    """첫 호출: delete_file 도구콜. ToolMessage 있으면 요약. 동기 invoke."""
+    """턴 단위로 판단하는 mock. **이번 턴**의 사용자 발화가 삭제 요청이면 도구콜,
+    이번 턴에 ToolMessage가 있으면 요약, 그 외엔 평범한 답.
+
+    ⚠️ 예전엔 "히스토리에 ToolMessage가 하나라도 있으면 요약"이었는데, 그러면
+    한 thread에서 **두 번째 삭제 요청부터 도구를 못 부른다.** 취소 플래그가
+    턴을 넘어 새는 회귀를 재현하려면 이 시나리오가 필요했다.
+    (같은 이유로 test_cache_wire에도 ScriptedLLM이 있다)
+    """
+    _n = 0
     def bind_tools(self, tools): return self
     def invoke(self, messages):
-        if any(isinstance(m, ToolMessage) for m in messages):
+        turn = G.current_turn_messages(messages)
+        if any(isinstance(m, ToolMessage) for m in turn):
             return AIMessage(content="삭제 완료했어요.")
-        return AIMessage(content="", tool_calls=[{
-            "name": "delete_file",
-            "args": {"file_path": "바탕화면/test.txt"},
-            "id": "call_1", "type": "tool_call",
-        }])
+        human = next((m for m in turn if isinstance(m, HumanMessage)), None)
+        text = str(getattr(human, "content", "")) if human else ""
+        if "삭제" in text or "지워" in text:
+            FakeLLM._n += 1
+            return AIMessage(content="", tool_calls=[{
+                "name": "delete_file",
+                "args": {"file_path": "바탕화면/test.txt"},
+                "id": f"call_{FakeLLM._n}", "type": "tool_call",
+            }])
+        return AIMessage(content="네, 처리했어요.")
 
 def fake_security(text): return (False, "")
 def fake_fast_resolve(text): return None
@@ -120,6 +134,34 @@ def run():
           any(type(m).__name__ == "HumanMessage" and "네이버" in G._msg_text(m)
               for m in msgs7))
     check("취소 사실을 응답에 알린다", "취소" in G.extract_response(r7))
+
+    # 🚨 실기 회귀 — 띄어쓰기 하나로 승인이 "다른 명령"이 돼 무한 루프를 돌았다.
+    #    "응 지워 줘" → 어절 [응][지워][줘] → "줘"가 긍정어 목록에 없어 승인 실패
+    #    → 명령형 어미로 보여 other_command → 삭제 취소 후 재실행 → 또 질문...
+    #    사용자는 네 번을 말하고 나서야 삭제됐다.
+    print("=== 승인의 띄어쓰기 변형 (실기 회귀) ===")
+    for ok_cmd in ["응 지워 줘", "그래 정말 삭제해 줘", "어 지워 버려",
+                   "오케이 그냥 지워줘", "응 지워 봐", "네 그냥 다 지워줘",
+                   "네 삭제해 주세요"]:
+        check(f"'{ok_cmd}' → approve",
+              G.classify_confirmation(ok_cmd) == "approve")
+    # 강조어만 있으면 승인이 아니다 ("정말?" 을 승인으로 읽으면 안 된다)
+    check("'정말' 한 마디 → approve 아님", G.classify_confirmation("정말") != "approve")
+    check("'그냥' 한 마디 → approve 아님", G.classify_confirmation("그냥") != "approve")
+
+    # 🚨 실기 회귀 — 앞 턴에서 켜진 취소 플래그가 살아남아, **실제로 삭제해 놓고**
+    #    "삭제는 취소했어요 … 휴지통으로 옮겼어요" 라고 답했다. 모순이자 위험하다.
+    print("=== 다른 명령으로 취소한 뒤, 다음 삭제는 정상 보고 ===")
+    executed.clear()
+    g8 = build()
+    cfg8 = {"configurable": {"thread_id": "flag_leak"}}
+    g8.invoke({"messages": [HumanMessage("바탕화면 test.txt 삭제해줘")]}, cfg8)
+    g8.invoke(Command(resume="네이버 열어줘"), cfg8)          # 취소 플래그 ON
+    g8.invoke({"messages": [HumanMessage("바탕화면 test.txt 삭제해줘")]}, cfg8)
+    r10 = g8.invoke(Command(resume="응 지워 줘"), cfg8)        # 이번엔 진짜 승인
+    resp10 = G.extract_response(r10)
+    check("승인했으면 실제로 실행된다", executed == ["바탕화면/test.txt"])
+    check("실행해 놓고 '취소했어요'라고 하지 않는다", "취소" not in resp10, )
 
     print("=== classify_confirmation — 다른 명령 vs 애매 ===")
     for cmd in ["네이버 열어줘", "음소거 해줘", "진행 상황 알려줘",

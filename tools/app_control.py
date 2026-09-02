@@ -313,14 +313,58 @@ _UWP_SHELL_COMMANDS: dict[str, str] = {
 }
 
 
+# 새 작업 공간을 **탭**으로 여는 앱. 여기 없는 앱은 새 창으로 연다.
+# (Ctrl+T가 표준 단축키다 — Win11 메모장·탐색기도 지원한다)
+_TAB_APPS = {"chrome", "edge", "whale", "firefox", "notepad", "terminal", "explorer"}
+
+
+def _open_new_view(app_key: str, name: str) -> str:
+    """사용자가 **새로** 열어달라고 했을 때. 탭 지원 앱이면 탭, 아니면 새 창.
+
+    ⚠️ 반드시 창을 **포커스한 뒤에** 단축키를 보낸다. 포커스에 실패했는데 키를
+    보내면 사용자가 보고 있던 **다른 창**에 Ctrl+T가 들어간다 (BL-12와 같은 함정).
+    그래서 포커스 성공을 확인하지 못하면 단축키를 아예 보내지 않는다.
+    """
+    if app_key in _TAB_APPS and _focus_window(app_key):
+        try:
+            import pyautogui
+            time.sleep(0.3)
+            pyautogui.hotkey("ctrl", "t")
+            return f"✓ {name}에 새 탭을 열었습니다."
+        except Exception as e:
+            print(f"[open_app] 새 탭 단축키 실패 → 새 창으로 폴백: {e}")
+
+    # 탭을 못 쓰거나 실패 → 새 인스턴스
+    if app_key in _UWP_SHELL_COMMANDS:
+        try:
+            subprocess.Popen(_UWP_SHELL_COMMANDS[app_key], shell=True)
+            time.sleep(0.5)
+            return f"✓ {name}을(를) 새 창으로 열었습니다."
+        except Exception as e:
+            return f"✗ {name} 새 창 열기 실패: {e}"
+
+    path = _resolve_path(app_key)
+    if not path:
+        return f"✗ '{name}' 앱을 찾을 수 없어 새로 열지 못했습니다."
+    try:
+        subprocess.Popen([path])
+        time.sleep(0.8)
+        return f"✓ {name}을(를) 새 창으로 열었습니다."
+    except Exception as e:
+        return f"✗ {name} 새 창 열기 실패: {e}"
+
+
 # ── 도구 정의 ─────────────────────────────────────────────────────
 
 @tool
-def open_app(app: str) -> str:
+def open_app(app: str, new: bool = False) -> str:
     """
-    Windows 앱을 실행하거나 이미 실행 중이면 창을 활성화합니다.
+    Windows 앱을 엽니다. **이미 실행 중이면 새 창을 만들지 않고 그 창을 앞으로 가져옵니다.**
     app: 앱 이름 (예: chrome, notepad, calculator, kakaotalk, edge, explorer, word, excel, powerpoint, vscode, terminal, 설정)
     한국어도 가능 (크롬, 메모장, 계산기, 카카오톡, 설정 등)
+    new: 사용자가 **"새로 열어줘" · "하나 더" · "새 탭"** 처럼 새 작업 공간을 원할 때만 True.
+         탭을 지원하는 앱(크롬·엣지·메모장·터미널·탐색기)은 **새 탭**을,
+         나머지는 새 창을 엽니다. 그냥 "열어줘"면 False로 두세요.
     """
     app_key = _normalize(app)
     name = _display_name(app_key, app)
@@ -328,6 +372,9 @@ def open_app(app: str) -> str:
 
     # ── explorer 전용: 셸 프로세스로 항상 떠 있어서 _is_running이 항상 True
     # _is_running 체크 전에 별도 처리 → 항상 새 탐색기 창 열기
+    # ⚠️ "기존 창 재사용" 규칙의 **유일한 예외**다. explorer.exe에는 바탕화면·작업표시줄
+    #    창도 딸려 있어서 _focus_window가 그쪽을 잡을 수 있다. 탐색기는 여러 창을 띄워
+    #    쓰는 게 보통이라 새 창이 사용자 기대에도 맞다.
     if app_key == "explorer":
         try:
             subprocess.Popen("explorer.exe", shell=True)
@@ -336,10 +383,19 @@ def open_app(app: str) -> str:
         except Exception as e:
             return f"✗ {name} 실행 실패: {e}"
 
-    # ── 이미 실행 중이면 창 활성화 (새 창 열지 않음) ──────────────
+    # ── 이미 실행 중 ─────────────────────────────────────────────
     if _is_running(app_key):
-        # A(정직 보고): UWP·셸 앱은 focus API 신뢰도가 낮음(설정 등 실제로 안 떴는데
-        # 성공 반환하던 문제) → 셸 명령으로 확실히 전면화.
+        if new:
+            return _open_new_view(app_key, name)
+
+        # ⚠️ **포커스를 먼저 시도한다.** 예전엔 UWP 목록에 있으면 셸 명령을 먼저
+        #    실행했는데, `notepad.exe`를 다시 띄우는 건 전면화가 아니라
+        #    **새 창을 만드는 것**이다. 그래놓고 "창을 앞으로 가져왔습니다"라고
+        #    답해서, 사용자는 계속 새 메모장이 쌓이는 걸 봐야 했다(2026-09-02 실기).
+        #    셸 명령은 포커스가 **실패했을 때만** 폴백으로 쓴다
+        #    (설정 앱처럼 창 핸들을 못 잡는 경우가 있다 — 그때는 원래 동작 그대로).
+        if _focus_window(app_key):
+            return f"✓ {name} 창을 앞으로 가져왔습니다."
         if app_key in _UWP_SHELL_COMMANDS:
             try:
                 subprocess.Popen(_UWP_SHELL_COMMANDS[app_key], shell=True)
@@ -347,8 +403,6 @@ def open_app(app: str) -> str:
                 return f"✓ {name} 창을 앞으로 가져왔습니다."
             except Exception:
                 pass
-        if _focus_window(app_key):
-            return f"✓ {name} 창을 앞으로 가져왔습니다."
         # 프로세스는 살아있지만 visible 창이 없음 (트레이 앱 등)
         # → exe 재실행하면 트레이 앱은 메인 창을 올려줌
         path = _resolve_path(app_key)
