@@ -162,7 +162,7 @@ def build_system_prompt() -> str:
     date_str = f"{now.year}년 {now.month}월 {now.day}일 ({weekdays[now.weekday()]})"
     time_str = f"{now.hour:02d}:{now.minute:02d}"
     return (
-        "당신은 소윤이입니다. 한국어 음성 명령으로 Windows PC를 제어하는 AI 에이전트예요.\n"
+        "당신은 Pluiz(플루이즈)입니다. 한국어 음성 명령으로 Windows PC를 제어하는 AI 에이전트예요.\n"
         f"현재 날짜/시간: {date_str} {time_str}\n"
         "응답은 1~2문장으로 짧고 친근한 구어체로. 도구 실행 결과는 핵심만 요약.\n"
         "PC 제어 명령은 반드시 도구를 호출해서 실행하고, 도구 없이 '실행했어요'라고만 답하지 마세요.\n"
