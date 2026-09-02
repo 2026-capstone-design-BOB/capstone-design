@@ -1259,9 +1259,12 @@
     // (/voice의 FormData도 헤더만 추가하므로 Content-Type 경계가 깨지지 않는다)
     let AUTH_TOKEN = '';
     const _fetch = window.fetch.bind(window);
-    window.fetch = (url, opts = {}) => {
+    window.fetch = async (url, opts = {}) => {
       if (typeof url === 'string' && url.startsWith(API)) {
-        opts = { ...opts, headers: { ...(opts.headers || {}), 'X-Pluiz-Token': AUTH_TOKEN } };
+        // 매번 ensureToken()을 거친다. 이미 받아 뒀으면 즉시 반환하고, 서버가
+        // 재시작돼 토큰이 바뀌었으면 파일에서 새로 읽는다.
+        const t = await ensureToken();
+        opts = { ...opts, headers: { ...(opts.headers || {}), 'X-Pluiz-Token': t } };
       }
       return _fetch(url, opts);
     };
@@ -1503,7 +1506,14 @@
           checkApiConfig();
         }
       };
-      ws.onclose = () => { setDots(false); setTimeout(connect, 3000); };
+      ws.onclose = () => {
+        setDots(false);
+        // 토큰을 버리고 다시 읽는다. 서버를 재시작하면 토큰이 바뀌는데(BL-14),
+        // 메모리에 든 옛 토큰을 계속 쓰면 재연결이 영영 401/1008로 거절된다.
+        AUTH_TOKEN = '';
+        _tokenPromise = null;
+        setTimeout(connect, 3000);
+      };
       ws.onerror = () => setDots(false);
 
       ws.onmessage = e => {
