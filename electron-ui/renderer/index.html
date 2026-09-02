@@ -1248,6 +1248,39 @@
   </div>
   <script>
     const API = 'http://127.0.0.1:8765';
+
+    // ── 로컬 API 접근 토큰 (BL-14) ────────────────────────────────
+    // 서버가 기동할 때 발급해 cache/.auth_token 에 적은 값을 main.js가 읽어 준다.
+    // 이게 없으면 서버가 401을 돌려준다 — 아무 웹페이지가 PC 제어 명령을 넣지
+    // 못하게 하는 장치다. (docs/BACKLOG.md BL-14)
+    //
+    // 호출부를 하나하나 고치는 대신 fetch를 한 번 감싼다. API로 가는 요청에만
+    // 헤더를 붙이므로 기존 fetch 호출 6곳은 그대로 둔다.
+    // (/voice의 FormData도 헤더만 추가하므로 Content-Type 경계가 깨지지 않는다)
+    let AUTH_TOKEN = '';
+    const _fetch = window.fetch.bind(window);
+    window.fetch = (url, opts = {}) => {
+      if (typeof url === 'string' && url.startsWith(API)) {
+        opts = { ...opts, headers: { ...(opts.headers || {}), 'X-Pluiz-Token': AUTH_TOKEN } };
+      }
+      return _fetch(url, opts);
+    };
+
+    // 재연결 루프가 3초마다 부르므로 요청이 겹치지 않게 진행 중인 것을 재사용한다.
+    let _tokenPromise = null;
+    async function ensureToken() {
+      if (AUTH_TOKEN) return AUTH_TOKEN;
+      if (!_tokenPromise) {
+        _tokenPromise = window.pluiz.getToken().catch(e => {
+          console.error('[auth] 토큰 수령 실패', e);
+          return '';
+        });
+      }
+      AUTH_TOKEN = (await _tokenPromise) || '';
+      if (!AUTH_TOKEN) _tokenPromise = null;   // 서버가 아직 없다 → 다음에 다시 시도
+      return AUTH_TOKEN;
+    }
+
     let ws = null;
     let threadId = 'pluiz_' + Date.now();
     let busy = false;
@@ -1457,8 +1490,11 @@
     }
 
     // ── WebSocket ──────────────────────────────────────────────────
-    function connect() {
-      ws = new WebSocket('ws://127.0.0.1:8765/ws');
+    async function connect() {
+      // 토큰을 먼저 확보한다. 브라우저 WS는 헤더를 못 붙이므로 쿼리로 보낸다 (BL-14).
+      // 서버가 아직 안 떴으면 토큰이 비어 오는데, 그땐 아래 onclose가 3초 뒤 다시 시도한다.
+      await ensureToken();
+      ws = new WebSocket('ws://127.0.0.1:8765/ws?token=' + encodeURIComponent(AUTH_TOKEN));
 
       ws.onopen = () => {
         setDots(true);

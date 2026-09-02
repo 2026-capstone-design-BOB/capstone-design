@@ -49,6 +49,23 @@ TB       = "reg_" + str(int(time.time()))   # thread base
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DESKTOP  = os.path.join(os.path.expanduser("~"), "Desktop")
 
+# ── BL-14: 로컬 API 접근 제어 ─────────────────────────────────────
+# 인증이 생겨서 토큰 없는 요청은 전부 401이다. 서버가 기동하며
+# cache/.auth_token 에 적어 둔 값을 읽어 세션 기본 헤더로 붙인다.
+# ⚠️ 서버를 재시작하면 토큰이 바뀐다 — 테스트도 그때 다시 실행해야 한다.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.auth import HEADER_NAME, QUERY_NAME, read_token
+
+AUTH_TOKEN = read_token()
+S = requests.Session()
+if AUTH_TOKEN:
+    S.headers[HEADER_NAME] = AUTH_TOKEN
+
+# WebSocket은 헤더를 못 실으므로 토큰을 쿼리로 보낸다 (main.py의 /ws가 그렇게 받는다)
+WS_URL = f"ws://127.0.0.1:8765/ws?{QUERY_NAME}={AUTH_TOKEN}"
+
+NL = chr(10)   # f-string 안에서 개행을 쓰기 위한 상수
+
 # ── 색상 ──────────────────────────────────────────────────────────
 GREEN  = "\033[92m"
 RED    = "\033[91m"
@@ -75,7 +92,7 @@ def send(text: str, thread_id: str = None) -> str:
     _ctr[0] += 1
     tid = thread_id or f"{TB}_{_ctr[0]}"
     try:
-        r = requests.post(
+        r = S.post(
             f"{API}/chat",
             json={"text": text, "thread_id": tid},
             timeout=30,
@@ -106,7 +123,7 @@ print("  Pluiz 회귀 보완 테스트")
 print(f"{'='*55}{RESET}")
 
 try:
-    r = requests.get(f"{API}/health", timeout=5)
+    r = S.get(f"{API}/health", timeout=5)
     print(f"\n{GREEN}서버 연결 확인{RESET}: {r.json()}")
 except Exception as e:
     print(f"\n{RED}서버 연결 실패: {e}{RESET}")
@@ -303,7 +320,8 @@ try:
     ws_tid   = f"{TB}_r01"
 
     async def _ws_exchange():
-        async with websockets.connect("ws://127.0.0.1:8765/ws") as ws:
+        # BL-14: 브라우저 WS는 헤더를 못 붙이므로 서버가 토큰을 쿼리로 받는다
+        async with websockets.connect(WS_URL) as ws:
             await ws.send(json.dumps({
                 "text": test_msg,
                 "thread_id": ws_tid,
@@ -412,14 +430,14 @@ try:
         results["pass"] += 1   # 환경 조건 미충족 → skip
     else:
         info(f"사용할 새 표현: {novel!r} (캐시 미스 확인됨)")
-        before = requests.get(f"{API}/cache", timeout=10).json()
+        before = S.get(f"{API}/cache", timeout=10).json()
         n_before = before["stats"]["dynamic"]
 
         send(novel, thread_id=f"{TB}_learn")
         time.sleep(1.0)
         kill_proc("notepad.exe")
 
-        after = requests.get(f"{API}/cache", timeout=10).json()
+        after = S.get(f"{API}/cache", timeout=10).json()
         n_after = after["stats"]["dynamic"]
         patterns = [e["pattern"] for e in after["dynamic"]]
 
@@ -457,6 +475,64 @@ time.sleep(1.5)
 calc_running = is_running("calculatorapp.exe") or is_running("calculator.exe")
 check("C-01 계산기가 열리지 않음 (부정어 인식)", not calc_running, r[:80])
 kill_proc("notepad.exe")
+
+
+# ==================================================================
+print(f"{NL}{BOLD}▶ AUTH-01~AUTH-04 — 로컬 API 접근 제어 (BL-14){RESET}")
+# ==================================================================
+# 수정 전엔 사용자가 열어 둔 **아무 웹페이지**가 fetch 한 줄로 PC 제어 명령을
+# 넣을 수 있었다. 토큰 없는 요청이 실제로 401을 받는지 여기서 실측한다.
+# ⚠️ 이 절만은 세션(S)이 아니라 requests를 직접 쓴다 — 토큰을 빼야 하기 때문이다.
+
+print(f"{NL}{CYAN}{BOLD}[AUTH-01]{RESET} 토큰 없는 /chat → 401 (웹페이지 공격 재현)")
+try:
+    r = requests.post(f"{API}/chat",
+                      json={"text": "메모장 열어줘", "thread_id": f"{TB}_auth1"},
+                      timeout=10)
+    check("AUTH-01 토큰 없는 /chat 차단", r.status_code == 401, f"status={r.status_code}")
+except Exception as e:
+    fail(f"AUTH-01 오류: {e}"); results["fail"] += 1
+
+print(f"{NL}{CYAN}{BOLD}[AUTH-02]{RESET} 틀린 토큰 → 401")
+try:
+    r = requests.post(f"{API}/chat",
+                      json={"text": "메모장 열어줘", "thread_id": f"{TB}_auth2"},
+                      headers={HEADER_NAME: "wrong-token"}, timeout=10)
+    check("AUTH-02 틀린 토큰 차단", r.status_code == 401, f"status={r.status_code}")
+except Exception as e:
+    fail(f"AUTH-02 오류: {e}"); results["fail"] += 1
+
+print(f"{NL}{CYAN}{BOLD}[AUTH-03]{RESET} 올바른 토큰 → 200 (UI 경로는 막히지 않는다)")
+try:
+    r = S.get(f"{API}/cache", timeout=10)
+    check("AUTH-03 올바른 토큰 통과", r.status_code == 200, f"status={r.status_code}")
+    check("AUTH-03 /health 는 토큰 없이도 통과 (면제 경로)",
+          requests.get(f"{API}/health", timeout=5).status_code == 200)
+except Exception as e:
+    fail(f"AUTH-03 오류: {e}"); results["fail"] += 1
+
+print(f"{NL}{CYAN}{BOLD}[AUTH-04]{RESET} 토큰 없는 WS → 거절 (CORS가 적용되지 않는 경로)")
+try:
+    import websockets
+
+    async def _ws_no_token():
+        """연결이 되더라도 첫 수신에서 끊겨야 한다(서버가 close 1008)."""
+        async with websockets.connect("ws://127.0.0.1:8765/ws") as ws:
+            await ws.send(json.dumps({"text": "메모장 열어줘",
+                                      "thread_id": f"{TB}_auth4", "use_tts": False}))
+            await asyncio.wait_for(ws.recv(), timeout=5)
+        return False   # 여기까지 왔으면 막히지 않은 것이다
+
+    try:
+        rejected = asyncio.run(_ws_no_token())
+    except Exception:
+        rejected = True   # 핸드쉐이크 거절 · 연결 종료 = 정상
+    check("AUTH-04 토큰 없는 WS 거절", rejected)
+except ImportError:
+    info("AUTH-04 skip — websockets 미설치")
+    results["pass"] += 1
+except Exception as e:
+    fail(f"AUTH-04 오류: {e}"); results["fail"] += 1
 
 
 # ── 결과 요약 ──────────────────────────────────────────────────────

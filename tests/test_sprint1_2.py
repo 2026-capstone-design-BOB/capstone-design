@@ -328,8 +328,22 @@ else:
 
     import requests
 
+    # ── BL-14: 로컬 API 접근 제어 ─────────────────────────────────
+    # 인증이 생겨서 토큰 없는 요청은 전부 401이다. 서버가 기동하며
+    # cache/.auth_token 에 적어 둔 값을 읽어 세션 기본 헤더로 붙인다.
+    # ⚠️ 서버를 재시작하면 토큰이 바뀐다 — 테스트도 그때 다시 실행해야 한다.
+    from core.auth import HEADER_NAME, read_token
+
+    S = requests.Session()
+    _token = read_token()
+    if _token:
+        S.headers[HEADER_NAME] = _token
+    else:
+        print(f"{YELLOW}[경고] cache/.auth_token 을 찾지 못했습니다 — "
+              f"서버가 실행 중이 아니면 전부 401이 납니다.{RESET}")
+
     try:
-        r = requests.get(f"{API}/health", timeout=5)
+        r = S.get(f"{API}/health", timeout=5)
         info(f"서버 응답: {r.json()}")
     except Exception as e:
         print(f"\n{RED}서버 연결 실패: {e}")
@@ -338,7 +352,7 @@ else:
 
     def api(method, path, **kwargs):
         try:
-            fn = getattr(requests, method)
+            fn = getattr(S, method)   # BL-14: 세션이 토큰 헤더를 들고 있다
             return fn(f"{API}{path}", timeout=15, **kwargs)
         except Exception as e:
             return None

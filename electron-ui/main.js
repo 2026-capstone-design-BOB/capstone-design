@@ -88,6 +88,38 @@ function resolvePython() {
   return null;
 }
 
+// 로컬 API 접근 토큰 읽기 (BL-14)
+// ─────────────────────────────────────────────────────────────────
+// 서버(python main.py)가 기동할 때 cache/.auth_token 에 토큰을 적는다.
+// 웹페이지는 로컬 파일을 못 읽으므로, 이 파일을 읽을 수 있다는 것 자체가 신원 증명이다.
+//
+// ⚠️ 서버는 Electron이 띄우는 게 아니다 — launch.bat 이 둘을 따로 띄운다.
+// 그래서 env로 토큰을 건네받을 수 없고, UI가 서버보다 먼저 뜰 수도 있다.
+// 파일이 생길 때까지 기다린다.
+const TOKEN_FILE = path.join(__dirname, '..', 'cache', '.auth_token');
+
+function readTokenOnce() {
+  try {
+    return fs.readFileSync(TOKEN_FILE, 'utf8').trim();
+  } catch (e) {
+    return '';
+  }
+}
+
+async function waitForToken(timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const t = readTokenOnce();
+    if (t) return t;
+    if (Date.now() >= deadline) {
+      console.error('[auth] 토큰 파일을 찾지 못했습니다:', TOKEN_FILE);
+      console.error('[auth] 서버(python main.py)가 실행 중인지 확인하세요.');
+      return '';
+    }
+    await new Promise(r => setTimeout(r, 300));
+  }
+}
+
 function startWakeword() {
   const script = path.join(__dirname, '..', 'services', 'wakeword.py');
   if (!fs.existsSync(script)) {
@@ -194,6 +226,10 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', () => { mainWindow?.show(); mainWindow?.focus(); });
 }
+
+// 렌더러가 API를 부르기 전에 이걸로 토큰을 받아 간다 (BL-14).
+// 서버가 늦게 뜨면 여기서 기다리므로, 렌더러는 그냥 await 하면 된다.
+ipcMain.handle('get-token', () => waitForToken());
 
 ipcMain.on('resize-idle',   () => resizeTo('idle'));
 ipcMain.on('resize-active', () => resizeTo('active'));

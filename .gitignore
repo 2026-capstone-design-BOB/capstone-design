@@ -57,3 +57,7 @@ models/
 *.mp3
 *.wav
 *.webm
+
+# 로컬 API 접근 토큰 (BL-14) — 서버가 기동할 때마다 새로 발급한다.
+# cache/ 는 command_cache.json 을 추적하므로 폴더 통째로 무시할 수 없다.
+cache/.auth_token

@@ -22,6 +22,18 @@ THREAD = "test_" + str(int(time.time()))
 DESKTOP = os.path.join(os.path.expanduser("~"), "Desktop")
 DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads")
 
+# ── BL-14: 로컬 API 접근 제어 ─────────────────────────────────────
+# 인증이 생겨서 토큰 없는 요청은 전부 401이다. 서버가 기동하며
+# cache/.auth_token 에 적어 둔 값을 읽어 세션 기본 헤더로 붙인다.
+# ⚠️ 서버를 재시작하면 토큰이 바뀐다 — 테스트도 그때 다시 실행해야 한다.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.auth import HEADER_NAME, read_token
+
+AUTH_TOKEN = read_token()
+S = requests.Session()
+if AUTH_TOKEN:
+    S.headers[HEADER_NAME] = AUTH_TOKEN
+
 # ── 색상 출력 ──────────────────────────────────────────────────────
 GREEN  = "\033[92m"
 RED    = "\033[91m"
@@ -43,7 +55,7 @@ def send(text: str) -> str:
     _test_counter += 1
     tid = f"{THREAD}_{_test_counter}"   # 테스트마다 새 thread → 상태 오염 방지
     try:
-        res = requests.post(
+        res = S.post(
             f"{API}/chat",
             json={"text": text, "thread_id": tid},
             timeout=30,
@@ -146,7 +158,7 @@ print(f"{'='*55}{RESET}")
 
 # 서버 헬스체크
 try:
-    r = requests.get(f"{API}/health", timeout=5)
+    r = S.get(f"{API}/health", timeout=5)
     print(f"\n{GREEN}서버 연결 확인{RESET}: {r.json()}")
 except Exception as e:
     print(f"\n{RED}서버 연결 실패: {e}{RESET}")

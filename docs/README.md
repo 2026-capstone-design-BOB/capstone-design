@@ -11,8 +11,9 @@
 
 2026.06.15 데모 완료. 이후 강의 개념(LangGraph·HITL·OWASP 가드레일)을 구조에 적용하는
 **Milestone 1**을 진행했고, **2026-09-02 라이브 실측(FAIL 0)으로 M1 완료를 확인**했다.
-같은 날 코드 리뷰로 **HITL 오승인·"턴 경계" 결함을 수정**했다(mock 검증 완료,
-**실기 확인은 남음** → [TASKS.md](TASKS.md) ①).
+같은 날 코드 리뷰로 **HITL 오승인·"턴 경계" 결함을 수정**했고(mock 검증 완료,
+**실기 확인은 남음** → [TASKS.md](TASKS.md) ①), 이어서 **BL-14(로컬 API 무인증)를
+막아 보안이 4층 → 5층**이 됐다 → [ARCHITECTURE § 보안](ARCHITECTURE.md#보안--5층-방어).
 다음은 로드맵상 **9월 Phase 2 — 화면 이해(Vision)** 다. → [ROADMAP.md](ROADMAP.md)
 
 | 항목 | 상태 |
@@ -20,11 +21,12 @@
 | **엔진** | `PluizGraphAgent` **단일**. 구 엔진은 M1-P5에서 제거 → [design/M1_P5_엔진단일화.md](design/M1_P5_엔진단일화.md) |
 | **M1 진행** | P0 진단 → P1 맥락 → P1.5 그래프 이관 → P2 HITL → P3 OWASP → P4 캐시학습 → **P5 엔진단일화 · 전부 완료** |
 | **도구** | **34개** (삭제 2개는 HITL 승인 필수 · `describe_screen`은 화면을 외부 LLM에 전송) |
-| **테스트** | mock **19파일 301개** + 라이브 3스위트. CI는 그중 18파일 269개 자동 실행 (`test_dependencies` 32개는 로컬 전용) — **이 숫자의 출처는 이 표 하나다** |
-| **라이브 실측** | 2026-09-02 · 3스위트 전부 **FAIL 0** — `regression` 30/30 · `commands` 39P/15MANUAL · `sprint1_2` 55/55 → [DEVLOG](DEVLOG.md).<br>⚠️ **그 뒤의 리뷰 수정(HITL·턴 경계)은 아직 라이브 미검증** → [TASKS.md](TASKS.md) ① |
+| **보안** | **5층 방어** — 0 로컬 API 접근 제어(토큰) · 1 규칙 · 2 하이브리드 LLM 판정 · 3 HITL · 4 출력 마스킹 → [ARCHITECTURE](ARCHITECTURE.md#보안--5층-방어) |
+| **테스트** | mock **20파일 343개** + 라이브 3스위트. CI는 그중 19파일 311개 자동 실행 (`test_dependencies` 32개는 로컬 전용) — **이 숫자의 출처는 이 표 하나다** |
+| **라이브 실측** | 2026-09-02 · 3스위트 전부 **FAIL 0** — `regression` 30/30 · `commands` 39P/15MANUAL · `sprint1_2` 55/55 → [DEVLOG](DEVLOG.md).<br>BL-14 수정 후 `sprint1_2` **55/55 재실측**(인증 켠 상태) + 접근제어 16항목 실측.<br>⚠️ **리뷰 수정(HITL·턴 경계)과 `regression`/`commands`는 아직 라이브 미검증** → [TASKS.md](TASKS.md) ① |
 | **CI** | GitHub Actions 3잡 — mock · 문서링크 · 비밀정보 가드 |
 | **브랜치** | `main` = `develop` = 최신. 작업은 `feature/byeonsoyun` |
-| **[즉시/위험]** | **1건** — BL-14 로컬 서버 CORS·무인증 → [BACKLOG](BACKLOG.md) |
+| **[즉시/위험]** | **0건** (BL-14 해결) → [BACKLOG](BACKLOG.md) |
 
 ### 바로 시작하려면
 
@@ -51,7 +53,7 @@
 | **버그 수정** | [BACKLOG.md](BACKLOG.md)에서 항목 확인 → [WORKFLOW.md § 작업 루프](WORKFLOW.md#작업-루프) |
 | **새 파일을 어디 둘지 모를 때** | [STRUCTURE.md § 배치 결정 트리](STRUCTURE.md#새-파일-배치-결정-트리) |
 | **에이전트 동작(그래프) 수정** | [ARCHITECTURE.md § 그래프](ARCHITECTURE.md#그래프-파이프라인) → [design/M1_아키텍처_설계.md](design/M1_아키텍처_설계.md) |
-| **보안·가드레일 수정** | [ARCHITECTURE.md § 보안](ARCHITECTURE.md#보안--4층-방어) |
+| **보안·가드레일 수정** | [ARCHITECTURE.md § 보안](ARCHITECTURE.md#보안--5층-방어) |
 | **캐시 매칭·학습 수정** | [ARCHITECTURE.md § 캐시](ARCHITECTURE.md#커맨드-캐시) → [design/M1_P4_캐시정책.md](design/M1_P4_캐시정책.md) |
 | **구조를 바꾸는 큰 결정** | [design/](design/)에 ADR 먼저 작성 → [WORKFLOW.md § 설계 결정](WORKFLOW.md#설계-결정-adr) |
 | **테스트 작성·실행** | [WORKFLOW.md § 테스트](WORKFLOW.md#테스트) · 수동 항목은 [testing/](testing/) |

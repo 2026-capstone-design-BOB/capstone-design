@@ -29,6 +29,8 @@ LLM provider는 `gemini` / `claude` / `openai` 전환 가능 ([`config/settings.
 ```
 사용자 입력 (/chat · /voice · /ws)
   │
+  ├─ main.py: auth_guard / ws 토큰 검사      ← 0층. 토큰 없으면 여기서 401 (BL-14)
+  │
   ├─ main.py: check_security()              ← 1차 코드 필터
   │
   └─ core/graph_agent.py: get_graph_agent()  ← 단일 엔진
@@ -236,16 +238,20 @@ tiny는 환각으로 수백 토큰을 뱉느라 시간을 다 쓴다. base는 �
 
 ---
 
-## 보안 — 4층 방어
+## 보안 — 5층 방어
 
 강의 Day5(OWASP LLM Top 10) 개념을 하이브리드 다층 가드레일로 구현.
 
 | 층 | 위치 | 내용 | OWASP |
 |---|---|---|---|
+| 0. 로컬 API 접근 제어 | [`core/auth.py`](../core/auth.py) + `main.py` 미들웨어 | 기동 시 토큰 발급 → 헤더/쿼리 검사. **가드레일에 도달하기 전에** 정체불명 호출자를 끊는다 | LLM06/08 |
 | 1. 규칙 | [`core/security.py`](../core/security.py) | 위험경로 7 · 위험명령 22 · 경로순회 · 인젝션 8 · 민감정보 4. 오프라인·저지연 하드게이트 | LLM01/02 |
 | 2. 하이브리드 LLM 판정 | [`core/guardrails.py`](../core/guardrails.py) | 규칙 통과 + `is_suspicious` 신호일 때만 LLM에 ATTACK/SAFE 질의 | LLM01/02 |
 | 3. HITL | `core/graph.py` hitl 노드 | 삭제 전 `interrupt()` 승인. **애매한 답변은 취소로 처리**(안전 기본값) | LLM06 |
 | 4. 출력 마스킹 | `mask_sensitive_output()` | 주민번호·카드번호·Google/OpenAI API 키 | LLM02/05 |
+
+1~4층은 **입력의 내용**을 검사하고, 0층은 **호출자가 누구인지**를 검사한다.
+번호를 0으로 매긴 건 나중에 붙였기 때문이 아니라 **가장 먼저 통과해야 하는 층**이라서다.
 
 **설계 의도**: 규칙은 빠르고 오프라인에서 돌지만 교묘한 우회를 놓친다. LLM 판정은
 우회를 잡지만 느리고 온라인이 필요하다. 그래서 **의심 신호가 있을 때만** LLM으로
@@ -254,6 +260,53 @@ LLM 호출 실패 시 조용히 skip 하고 규칙 결과만 쓴다(fail-safe to
 
 **정직한 한계**: 무한 패러프레이즈를 100% 차단할 수는 없다. 목표는 "완벽 차단"이 아니라
 겹층으로 "탈옥·유출을 실질적으로 어렵게" 만드는 것이다. 오프라인에서는 1·3·4층만 동작한다.
+(0층은 오프라인에서도 동작한다 — 네트워크가 아니라 로컬 파일에 기대기 때문이다.)
+
+### 0층 — 로컬 API 접근 제어 (BL-14)
+
+**막은 것**: 이 서버는 PC를 조작하는데 인증이 없었다. 사용자가 열어 둔 **아무 웹페이지**가
+`fetch('http://127.0.0.1:8765/chat', …)` 한 줄로 명령을 넣을 수 있었다.
+삭제는 3층(HITL)이 막지만 `open_app`·`type_text`·`open_url`·**`describe_screen`(화면을
+외부 LLM으로 전송)** 은 전부 통과했다. 즉 **가장 큰 구멍이 가드레일 바깥**에 있었다.
+
+**구조** — 세 겹이지만 실질적 방어는 ③ 하나다.
+
+| | 무엇 | 무엇을 막나 |
+|---|---|---|
+| ① | `TrustedHostMiddleware` (Host 고정) | DNS 리바인딩 — 공격 도메인이 `127.0.0.1`로 해석되면 페이지가 서버와 **동일 출처**가 되어 CORS가 통째로 무력화된다 |
+| ② | CORS `allow_origins=["null"]` | 일반 웹페이지가 **응답을 읽는 것** |
+| ③ | **토큰** — `auth_guard` 미들웨어 + `/ws` 검사 | **명령이 실행되는 것** |
+
+```
+python main.py 기동 → secrets.token_urlsafe(32) → cache/.auth_token 기록
+   ├ Electron main.js  : 파일 폴링(최대 30초) → IPC로 렌더러에 전달 → fetch 헤더 · WS 쿼리
+   └ 라이브 테스트      : core.auth.read_token() 으로 같은 파일을 읽는다
+```
+
+- 헤더 `X-Pluiz-Token`, WS·대시보드는 쿼리 `?token=` (브라우저 WS는 헤더를 못 붙인다)
+- 면제는 `/health` 하나. 실패는 HTTP `401` / WS `close(1008)`
+- 비교는 `secrets.compare_digest`, 토큰이 없으면 **전부 거부**(fail-closed)
+- 킬 스위치: `.env` `AUTH_ENABLED=false` (디버깅용. 켜 두면 위 구멍이 그대로 돌아온다)
+
+**설계 근거 세 가지** — 되돌리기 전에 읽을 것.
+
+1. **CORS 축소만으로는 못 막는다.** 렌더러는 `loadFile`이라 출처가 `file://` →
+   브라우저가 `Origin: null`을 보낸다. 그 값을 허용해야 UI 자신이 도는데,
+   `null`은 아무 사이트의 sandboxed iframe도 받는 값이다. 게다가 **CORS는 응답 읽기만
+   막고 요청 처리는 막지 않는다** — 명령은 그대로 실행된다.
+2. **`/ws`에는 CORS가 아예 적용되지 않는다.** 웹페이지가
+   `new WebSocket('ws://127.0.0.1:8765/ws')`로 그냥 붙을 수 있어 fetch보다 큰 구멍이었다.
+   그래서 WS는 엔드포인트 안에서 직접 검사한다(HTTP 미들웨어는 WS를 타지 않는다).
+3. **CORS 프리플라이트(OPTIONS)는 인증을 면제한다.** `X-Pluiz-Token`은 safelisted 헤더가
+   아니라 렌더러의 모든 요청이 프리플라이트를 거치는데 거기엔 토큰이 실리지 않는다.
+   여기서 401을 주면 **UI 자신이 전부 막힌다.**
+
+**정직한 한계** — 이 층이 막는 것은 딱 **웹페이지**다.
+
+- **로컬에서 실행 중인 다른 프로그램**은 `cache/.auth_token`을 읽을 수 있다. 그 수준의
+  공격자는 이미 PC에서 코드를 실행하고 있으므로 이 앱을 거칠 이유가 없다 — 위협모델 밖이다.
+- 토큰은 평문 파일이고 Windows 파일 권한을 따로 조이지 않는다. 위와 같은 이유다.
+- 서버를 재시작하면 토큰이 바뀐다. **라이브 테스트도 그때 다시 실행해야 한다.**
 
 ---
 
@@ -290,19 +343,22 @@ LLM API 없이 자주 쓰는 명령을 즉시 실행한다. 저지연 + 오프�
 
 [`main.py`](../main.py)
 
-| 메서드 | 경로 | 설명 |
-|---|---|---|
-| GET | `/health` | 서버 상태 |
-| POST | `/chat` | 텍스트 명령 (비스트리밍) |
-| POST | `/voice` | 음성 파일 → STT + 에이전트 + TTS |
-| WS | `/ws` | 텍스트 스트리밍 (※ 현재 단일 청크 — BACKLOG BL-04) |
-| GET/POST | `/api/config` | LLM 설정 조회 / API 키 변경 + 에이전트 재초기화 |
-| GET/DELETE | `/history` | 대화 히스토리 |
-| GET/POST/DELETE | `/favorites` | 즐겨찾기 |
-| GET | `/cache` | 캐시 통계 + 동적/시드 목록 (JSON) |
-| GET | `/cache/ui` | 개발용 캐시 대시보드 (HTML) |
-| DELETE | `/cache` | 동적 학습 전체 초기화 (시드 유지) |
-| DELETE | `/cache/entry?pattern=` | 동적 항목 개별 삭제 (시드 보호) |
+**`/health`를 뺀 전부가 토큰을 요구한다** (0층 — 없으면 401). 아래 "인증" 열 참조.
+
+| 메서드 | 경로 | 인증 | 설명 |
+|---|---|---|---|
+| GET | `/health` | **면제** | 서버 상태 |
+| POST | `/chat` | 필요 | 텍스트 명령 (비스트리밍) |
+| POST | `/voice` | 필요 | 음성 파일 → STT + 에이전트 + TTS |
+| WS | `/ws` | 필요 (`?token=`) | 텍스트 스트리밍 (※ 현재 단일 청크 — BACKLOG BL-04) |
+| GET/POST | `/api/config` | 필요 | LLM 설정 조회 / API 키 변경 + 에이전트 재초기화 |
+| POST | `/api/wakeword` | 필요 | 웨이크워드 설정 (`.env` 갱신, 재시작 불필요) |
+| GET/DELETE | `/history` | 필요 | 대화 히스토리 |
+| GET/POST/DELETE | `/favorites` | 필요 | 즐겨찾기 |
+| GET | `/cache` | 필요 | 캐시 통계 + 동적/시드 목록 (JSON) |
+| GET | `/cache/ui` | 필요 (`?token=`) | 개발용 캐시 대시보드 (HTML). **전체 URL이 서버 기동 로그에 찍힌다** |
+| DELETE | `/cache` | 필요 | 동적 학습 전체 초기화 (시드 유지) |
+| DELETE | `/cache/entry?pattern=` | 필요 | 동적 항목 개별 삭제 (시드 보호) |
 
 ### API 키 교체 흐름
 
@@ -333,7 +389,6 @@ LLM provider 추상화는 [`core/llm.py`](../core/llm.py)의 `build_llm()`이 �
 
 상세는 [BACKLOG.md](BACKLOG.md).
 
-- **BL-14** 🔴 로컬 서버 CORS `*` + 무인증 — 브라우저에서 열린 아무 사이트가 명령을 넣을 수 있다
 - **BL-15** fast_path 명령 절단 (캐시가 뒷문장을 조용히 버린다)
 - **BL-04** `/ws` 실제 토큰 스트리밍 미구현
 - **BL-07** 파일 찾기 UX (확장자 모를 때 헤맴)

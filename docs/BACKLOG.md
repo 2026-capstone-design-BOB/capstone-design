@@ -14,26 +14,7 @@
 
 ## [즉시/위험] — 미해결
 
-### BL-14 — 로컬 서버가 **아무 웹페이지에서나** 조작 가능하다
-- **증상**: `main.py`의 CORS가 `allow_origins=["*"]`이고 **인증이 없다.**
-  사용자가 열어 둔 아무 웹사이트가 다음 한 줄로 PC 제어 명령을 넣을 수 있다.
-  ```js
-  fetch('http://127.0.0.1:8765/chat', {method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({text:'...'})})
-  ```
-- **무엇이 통과하나**: 삭제는 HITL이 막지만 `open_app`·`type_text`·`open_url`·
-  **`describe_screen`(화면을 외부 LLM으로 전송)** 은 전부 통과한다.
-  `POST /api/config`는 `.env`를 덮어쓰는데, `provider`가 `Literal` 검증 없이
-  `f"{req.provider.upper()}_API_KEY"`로 쓰여 개행이 섞이면 `.env` 인젝션도 된다.
-- **왜 [즉시/위험]인가**: OWASP 4층 방어를 내세우는 프로젝트인데 **가장 큰 구멍이
-  가드레일 바깥**에 있다. 서버 바인딩은 `127.0.0.1`이라 LAN 노출은 없지만,
-  브라우저는 로컬호스트에 접근할 수 있어 방어가 되지 않는다.
-- **해결 방향**: ① `allow_origins`를 Electron origin으로 축소
-  ② 서버 기동 시 랜덤 토큰 발급 → Electron만 보유 → 헤더 검사(실패 시 401)
-  ③ `ConfigRequest.provider`를 `Literal["gemini","claude","openai"]`로
-  → 막고 나면 ARCHITECTURE § 보안에 **"5층: 로컬 API 접근 제어"** 로 쓸 수 있다.
-- **성격**: 보안. (2026-09-02 코드 리뷰 중 발견)
+**현재 없음.** (BL-14가 2026-09-02에 해결되어 아래 「해결됨」으로 이동)
 
 ---
 
@@ -129,6 +110,62 @@
 ---
 
 ## 해결됨 (기록 보존)
+
+### ✅ BL-14 — 로컬 서버가 아무 웹페이지에서나 조작 가능했다 — 2026-09-02 완료
+- **증상**: `main.py`의 CORS가 `allow_origins=["*"]`이고 **인증이 없었다.**
+  사용자가 열어 둔 아무 웹사이트가 다음 한 줄로 PC 제어 명령을 넣을 수 있었다.
+  ```js
+  fetch('http://127.0.0.1:8765/chat', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({text:'...'})})
+  ```
+  삭제는 HITL이 막지만 `open_app`·`type_text`·`open_url`·**`describe_screen`(화면을
+  외부 LLM으로 전송)** 은 전부 통과했다. OWASP 4층 방어를 내세우는 프로젝트인데
+  **가장 큰 구멍이 가드레일 바깥**에 있었다.
+
+- **고치면서 알게 된 것 — 원래 적어 둔 해결 방향 ①이 틀렸다**:
+  1. **`allow_origins`를 "Electron origin으로 축소"할 수 없다.** 렌더러는
+     `loadFile`이라 출처가 `file://` → 브라우저가 `Origin: null`을 보낸다.
+     그 값을 허용해야 UI 자신이 도는데 `null`은 아무 사이트의 sandboxed iframe도
+     받는 값이다. 게다가 **CORS는 응답 읽기만 막고 요청 처리는 막지 않는다** —
+     명령은 그대로 실행된다. **즉 CORS로는 애초에 못 막는다. 토큰이 유일한 방어다.**
+  2. **`/ws`에는 CORS가 아예 적용되지 않는다.** 웹페이지가
+     `new WebSocket('ws://127.0.0.1:8765/ws')`로 그냥 붙을 수 있어 **fetch보다 큰
+     구멍**이었는데 원래 항목에 적혀 있지 않았다.
+  3. **CORS 프리플라이트를 인증에서 면제해야 한다.** `X-Pluiz-Token`은 safelisted
+     헤더가 아니라 렌더러의 모든 요청이 프리플라이트를 거치는데 거기엔 토큰이 실리지
+     않는다. 여기서 401을 주면 UI 자신이 전부 막힌다.
+  4. **서버는 Electron이 띄우지 않는다** (`launch.bat`이 둘을 따로 띄운다).
+     env로 토큰을 건넬 수 없어 **파일 핸드셰이크**가 필요했다.
+
+- **해결**:
+  - **[신규] `core/auth.py`** — 기동 시 `secrets.token_urlsafe(32)` 발급 →
+    `cache/.auth_token`. Electron과 라이브 테스트가 같은 파일을 읽는다.
+    **웹페이지는 로컬 파일을 못 읽는다 — 이게 방어의 근거다.**
+    stdlib만 쓴다(CI가 fastapi를 설치하지 않으므로 mock 테스트가 돌아야 한다).
+  - `main.py` — `auth_guard` HTTP 미들웨어(`/health`만 면제, 실패 시 401) ·
+    `/ws`는 `accept()` 전에 쿼리 토큰 검사 후 `close(1008)` ·
+    CORS `["*"]` → `["null"]` + 메서드/헤더 축소 · `TrustedHostMiddleware`(DNS
+    리바인딩 차단) · `ConfigRequest.provider`를 `Literal`로 · `api_key` 개행 제거
+    (`.env` 인젝션) · `/cache/ui`는 토큰을 HTML에 주입하고 전체 URL을 기동 로그에 출력
+  - `config/settings.py` `auth_enabled`(기본 `true`) — 사고 시 탈출구
+  - Electron 3파일 — `main.js` 토큰 파일 폴링 + `get-token` IPC ·
+    `preload.js` `getToken` · 렌더러는 `fetch`를 **한 번 감싸서** 호출부 6곳을 안 건드림
+  - 라이브 3스위트가 토큰을 자동으로 읽도록 `requests.Session()`으로 전환
+
+- **검증**:
+  - **[신규] `tests/test_auth.py` 42개** — 발급/읽기 왕복 · 면제 경로 · 헤더/쿼리 매칭 ·
+    부분일치·공백·대소문자 변형 거부 · fail-closed. **Python 상수 ↔ JS 리터럴 계약**도
+    검사해 한쪽만 고치는 드리프트를 막는다
+  - **라이브 실측** — 토큰 없는 `/chat` 401 · 틀린 토큰 401 · 올바른 토큰 200 ·
+    토큰 없는 WS 거절 · `Origin: null` 프리플라이트 통과(UI 정상) · 공격 출처 CORS 거절 ·
+    Host 위조 400 · provider 인젝션 422. **`test_sprint1_2.py` 55/55**(인증 켠 상태)
+  - `test_regression.py`에 **AUTH-01~AUTH-04** 추가 (다음 라이브 실행에서 검증)
+  - mock 19파일 회귀 0건
+
+- **남은 한계 (의도한 것)**: 로컬에서 실행 중인 **다른 프로그램**은 토큰 파일을 읽을 수
+  있다. 그 수준의 공격자는 이미 PC에서 코드를 실행 중이라 이 앱을 거칠 이유가 없다 —
+  위협모델 밖이다. → [ARCHITECTURE § 보안 0층](ARCHITECTURE.md#보안--5층-방어)
 
 ### ✅ BL-06 — 테스트 스위트 새 엔진 기준 갱신 — 2026-09-01 완료
 - **증상**: 라이브 테스트 2개가 구 엔진 기준으로 작성돼 있었다.

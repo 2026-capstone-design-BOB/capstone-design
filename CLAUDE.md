@@ -66,6 +66,12 @@ FastAPI 서버(:8765) + Electron 오버레이 UI + LangGraph `StateGraph` 에이
    Windows 기본 cp949로 읽으면 `UnicodeDecodeError`가 납니다.
    `tests/`의 테스트는 루트를 `dirname(dirname(abspath(__file__)))`로 계산합니다.
 
+8. **`main.py`의 `allow_origins=["null"]`과 OPTIONS 면제를 "정리"하지 말 것** —
+   둘 다 오타가 아니라 **UI가 돌기 위한 조건**입니다. 렌더러는 `file://`이라 `Origin: null`을
+   보내고, `X-Pluiz-Token`은 safelisted 헤더가 아니라 모든 요청이 프리플라이트를 거칩니다.
+   여기를 조이면 공격자가 아니라 **UI 자신이 막힙니다.** 실질적 방어는 토큰입니다.
+   → [ARCHITECTURE.md § 보안 0층](docs/ARCHITECTURE.md#보안--5층-방어)
+
 ---
 
 ## 실행 · 테스트

@@ -134,6 +134,8 @@ V1 → V2로 어떻게 발전했는지를 보여주는 게 이 프로젝트의 �
 | `docs/presentation/`은 **평평하게** | `pluiz_presentation.html`이 `src="pluiz_paradigm.svg"`로 상대참조한다. 다이어그램을 하위 폴더로 나누면 슬라이드가 깨진다 | `docs/presentation/pluiz_presentation.html` |
 | `CLAUDE.md`는 **루트** | Claude Code가 루트에서 자동 로드한다 | 도구 규약 |
 | `cache/`는 **루트 기준 계산** | `_BASE_DIR`이 `core/`의 부모로 계산된다. `core/`를 옮기면 캐시 경로가 어긋난다 | [`core/command_cache.py`](../core/command_cache.py) |
+| `core/auth.py`는 **stdlib만 import** | CI mock 잡은 langgraph·langchain-core만 설치한다. fastapi나 pydantic-settings를 끌어오면 `test_auth.py`가 CI에서 죽는다. FastAPI 결합은 전부 `main.py`에 둔다 | [`core/auth.py`](../core/auth.py) · `.github/workflows/tests.yml` |
+| 토큰 파일도 **루트 기준 계산** (`cache/.auth_token`) | Electron이 `path.join(__dirname, '..', 'cache', '.auth_token')`로 **따로** 계산한다. 한쪽만 옮기면 UI가 서버에 붙지 못한다 (`test_auth.py`가 이 계약을 검사한다) | [`core/auth.py`](../core/auth.py) · [`electron-ui/main.js`](../electron-ui/main.js) |
 
 ---
 

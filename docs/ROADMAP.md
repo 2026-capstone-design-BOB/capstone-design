@@ -133,6 +133,9 @@ P3 OWASP 가드레일 → P4 캐시 동적 학습 → P5 엔진 단일화. 전�
 3. ⬜ **Phase 2 본체** — UI 요소 인식(버튼 좌표) · 화면 변화 모니터링 · 실행 결과 시각적 검증
 4. ⚠️ **웨이크워드** — 코드는 완료(호출어 "플루이즈" 정정 · 사용자 설정 · Electron python 탐색 수정).
    **마이크 실측만 남았고 그건 사용자가 해야 한다.**
+5. ✅ **로드맵에 없던 것 — BL-14 로컬 API 접근 제어**(2026-09-02). 계획 항목은 아니지만
+   `[즉시/위험]`이라 먼저 처리했다. 보안이 **4층 → 5층**이 되어 심사 재료가 하나 늘었다.
+   → [ARCHITECTURE § 보안](ARCHITECTURE.md#보안--5층-방어)
 
 > **3번에 대한 실측 힌트** — Vision을 붙이자마자 *"메모장에 뭐라고 써 있어?"* 로
 > `type_text`의 결과를 검증해 봤더니, 도구는 `"✓ 입력 완료"` 라는데 Vision은 `"0자, 비어 있음"`
@@ -150,7 +153,7 @@ P3 OWASP 가드레일 → P4 캐시 동적 학습 → P5 엔진 단일화. 전�
 
 | 강의 개념 | 적용 지점 | 상태 |
 |---|---|---|
-| OWASP LLM 보안 (Day5) | `core/security.py` 4층 방어 (LLM01/02/05/06) | ✅ M1-P3 |
+| OWASP LLM 보안 (Day5) | `core/security.py` + `core/auth.py` **5층 방어** (LLM01/02/05/06/08) | ✅ M1-P3 · 0층은 BL-14(2026-09-02) |
 | HITL (Lab19) | 위험 도구에 LangGraph `interrupt` 승인 | ✅ M1-P2 |
 | LangGraph State/Node/Edge (Lab14) | 캐시→라우터→LLM 명시적 그래프화 | ✅ M1-P1.5 |
 | Reflection/Self-RAG (Lab21~24) | `output_guard` 노드 (`core/graph.py:297`) | ⚠️ **부분** — 도구 오류인데 성공처럼 답하는 경우를 텍스트 수준에서 보정. 정식 reflection 루프는 아님 |

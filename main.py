@@ -4,30 +4,99 @@ Electron UI와 HTTP/WebSocket으로 통신
 """
 
 import asyncio
+from contextlib import asynccontextmanager
 import os
+from typing import Literal
+
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # BUG-02: create_task 참조 손실 방지용 백그라운드 태스크 집합
 _bg_tasks: set = set()
 
 from config.settings import get_settings
+from core import auth
 from core.graph_agent import get_graph_agent
 from core.security import check_security
 from services.tts import get_tts
 from services.stt import get_stt
 
-app = FastAPI(title="Pluiz v2", version="2.0.0")
+# 서버가 이번 기동에 발급한 토큰. lifespan에서 채워진다.
+_AUTH_TOKEN = ""
 
-# Electron에서 접근 허용
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """기동 시 토큰 발급 → `cache/.auth_token`, 종료 시 정리. (BL-14)
+
+    Electron(`electron-ui/main.js`)과 라이브 테스트가 이 파일을 읽어 같은 값을 얻는다.
+    웹페이지는 로컬 파일을 못 읽는다 — 그게 이 방어의 근거다.
+    """
+    global _AUTH_TOKEN
+    _AUTH_TOKEN = auth.issue_token()
+    s = get_settings()
+    if s.auth_enabled:
+        print(f"[auth] 접근 토큰 발급됨 → {auth.token_path()}")
+        print(f"[auth] 캐시 대시보드: http://{s.server_host}:{s.server_port}"
+              f"/cache/ui?{auth.QUERY_NAME}={_AUTH_TOKEN}")
+    else:
+        print("[auth] ⚠️ AUTH_ENABLED=false — 로컬 API 접근 제어가 꺼져 있습니다 (BL-14)")
+    try:
+        yield
+    finally:
+        auth.clear_token()
+
+
+app = FastAPI(title="Pluiz v2", version="2.0.0", lifespan=lifespan)
+
+# ── BL-14: 로컬 API 접근 제어 ─────────────────────────────────────
+# 이 서버는 PC를 조작한다. 인증이 없으면 사용자가 열어 둔 **아무 웹페이지**가
+# fetch 한 줄로 명령을 밀어넣을 수 있다. 방어는 아래 세 겹이고, 실질적 방어는 ③이다.
+#
+# ① Host 검사 — DNS 리바인딩 차단. 공격 도메인이 127.0.0.1로 해석되면 페이지가
+#    서버와 **동일 출처**가 되어 CORS가 통째로 무력화된다. Host를 고정해 그걸 막는다.
+# ② CORS — `allow_origins`가 "null"인 건 오타가 아니다. Electron 렌더러는
+#    `loadFile`(file://)이라 브라우저가 `Origin: null`을 보낸다. 이 값을 허용하지
+#    않으면 UI 자신이 막힌다. ⚠️ 그러나 **CORS는 응답 읽기만 막고 요청 처리는 막지
+#    못한다** — 명령은 그대로 실행된다. 그래서 CORS는 방어가 아니라 defense-in-depth다.
+# ③ 토큰 — `auth_guard` 미들웨어 + `/ws` 검사. 웹페이지는 로컬 파일을 못 읽으므로
+#    서버가 `cache/.auth_token`에 적어 둔 값을 알 수 없다. **이게 진짜 방어다.**
+#
+# 배경: docs/BACKLOG.md BL-14 · docs/ARCHITECTURE.md § 보안 — 5층 방어
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["null"],          # file:// 렌더러. 위 ② 주석 참조 — 되돌리지 말 것
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", auth.HEADER_NAME],
 )
+
+
+@app.middleware("http")
+async def auth_guard(request, call_next):
+    """토큰 없는 HTTP 요청을 401로 막는다.
+
+    ⚠️ 이 미들웨어는 **WebSocket을 타지 않는다.** `/ws`는 엔드포인트 안에서 따로 막는다.
+    """
+    # CORS 프리플라이트(OPTIONS)는 통과시킨다. `X-Pluiz-Token`은 safelisted 헤더가
+    # 아니라 렌더러의 모든 요청이 프리플라이트를 거치는데, 프리플라이트에는 그 헤더가
+    # 실리지 않는다. 여기서 401을 주면 **UI 자신이 전부 막힌다.**
+    # 프리플라이트는 아무것도 실행하지 않고 정보도 주지 않으므로 안전하다.
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    if get_settings().auth_enabled and not auth.is_authorized(
+        request.url.path,
+        request.headers.get(auth.HEADER_NAME),
+        request.query_params.get(auth.QUERY_NAME),
+        _AUTH_TOKEN,
+    ):
+        return JSONResponse(status_code=401, content={"error": "unauthorized"})
+    return await call_next(request)
 
 
 # ── 데이터 모델 ───────────────────────────────────────────────────
@@ -44,7 +113,10 @@ class TextResponse(BaseModel):
 
 
 class ConfigRequest(BaseModel):
-    provider: str   # "gemini" | "claude" | "openai"
+    # ⚠️ str이면 안 된다 — save_config()가 이 값을 `{PROVIDER}_API_KEY`로 만들어
+    # .env에 그대로 쓴다. 개행이 섞이면 .env 인젝션이 된다 (BL-14 ③).
+    # config/settings.py의 llm_provider와 같은 타입이어야 한다.
+    provider: Literal["gemini", "claude", "openai"]
     api_key: str
 
 
@@ -88,6 +160,9 @@ async def save_config(req: ConfigRequest):
         with open(env_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
+    # provider는 Literal로 이미 좁혀졌지만 api_key는 자유 문자열이다.
+    # 개행이 들어오면 .env에 임의의 줄을 추가할 수 있으므로 여기서 자른다 (BL-14 ③).
+    api_key = req.api_key.replace("\r", "").replace("\n", "").strip()
     key_var = f"{req.provider.upper()}_API_KEY"
     provider_found = key_found = False
     new_lines: list[str] = []
@@ -97,7 +172,7 @@ async def save_config(req: ConfigRequest):
             new_lines.append(f"LLM_PROVIDER={req.provider}\n")
             provider_found = True
         elif line.startswith(key_var + "="):
-            new_lines.append(f"{key_var}={req.api_key}\n")
+            new_lines.append(f"{key_var}={api_key}\n")
             key_found = True
         else:
             new_lines.append(line)
@@ -105,7 +180,7 @@ async def save_config(req: ConfigRequest):
     if not provider_found:
         new_lines.insert(0, f"LLM_PROVIDER={req.provider}\n")
     if not key_found:
-        new_lines.append(f"{key_var}={req.api_key}\n")
+        new_lines.append(f"{key_var}={api_key}\n")
 
     with open(env_path, "w", encoding="utf-8") as f:
         f.writelines(new_lines)
@@ -117,7 +192,7 @@ async def save_config(req: ConfigRequest):
     from core.graph_agent import reset_graph_agent
     reset_graph_agent()
 
-    print(f"[config] provider={req.provider} key=***{req.api_key[-4:] if req.api_key else ''} 저장됨")
+    print(f"[config] provider={req.provider} key=***{api_key[-4:] if api_key else ''} 저장됨")
     return {"status": "ok", "provider": req.provider}
 
 
@@ -181,7 +256,6 @@ async def chat(req: TextRequest):
     텍스트 명령 처리.
     Electron UI의 채팅 입력창에서 호출.
     """
-    from fastapi.responses import JSONResponse
     try:
         # ── 보안 필터 (LLM 판단 전 결정론적 차단) ─────────────────
         blocked, reason = check_security(req.text)
@@ -392,6 +466,11 @@ _CACHE_DASHBOARD_HTML = """<!DOCTYPE html>
   </tbody></table>
 
 <script>
+// BL-14: 이 페이지의 fetch에도 토큰이 필요하다. 주소창으로는 헤더를 못 붙이므로
+// `?token=`으로 들어오고, 서버가 그 값을 아래 자리에 박아 내려준다.
+const TOKEN='__PLUIZ_TOKEN__';
+const _fetch=window.fetch.bind(window);
+window.fetch=(u,o={})=>{o.headers={...(o.headers||{}),'X-Pluiz-Token':TOKEN};return _fetch(u,o);};
 const $=id=>document.getElementById(id);
 function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
 async function load(){
@@ -430,9 +509,13 @@ async def cache_view():
 
 @app.get("/cache/ui")
 async def cache_dashboard():
-    """개발용 캐시 대시보드(HTML) — 조회·삭제·초기화 + 스키마/타입 문서."""
+    """개발용 캐시 대시보드(HTML) — 조회·삭제·초기화 + 스키마/타입 문서.
+
+    `?token=`으로 들어온다(서버 기동 로그에 전체 URL이 찍힌다). 여기까지 온 요청은
+    `auth_guard`를 이미 통과했으므로, 페이지 안의 fetch가 쓸 토큰을 박아 내려준다.
+    """
     from fastapi.responses import HTMLResponse
-    return HTMLResponse(_CACHE_DASHBOARD_HTML)
+    return HTMLResponse(_CACHE_DASHBOARD_HTML.replace("__PLUIZ_TOKEN__", _AUTH_TOKEN))
 
 
 @app.delete("/cache")
@@ -459,7 +542,19 @@ async def websocket_endpoint(websocket: WebSocket):
     WebSocket으로 스트리밍 응답.
     토큰 단위로 UI에 실시간 전송.
     use_tts=true 시 end 메시지에 audio_base64 포함.
+
+    ⚠️ **인증을 여기서 직접 한다.** `auth_guard` HTTP 미들웨어는 WebSocket을 타지 않고,
+    **CORS는 WebSocket에 아예 적용되지 않는다** — 웹페이지가
+    `new WebSocket('ws://127.0.0.1:8765/ws')`로 그냥 붙을 수 있어서 fetch보다 큰 구멍이었다.
+    브라우저 WS는 헤더를 못 붙이므로 토큰을 쿼리(`?token=`)로 받는다. (BL-14)
     """
+    if get_settings().auth_enabled and not auth.is_authorized(
+        "/ws", None, websocket.query_params.get(auth.QUERY_NAME), _AUTH_TOKEN
+    ):
+        # accept() 하기 전에 끊는다 — 핸드셰이크 자체를 거절한다.
+        await websocket.close(code=1008)   # 1008 = Policy Violation
+        return
+
     await websocket.accept()
     agent = get_graph_agent()
 

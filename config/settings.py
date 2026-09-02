@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     server_port: int = 8765
     server_host: str = "127.0.0.1"
 
+    # 로컬 API 접근 제어 (BL-14)
+    # 서버가 기동할 때마다 토큰을 발급해 cache/.auth_token 에 적고, Electron과 라이브
+    # 테스트가 그 파일을 읽는다. 웹페이지는 로컬 파일을 못 읽으므로 명령을 넣을 수 없다.
+    # ⚠️ false로 두면 아무 웹사이트가 PC 제어 명령을 넣을 수 있다. 디버깅용 탈출구다.
+    auth_enabled: bool = True
+
     # 에이전트
     agent_max_iterations: int = 10   # 무한루프 방지
     agent_timeout: int = 30          # 초
