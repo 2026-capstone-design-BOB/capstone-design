@@ -26,10 +26,11 @@
 
 ### 바로 시작하려면
 
-1. [ROADMAP.md](ROADMAP.md) — **어디로 가는가.** 학기 목표와 계획 대비 실제 진행
-2. [BACKLOG.md](BACKLOG.md) — 지금 걸려 있는 개별 항목 (BL-xx)
-3. [DEVLOG.md](DEVLOG.md) 최상단 — 직전에 무슨 일이 있었는지
-4. [WORKFLOW.md](WORKFLOW.md) — 작업 루프 · 테스트 실행법 · 커밋 규칙
+1. [TASKS.md](TASKS.md) — **지금 뭘 하는 중이고 다음이 뭔지.** 체크리스트 ← **여기부터**
+2. [ROADMAP.md](ROADMAP.md) — 어디로 가는가. 학기 목표와 계획 대비 실제 진행
+3. [BACKLOG.md](BACKLOG.md) — 개별 항목 상세 (BL-xx)
+4. [DEVLOG.md](DEVLOG.md) 최상단 — 직전에 무슨 일이 있었는지
+5. [WORKFLOW.md](WORKFLOW.md) — 작업 루프 · 테스트 실행법 · 커밋 규칙
 
 > ⚠️ **환경 두 가지를 먼저 확인하세요** (매번 걸리던 것)
 > - 루트 `python`(anaconda base)에는 langgraph가 없다 → `conda activate pluiz`
@@ -54,7 +55,8 @@
 | **테스트 작성·실행** | [WORKFLOW.md § 테스트](WORKFLOW.md#테스트) · 수동 항목은 [testing/](testing/) |
 | **환경이 이상할 때 (도구가 조용히 안 됨)** | `python tests/test_dependencies.py` → [WORKFLOW.md § 의존성](WORKFLOW.md#️-의존성이-없으면-도구가-조용히-죽는다) |
 | **커밋·브랜치·PR** | [WORKFLOW.md § 커밋 컨벤션](WORKFLOW.md#커밋-컨벤션) · [CONTRIBUTING.md](CONTRIBUTING.md) |
-| **다음에 뭘 만들지 / 학기 목표 확인** | [ROADMAP.md](ROADMAP.md) |
+| **지금 뭘 하는 중인지 / 다음 작업 고르기** | [TASKS.md](TASKS.md) |
+| **학기 목표·최종 시스템 방향 확인** | [ROADMAP.md](ROADMAP.md) |
 | **발표·제출 자료 준비** | [presentation/](presentation/) |
 
 ---
@@ -69,6 +71,7 @@
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 시스템이 **어떻게 동작하는가**. 그래프 파이프라인·도구·보안·캐시 | 동작 변경 시 |
 | [WORKFLOW.md](WORKFLOW.md) | **어떻게 작업하는가**. 작업 루프·테스트·DEVLOG 규칙·커밋 컨벤션 | 절차 변경 시 |
 | [DEVLOG.md](DEVLOG.md) | 개발 일지. **단일 진실 공급원(SoT)** | 작업할 때마다 |
+| [TASKS.md](TASKS.md) | **작업 체크리스트.** 순서대로 체크하며 진행 | 작업할 때마다 |
 | [ROADMAP.md](ROADMAP.md) | **어디로 가는가.** 최종 시스템 목표·학기 계획·계획 대비 실제 | 학기 단위 |
 | [BACKLOG.md](BACKLOG.md) | 미해결 항목. [즉시/위험] vs [TODO/품질] | 발견·해결 시 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 팀 협업 규칙 (브랜치 구조·작업 루틴·충돌 해결) | 거의 없음 |

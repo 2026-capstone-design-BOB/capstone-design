@@ -7,11 +7,12 @@ FastAPI 서버(:8765) + Electron 오버레이 UI + LangGraph `StateGraph` 에이
 
 ## 🚀 "docs 보고 진행해줘" 라고 하면
 
-1. [`docs/README.md`](docs/README.md) — **지금 상태** + **작업별 라우팅 표**
-2. [`docs/BACKLOG.md`](docs/BACKLOG.md) — 남은 일 (현재 [즉시/위험] 0건)
-3. [`docs/DEVLOG.md`](docs/DEVLOG.md) **최상단** — 직전 세션 캡스톤 요약
+1. [`docs/TASKS.md`](docs/TASKS.md) — **작업 체크리스트.** 지금 뭘 하는 중이고 다음이 뭔지
+2. [`docs/ROADMAP.md`](docs/ROADMAP.md) — 어디로 가는가 (학기 목표 · 계획 대비 실제)
+3. [`docs/DEVLOG.md`](docs/DEVLOG.md) **최상단** — 직전 세션에 무슨 일이 있었는지
 
 이 셋만 읽으면 바로 작업할 수 있습니다.
+상세가 필요하면 [`docs/README.md`](docs/README.md)의 작업별 라우팅 표를 보세요.
 
 ---
 
@@ -26,7 +27,9 @@ FastAPI 서버(:8765) + Electron 오버레이 UI + LangGraph `StateGraph` 에이
 
 | 알고 싶은 것 | 문서 |
 |---|---|
-| **전체 문서 지도 · 작업별 라우팅** | [docs/README.md](docs/README.md) ← **여기부터** |
+| **지금 뭘 해야 하나 (체크리스트)** | [docs/TASKS.md](docs/TASKS.md) ← **여기부터** |
+| **어디로 가는가 (학기 목표)** | [docs/ROADMAP.md](docs/ROADMAP.md) |
+| **전체 문서 지도 · 작업별 라우팅** | [docs/README.md](docs/README.md) |
 | 뭘 어디에 두는가 · 새 파일 배치 | [docs/STRUCTURE.md](docs/STRUCTURE.md) |
 | 시스템이 어떻게 도는가 (그래프·도구·보안·캐시) | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | 어떻게 작업하는가 (테스트·DEVLOG·커밋) | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
