@@ -9,6 +9,84 @@
 
 ---
 
+## 2026-09-02 (계속) — 🚨 웨이크워드는 한 번도 실행된 적이 없었다
+
+### 발단
+사용자가 알려준 사실 둘: **호출어는 "소윤아"가 아니라 "플루이즈"** 이고
+(*"헤이 구글"* 처럼 *"헤이 플루이즈"*), **사용자가 직접 설정할 수 있으면 좋겠다.**
+
+그런데 코드를 열어 보니 그보다 먼저 확인해야 할 게 있었다.
+
+### 🚨 근본 원인 — Electron이 잘못된 python으로 띄우고 있었다
+
+`electron-ui/main.js`는 `spawn('python', [script])` 였다. Windows에서 그 `python`은
+**anaconda base**로 잡히는데, 거기엔 `sounddevice`도 `faster_whisper`도 없다.
+
+```
+python -c "import sounddevice"    → ModuleNotFoundError
+python -c "import faster_whisper" → ModuleNotFoundError
+```
+
+`wakeword.py`는 최상위 import 실패 시 `sys.exit(1)` 한다. 그리고 `main.js`는:
+
+```js
+wakeProc.on('exit', code => { if (code !== 0) setTimeout(startWakeword, 5000); });
+```
+
+**즉 5초마다 조용히 죽고 다시 뜨기를 반복하고 있었다.** 콘솔 로그에만 남고 UI엔 아무
+표시가 없었다. 발표자료에는 *"tiny 모델 오탐율 심각 → 포기"* 로 기록돼 있었는데,
+**인식률을 평가할 기회 자체가 없었다.** 모델 문제가 아니었다.
+
+> 이 프로젝트가 같은 유형에 데인 게 이번이 세 번째다.
+> ① 의존성 8개 미설치로 도구 9개가 죽어 있음 ② 라이브 테스트 미실행
+> ③ 웨이크워드 미실행. **공통점: 실패가 조용해서 아무도 몰랐다.**
+
+### 완료
+
+**① 호출어 정정 + 사용자 설정** (`services/wakeword.py`, `config/settings.py`)
+- 기본값 `["플루이즈", "pluiz"]`. 부분매칭이라 *"헤이 플루이즈"* · *"플루이즈야"* 도 걸린다
+- `.env`의 `WAKE_WORDS`(쉼표 구분) · `WAKE_WORD_ENABLED`로 사용자가 지정
+- **재시작 불필요** — `_reload_loop`가 10초마다 `.env`를 다시 읽는다
+  (`get_settings.cache_clear()` 필수 — CLAUDE.md 절대규칙 4)
+- 설정 로딩이 깨져도 기본값으로 계속 동작한다 (웨이크워드가 설정 때문에 죽으면 안 된다)
+
+**② 오인식 변형 자동 생성** (`_expand`)
+Whisper tiny는 고유명사를 흘려 듣는다. 사용자가 `플루이즈` 하나만 적어도
+`플루이스`·`블루이즈`·`프루이즈` 등 14개 변형을 만든다.
+**한 글자만 바꾼 변형(거리 1)까지만** — 전수 조합은 오탐을 급격히 늘린다.
+확인: `블루투스 켜줘` · `루이비통 검색해줘`는 걸리지 않는다.
+
+**③ Electron python 탐색** (`electron-ui/main.js` `resolvePython()`)
+후보를 `-c "import sounddevice, faster_whisper"`로 **실제 검사**해서 고른다:
+`PLUIZ_PYTHON` → conda `pluiz` 환경 → `python`. 실측에서 pluiz 환경이 선택됐다.
+전부 실패하면 **재시도하지 않고** UI에 `unavailable`을 보낸다 —
+환경 문제는 재시도로 안 고쳐지는데 예전 코드는 영원히 재시도했다.
+뜨자마자 죽는 경우도 **3회까지만** 시도한다.
+
+**④ 실패를 드러낸다** (`_die()`)
+무엇이 없는지 · 어떻게 고치는지 · **어떤 python으로 실행 중인지**를 stderr에 찍고,
+stdout에는 `WAKEWORD_ERROR`를 보내 Electron이 UI에 표시할 수 있게 했다.
+
+**⑤ API** (`POST /api/wakeword`, `GET /api/config`)
+`.env` 기록은 `_write_env()`로 공통화. 실측에서 **기존 키 4개 무손상**, 웨이크워드 2줄만 추가됐다.
+
+### 검증
+- `tests/test_wakeword.py` **29개** — 기본값·호출형태·변형생성·**오탐방지 8건**·
+  사용자설정·끄기·스키마
+- API 실기: 저장 → `.env` 반영 → 재시작 없이 `_load_wake_words()`가 새 값 반환 확인
+- mock **240 → 269개**(19파일), 회귀 0건
+- CI(ubuntu) 대비: `pydantic_settings`·`psutil` 차단 시뮬에서 **28/28 + SKIP 1건(사유 명시)**.
+  stub 모듈을 `sys.modules`에 꽂아 진짜 설정 모듈 없이도 매칭 계약을 검증한다
+
+### ⚠️ 남은 것 — 마이크 실측은 사람이 해야 한다
+**코드로 확인할 수 있는 건 전부 확인했다.** 실제 인식률은 사용자가 `launch.bat`을 띄우고
+"플루이즈"라고 말해봐야 안다. 여기서 처음으로 *"tiny 모델로 되는가"* 라는 원래 질문에
+답할 수 있다.
+
+UI 설정 화면은 아직 없다(API만 있음) → [BACKLOG BL-13](BACKLOG.md)
+
+---
+
 ## 2026-09-02 (계속) — 🎯 9월 Phase 2 착수: 로깅 최소 도입 + Vision 연결
 
 ### 발단

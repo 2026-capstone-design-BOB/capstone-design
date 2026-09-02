@@ -48,6 +48,12 @@ class ConfigRequest(BaseModel):
     api_key: str
 
 
+class WakeWordRequest(BaseModel):
+    """웨이크워드 설정. 사용자가 직접 정한다."""
+    wake_words: str = ""      # 쉼표 구분. 빈 문자열이면 기본값("플루이즈") 사용
+    enabled: bool = True
+
+
 # ── REST 엔드포인트 ────────────────────────────────────────────────
 
 @app.get("/health")
@@ -64,6 +70,10 @@ async def get_config():
         "provider": s.llm_provider,
         "has_key": bool(s.active_api_key),
         "model": s.active_model,
+        "wake_words": s.wake_words,
+        "wake_word_enabled": s.wake_word_enabled,
+        # 사용자가 아무것도 안 정했을 때 실제로 쓰이는 값 (UI 플레이스홀더용)
+        "wake_words_default": "플루이즈",
     }
 
 
@@ -109,6 +119,60 @@ async def save_config(req: ConfigRequest):
 
     print(f"[config] provider={req.provider} key=***{req.api_key[-4:] if req.api_key else ''} 저장됨")
     return {"status": "ok", "provider": req.provider}
+
+
+def _write_env(updates: dict) -> None:
+    """`.env`의 키를 갱신(없으면 추가)한다.
+
+    ⚠️ `get_settings`는 `@lru_cache`라 파일만 고치면 옛 값이 계속 쓰인다.
+    반드시 `cache_clear()`까지 해야 한다. (CLAUDE.md 절대규칙 4)
+    """
+    NEWLINE = chr(10)
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    lines: list[str] = []
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+    remaining = dict(updates)
+    out: list[str] = []
+    for line in lines:
+        key = line.split("=", 1)[0].strip() if "=" in line else ""
+        if key in remaining:
+            out.append(f"{key}={remaining.pop(key)}" + NEWLINE)
+        else:
+            out.append(line)
+    for k, v in remaining.items():
+        if out and not out[-1].endswith(NEWLINE):
+            out.append(NEWLINE)
+        out.append(f"{k}={v}" + NEWLINE)
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(out)
+
+    get_settings.cache_clear()
+
+
+@app.post("/api/wakeword")
+async def save_wakeword(req: WakeWordRequest):
+    """웨이크워드 저장.
+
+    웨이크워드 프로세스(`services/wakeword.py`)는 Electron이 띄운 **별도 프로세스**라
+    서버가 직접 못 바꾼다. 대신 그쪽이 주기적으로 `.env`를 다시 읽으므로
+    **재시작 없이 몇 초 안에 반영된다.**
+    """
+    words = ",".join(w.strip() for w in req.wake_words.split(",") if w.strip())
+    _write_env({
+        "WAKE_WORDS": words,
+        "WAKE_WORD_ENABLED": "true" if req.enabled else "false",
+    })
+    print(f"[config] 웨이크워드 저장: {words or chr(40)+chr(41)} enabled={req.enabled}")
+    return {
+        "status": "ok",
+        "wake_words": words,
+        "enabled": req.enabled,
+        "note": "웨이크워드 서비스가 10초 안에 자동 반영합니다.",
+    }
 
 
 @app.post("/chat")

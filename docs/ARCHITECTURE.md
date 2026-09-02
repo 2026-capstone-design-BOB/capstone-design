@@ -138,6 +138,45 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 
 ---
 
+## 웨이크워드
+
+[`services/wakeword.py`](../services/wakeword.py) — 마이크를 계속 듣다가 웨이크워드가
+들리면 stdout에 `WAKE`를 찍고, Electron이 그걸 읽어 창을 띄운다.
+
+**기본 웨이크워드는 "플루이즈"** 이고 *"헤이 플루이즈"* 처럼 앞에 말을 붙여 불러도 걸린다(부분매칭).
+
+### 사용자가 직접 바꾼다
+
+| 방법 | 위치 |
+|---|---|
+| `.env` | `WAKE_WORDS=자비스,헤이 자비스` (쉼표 구분) · `WAKE_WORD_ENABLED=false`로 끔 |
+| API | `POST /api/wakeword` `{"wake_words": "...", "enabled": true}` |
+| 조회 | `GET /api/config` — `wake_words` · `wake_word_enabled` · `wake_words_default` |
+
+**재시작이 필요 없다.** 웨이크워드는 Electron이 띄운 별도 프로세스라 서버가 직접 못 바꾸는
+대신, 그쪽이 10초마다 `.env`를 다시 읽는다(`_RELOAD_SEC`).
+
+### 오인식 변형을 자동 생성한다
+Whisper tiny는 고유명사를 자주 흘려 듣는다. 그래서 사용자가 `플루이즈` 하나만 적어도
+`_expand()`가 `플루이스`·`블루이즈`·`프루이즈` 같은 변형을 만들어 붙인다.
+**한 글자만 바꾼 변형(거리 1)까지만** 만든다 — 전수 조합은 오탐을 급격히 늘린다.
+오탐이 생기면 `_CONFUSIONS` 테이블을 줄이는 게 첫 번째 조치다.
+
+### ⚠️ 어떤 python으로 띄우는지가 결정적이다
+
+`sounddevice` · `faster-whisper`가 필요하다. Electron이 `python`을 그냥 쓰면 Windows에서
+보통 **anaconda base**로 잡히는데 거기엔 이 패키지들이 없다.
+
+> **2026-09-02 이전까지 웨이크워드는 한 번도 동작한 적이 없다.**
+> `wakeword.py`가 뜨자마자 `exit(1)` 하고 `main.js`가 5초마다 조용히 재시도하기만 했다.
+> 발표자료에는 *"tiny 모델 인식률이 낮아 포기"* 로 기록돼 있었다.
+
+지금은 [`electron-ui/main.js`](../electron-ui/main.js)의 `resolvePython()`이 후보를
+실제로 import 시켜 보고 고른다: `PLUIZ_PYTHON` 환경변수 → conda `pluiz` 환경 → `python`.
+전부 실패하면 **재시도하지 않고** UI에 `unavailable`을 알린다(환경 문제는 재시도로 안 고쳐진다).
+
+---
+
 ## 로깅
 
 [`core/logger.py`](../core/logger.py) — `get_logger("이름")` 하나만 쓴다.

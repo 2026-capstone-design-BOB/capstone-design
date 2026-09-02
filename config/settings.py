@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     # TTS
     tts_voice: str = "ko-KR-SunHiNeural"   # 자연스러운 한국어 여성 음성
 
+    # 웨이크워드 — 사용자가 직접 정한다
+    # 쉼표로 구분. 비워두면 services/wakeword.py 의 기본값("플루이즈" 계열)을 쓴다.
+    # 예: WAKE_WORDS=플루이즈,헤이 플루이즈,pluiz
+    wake_words: str = ""
+    wake_word_enabled: bool = True
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -52,6 +58,11 @@ class Settings(BaseSettings):
             "claude": self.claude_model,
             "openai": self.openai_model,
         }[self.llm_provider]
+
+    @property
+    def wake_word_list(self) -> list[str]:
+        """설정된 웨이크워드를 리스트로. 비어 있으면 빈 리스트(→ 호출부가 기본값 사용)."""
+        return [w.strip() for w in self.wake_words.split(",") if w.strip()]
 
     @property
     def active_api_key(self) -> str:
