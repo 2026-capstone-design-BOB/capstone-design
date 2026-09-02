@@ -223,6 +223,29 @@ def _last_human_text(messages: list[AnyMessage]) -> str:
     return ""
 
 
+def current_turn_messages(messages: list[AnyMessage]) -> list[AnyMessage]:
+    """**이번 턴**의 메시지만 반환한다 (마지막 HumanMessage부터 끝까지).
+
+    ⚠️ 왜 필요한가 —
+    `state["messages"]`는 이번 턴이 아니라 **그 thread의 전체 히스토리**다
+    (MemorySaver + add_messages 리듀서). fast_path 결과까지 messages 하나로
+    모은 것이 맥락 붕괴를 고친 핵심 설계인데(= 지우면 안 되는 구조),
+    그 대가로 "이번 턴"과 "지금까지 전부"의 경계가 사라졌다.
+
+    경계를 잃은 채 전체를 훑으면 이런 일이 난다:
+      - 턴1의 도구 오류가 턴5의 정상 응답을 "실행 중 문제가 생겼어요"로 덮어씀
+      - 턴1의 도구 호출이 턴2의 잡담에 붙어 엉뚱한 캐시 학습이 일어남
+    따라서 "이번 턴의 결과"를 판단하는 쪽은 반드시 이 함수를 거친다.
+
+    ※ HITL 재개(Command(resume))는 HumanMessage를 추가하지 않으므로,
+      승인 후에도 턴의 시작점은 원래 명령("…삭제해줘") 그대로다 — 의도한 동작이다.
+    """
+    for i in range(len(messages) - 1, -1, -1):
+        if isinstance(messages[i], HumanMessage):
+            return list(messages[i:])
+    return list(messages)
+
+
 # ── 출력 검증 (T04 + 빈응답 복구) — output_guard의 순수 로직 ─────────
 _TOOL_ERROR_RE = re.compile(
     r'^\[(?:오류|error|[가-힣a-zA-Z_]+ 오류)\]'
@@ -243,25 +266,31 @@ def verify_output(messages: list[AnyMessage]) -> Optional[str]:
     - 보정 불필요하면 None.
 
     (agent.py의 빈응답 복구 + T04 로직을 노드용 순수 함수로 이관)
+
+    ⚠️ 판단 범위는 **이번 턴뿐이다**(`current_turn_messages`). 전체 히스토리를 훑으면
+      과거 턴의 도구 오류가 지금의 성공 응답을 덮어쓰고, 빈 응답 복구가 몇 턴 전
+      ToolMessage를 끌어온다.
     """
+    turn = current_turn_messages(messages)
+
     # 마지막 AIMessage(응답) 추출
     response = ""
-    for m in reversed(messages):
+    for m in reversed(turn):
         if isinstance(m, AIMessage):
             response = _msg_text(m)
             break
 
-    # 도구 오류 수집
+    # 도구 오류 수집 (이번 턴에 실행된 것만)
     tool_errors: list[str] = []
-    for m in messages:
+    for m in turn:
         if isinstance(m, ToolMessage):
             c = _msg_text(m).strip()
             if _TOOL_ERROR_RE.match(c):
                 tool_errors.append(c)
 
-    # 1) 빈 응답 → ToolMessage에서 복원
+    # 1) 빈 응답 → 이번 턴의 ToolMessage에서 복원
     if not response.strip():
-        for m in reversed(messages):
+        for m in reversed(turn):
             if isinstance(m, ToolMessage):
                 c = _msg_text(m).strip()
                 if c:

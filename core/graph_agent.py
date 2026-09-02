@@ -25,7 +25,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
-from core.graph import build_pluiz_graph, extract_response
+from core.graph import build_pluiz_graph, extract_response, current_turn_messages
 from core.fast_path import resolve_fast_path
 
 
@@ -217,13 +217,21 @@ class PluizGraphAgent:
     def _maybe_learn(self, user_input: str, result: Any) -> None:
         """그래프 실행 결과에서 도구 호출을 추출해, 성공 + 화이트리스트면 캐시에 학습.
         - fast_path 히트(도구호출 없음)·보안차단·오류는 자연히 제외됨.
-        - 실제 학습 자격(단일 화이트리스트 도구·자유파라미터 없음)은 cache.learn()이 최종 판단."""
+        - 실제 학습 자격(단일 화이트리스트 도구·자유파라미터 없음)은 cache.learn()이 최종 판단.
+
+        ⚠️ **이번 턴의 메시지만 본다**(`current_turn_messages`).
+          `result["messages"]`는 thread의 전체 히스토리라, 그대로 훑으면:
+            - 턴1의 open_app이 턴2의 "고마워"에 붙어 엉뚱한 표현이 학습되고
+            - 도구 호출이 2개 이상 쌓이는 순간(len != 1) 그 세션의 학습이 영구히 멈추고
+            - 턴1의 도구 실패가 그 세션의 모든 후속 학습을 차단한다.
+          즉 P4 동적 학습이 thread당 1턴만 동작했다. 범위를 턴으로 좁혀 고친다.
+        """
         cache = getattr(self, "cache", None)
         if cache is None or not isinstance(result, dict):
             return
         try:
             from langchain_core.messages import ToolMessage
-            msgs = result.get("messages", [])
+            msgs = current_turn_messages(result.get("messages", []))
             tool_calls = []
             for m in msgs:
                 for c in (getattr(m, "tool_calls", None) or []):

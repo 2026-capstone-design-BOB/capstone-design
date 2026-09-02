@@ -39,6 +39,34 @@ class OpenLLM:
         return AIMessage(content="", tool_calls=[{"name": self.tool, "args": self.args,
                                                   "id": "c1", "type": "tool_call"}])
 
+class ScriptedLLM:
+    """턴마다 다르게 행동하는 LLM mock.
+
+    plan[i] = (tool_name, args)  → 그 턴에 해당 도구를 호출
+    plan[i] = None               → 그 턴엔 도구 없이 텍스트만 답함
+
+    ⚠️ 턴 판정은 **마지막 HumanMessage 이후**를 본다. 전체 히스토리에서
+      ToolMessage 유무를 보면(기존 OpenLLM 방식) 2턴째부터 도구를 못 부른다.
+    """
+    def __init__(self, plan): self.plan = plan
+    def bind_tools(self, t): return self
+    def invoke(self, messages):
+        idx = -1
+        for i, m in enumerate(messages):
+            if isinstance(m, HumanMessage):
+                idx = i
+        turn_msgs = messages[idx:] if idx >= 0 else messages
+        turn_no = sum(1 for m in messages if isinstance(m, HumanMessage)) - 1
+        if any(isinstance(m, ToolMessage) for m in turn_msgs):
+            return AIMessage(content="처리했어요.")          # 이번 턴 도구 실행 후 요약
+        step = self.plan[turn_no] if 0 <= turn_no < len(self.plan) else None
+        if step is None:
+            return AIMessage(content="네, 알겠어요.")        # 도구 없는 잡담 턴
+        name, args = step
+        return AIMessage(content="", tool_calls=[{"name": name, "args": args,
+                                                  "id": "c" + str(turn_no), "type": "tool_call"}])
+
+
 class ToolNodeFake:
     """ToolMessage를 넣어주는 가짜 tools 노드 대용 — 여기선 실제 도구 대신 성공/실패 메시지."""
 
@@ -96,6 +124,38 @@ async def run():
     a, c = make("open_app_fail", {"app": "없는앱"}, open_app_fail)
     await a.run_async("없는앱 열어줘", "s3")
     check("실패 도구 → 학습 거부", len(c.learned) == 0)
+
+    # -- 다중 턴 — '이번 턴' 경계 (D-2 회귀) --------------------------
+    # state["messages"]는 thread 전체 히스토리다. 예전엔 _maybe_learn이 그걸
+    # 통째로 훑어서, 학습이 thread당 1턴만 정상 동작했다.
+    def make_scripted(plan, tools):
+        cache = MockCache()
+        return GA.PluizGraphAgent(
+            llm=ScriptedLLM(plan), tools=tools,
+            security_check=fake_sec, fast_resolve=fake_fr,
+            session_memory=MockMem(), settings=FakeSettings(), cache=cache), cache
+
+    print("=== 4. 턴1 도구 → 턴2 잡담: 잡담이 학습되면 안 됨 ===")
+    a, c = make_scripted([("open_app", {"app": "메모장"}), None], [open_app])
+    await a.run_async("메모장 띄워봐", "m1")
+    await a.run_async("고마워", "m1")
+    check("턴1 명령은 학습됨", "메모장 띄워봐" in c.learned)
+    check("턴2 잡담은 학습 안 됨", "고마워" not in c.learned)
+
+    print("=== 5. 도구 호출이 쌓여도 학습이 멈추지 않음 ===")
+    a, c = make_scripted([("open_app", {"app": "메모장"}),
+                          ("open_app", {"app": "계산기"})], [open_app])
+    await a.run_async("메모장 띄워봐", "m2")
+    await a.run_async("계산기 띄워봐", "m2")
+    check("턴2 명령도 학습됨", "계산기 띄워봐" in c.learned)
+
+    print("=== 6. 과거 턴의 도구 실패가 이후 학습을 막지 않음 ===")
+    a, c = make_scripted([("open_app_fail", {"app": "없는앱"}),
+                          ("open_app", {"app": "메모장"})], [open_app, open_app_fail])
+    await a.run_async("없는앱 열어줘", "m3")
+    await a.run_async("메모장 띄워봐", "m3")
+    check("실패한 턴1은 학습 안 됨", "없는앱 열어줘" not in c.learned)
+    check("성공한 턴2는 학습됨", "메모장 띄워봐" in c.learned)
 
     print(f"\n결과: {passed}/{total} 통과")
     return passed == total
