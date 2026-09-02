@@ -108,12 +108,18 @@ function startWakeword() {
   wakeProc = spawn(py, [script], {
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
+    // Windows 콘솔이 cp949라 한글 로그가 깨진다. 파이썬 쪽 출력을 UTF-8로 고정한다.
+    // (그래도 부모 터미널 표시가 깨질 수 있으므로 정확한 기록은 logs/pluiz.log를 볼 것)
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
   });
+
+  wakeProc.stdout.setEncoding('utf8');
+  wakeProc.stderr.setEncoding('utf8');
 
   const startedAt = Date.now();
 
   wakeProc.stdout.on('data', data => {
-    const out = data.toString();
+    const out = String(data);
     if (out.includes('WAKEWORD_ERROR')) {
       console.error('[wake] 시작 실패:', out.trim());
       mainWindow?.webContents.send('wakeword-status', 'unavailable');
@@ -128,7 +134,7 @@ function startWakeword() {
   });
 
   wakeProc.stderr.on('data', data => {
-    const msg = data.toString().trim();
+    const msg = String(data).trim();
     console.log('[wake stderr]', msg);
     if (msg.includes('준비 완료')) {
       wakeFails = 0;                 // 정상 기동 → 실패 카운터 리셋

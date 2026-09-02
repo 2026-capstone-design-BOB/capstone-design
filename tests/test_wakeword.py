@@ -34,7 +34,9 @@ _src = open(os.path.join(_ROOT, "services", "wakeword.py"), encoding="utf-8").re
 _start = _src.index("_RELOAD_SEC = ")   # 모듈 docstring의 언급이 아니라 실제 정의부터
 _end = _src.index("def _reload_loop")
 _mod = types.ModuleType("wakeword_matching")
-_mod.__dict__.update({"sys": sys, "os": os, "re": re, "time": __import__("time")})
+from itertools import combinations, product
+_mod.__dict__.update({"sys": sys, "os": os, "re": re, "time": __import__("time"),
+                      "combinations": combinations, "product": product})
 exec(compile(_src[_start:_end], "wakeword_matching", "exec"), _mod.__dict__)
 
 expand, load, is_wake = _mod._expand, _mod._load_wake_words, _mod.is_wake
@@ -87,8 +89,15 @@ for phrase in ["플루이즈", "헤이 플루이즈", "야 플루이즈", "플�
 print("\n=== ③ 오인식 변형 자동 생성 ===")
 for variant in ["플루이스", "블루이즈", "프루이즈", "플루이지"]:
     check(f"변형 인식: {variant!r}", is_wake(variant))
-check("변형은 거리 1까지만 (조합 폭발 방지)",
-      len(expand("플루이즈")) < 20, f"→ {len(expand('플루이즈'))}개")
+# ⚠️ 이 단언은 원래 "거리 1까지만"이었다. 2026-09-02 실측(edge-tts 합성 24건)에서
+#    거리 1은 감지 38%, 거리 2는 69%(오탐 0/20)로 나와 **설계를 거리 2로 바꿨다.**
+#    거리 3은 이득 없이 변형만 3배가 된다. 여기서 보는 건 "폭발하지 않는가"다.
+_v = expand("플루이즈")
+check("거리 2 변형 생성 (실측으로 정한 값)", 20 < len(_v) <= 300, f"→ {len(_v)}개")
+check("두 글자 바뀐 형태도 포함 — Whisper가 자주 뱉는 '플루이드'",
+      "플루이드" in _v)
+check("긴 웨이크워드는 거리 1로 낮춰 폭발 방지",
+      len(expand("플루이즈플루이즈")) <= 300, f"→ {len(expand('플루이즈플루이즈'))}개")
 
 print("\n=== ④ 엉뚱한 말에 반응하지 않는다 (오탐 방지) ===")
 for phrase in ["블루투스 켜줘", "루이비통 검색해줘", "오늘 날씨 어때", "메모장 열어줘",

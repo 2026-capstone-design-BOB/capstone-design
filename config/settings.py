@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     # 예: WAKE_WORDS=플루이즈,헤이 플루이즈,pluiz
     wake_words: str = ""
     wake_word_enabled: bool = True
+    # 인식 튜닝 — 마이크/환경마다 달라서 코드 수정 없이 조절할 수 있게 뺐다
+    wakeword_model: str = "base"          # tiny / base. ⚠️ base가 오히려 **5배 빠르다** —
+                                          # tiny는 환각으로 수백 토큰을 뱉느라 시간을 다 쓴다
+                                          # (2026-09-02 실측: tiny 61초 vs base 12.9초, 같은 오디오)
+    wakeword_energy: float = 0.008        # 무음 스킵 임계. 낮출수록 작은 소리도 처리
+                                          # (기본 0.015는 조용한 마이크에서 발화를 버렸다)
 
     class Config:
         env_file = ".env"
