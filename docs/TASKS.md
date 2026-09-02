@@ -48,7 +48,10 @@
   print('RMS', float(np.sqrt(np.mean(a**2))))   # 0.005 이상이면 충분
   ```
 
-  **2단계 — 학습** (합성음은 `cache/wakeword_tts/`에 이미 일부 있고 자동으로 이어서 만든다)
+  **2단계 — 학습**
+  ✅ 합성음은 **이미 다 만들어져 있다** — `cache/wakeword_tts/` 양성 200 · 음성 600 (13MB).
+  `.gitignore`(`*.mp3`)에 걸려 커밋되지 않지만 로컬에 남아 있고, 스크립트가 재사용하므로
+  **합성 단계는 건너뛴다.** (지워졌다면 자동으로 다시 만든다)
   ```bash
   python scripts/train_wakeword.py --user-audio wake_voice.npy
   ```
