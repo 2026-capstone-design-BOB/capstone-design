@@ -179,7 +179,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 
 ---
 
-## 도구 (36개)
+## 도구 (37개)
 
 [`core/tool_registry.py`](../core/tool_registry.py)에 단일 등록.
 
@@ -192,6 +192,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 | 입력 | 3 | `type_text` `press_key` `get_clipboard_text` |
 | 캘린더 | 1 | `create_calendar_event` |
 | 화면 이해 | 2 | `describe_screen`(무엇이 보이나) · `find_ui_element`(어디에 있나 — **화면 좌표**) — ⚠️ 둘 다 **화면 내용을 외부 LLM로 전송** (아래 참조) |
+| 화면 조작 | 1 | `click_ui_element` — ⚠️ **승인 필수.** 되돌릴 수 없고 좌표는 추정이다 (아래 참조) |
 | **삭제** | **2** | `delete_file` `delete_folder` — **HITL 승인 필수** |
 
 > **삭제 도구 안전장치**: `core/graph.py`의 `DANGEROUS_TOOLS`에 등록돼 있어
@@ -222,6 +223,21 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 >
 > ⚠️ **아직 실측되지 않았다.** Gemini가 좌표를 얼마나 맞히는지는 mock으로 알 수 없다.
 > **클릭을 붙이기 전에 반드시 실측할 것.**
+
+> **`click_ui_element` — 세 겹으로 막는다 (2026-09-03)**
+> 클릭은 **되돌릴 수 없고** 좌표는 Vision의 **추정**이다. 둘이 겹치면 "틀린 좌표를
+> 정확히 클릭하는" 도구가 된다 — BL-12(엉뚱한 창에 입력)의 더 나쁜 판본이다.
+>
+> 1. **좌표를 인자로 받지 않는다.** 인자는 `(target, window)`뿐이다. LLM이 좌표를
+>    넘길 수 있으면 언젠가 지어낸다. 찾기와 누르기를 한 도구에 묶어, 좌표는 항상
+>    `locate_ui_element`가 **방금 화면을 보고** 계산한 값만 쓴다
+> 2. **사람 승인** — `DANGEROUS_TOOLS`라 `hitl`이 먼저 묻는다. 질문 문구도 따로다
+>    (삭제의 "휴지통으로 갑니다"는 클릭엔 거짓이다)
+> 3. **실행 직전 검사** — 못 찾음 · 화면 밖 · 창 밖 · **캡처 뒤 창이 움직임**이면
+>    누르지 않는다. 특히 창 이동은 좌표를 무의미하게 만드는데 눈에 안 띈다
+>
+> 못 찾았을 때 **화면 중앙이라도 눌러보는 식의 폴백을 넣지 말 것.** 클릭은 되돌릴 수
+> 없다. 그리고 클릭했다는 것과 **의도한 효과가 났다는 것은 다르다** — 응답도 거기까지만 말한다.
 
 > ⚠️ **`visual_verify` 노드는 이 제한을 넘어선다** — 사용자가 화면을 묻지 않아도
 > `type_text`·`open_app` 실행 시 자동으로 캡처해 보낸다. 끄는 법과 근거는

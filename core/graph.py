@@ -51,7 +51,9 @@ from langchain_core.messages import (
 # 이 도구 호출은 실행 전 hitl 노드에서 사용자 승인을 받는다.
 _log = get_logger("Graph")
 
-DANGEROUS_TOOLS = {"delete_file", "delete_folder"}
+# click_ui_element: 클릭은 되돌릴 수 없고, 좌표는 Vision의 **추정**이다.
+# 무엇을 어디서 누를지 사용자가 보고 승인해야 한다. (2026-09-03)
+DANGEROUS_TOOLS = {"delete_file", "delete_folder", "click_ui_element"}
 
 # ── 실행 결과 시각적 검증: **못 믿을 도구** 정의 (Phase 2) ─────────
 # 위가 "위험해서 멈추는 도구"라면 여기는 **못 믿어서 확인하는 도구**다.
@@ -215,6 +217,17 @@ def _confirm_question(dcall: Optional[dict]) -> str:
         return f"정말 실행할까요? ({consequence})"
     name = dcall.get("name", "")
     args = dcall.get("args", {}) or {}
+
+    # 클릭은 삭제와 결과가 달라 문구도 달라야 한다. "휴지통으로 갑니다"는 거짓이 된다.
+    # 좌표는 아직 모른다 — 도구가 실행될 때 화면을 보고 정하기 때문이다.
+    # 그래서 **무엇을 어디서** 누를지만 알린다.
+    if name == "click_ui_element":
+        what = str(args.get("target", "")).strip() or "화면의 어떤 것"
+        where = str(args.get("window", "")).strip()
+        place = f"'{where}' 창에서 " if where else ""
+        return (f"{place}'{what}'을(를) 찾아서 클릭할까요? "
+                "(클릭은 되돌릴 수 없어요)")
+
     target = args.get("file_path") or args.get("folder_path") or ""
     # 조사 하드코딩('을(를)') 금지 — 대상이 둘뿐이라 각각 맞는 조사를 쓴다.
     # ("파일"은 ㄹ 받침 → 을 / "폴더"는 받침 없음 → 를)
@@ -230,7 +243,7 @@ _MAX_CONFIRM_ASKS = 2
 def _reask_question(dcall: Optional[dict]) -> str:
     """애매한 답이 왔을 때의 재질문. 무엇을 물었는지 다시 알려준다."""
     return (f"{_confirm_question(dcall)} "
-            "삭제하려면 '네', 그만두려면 '아니오'라고 말씀해 주세요.")
+            "진행하려면 '네', 그만두려면 '아니오'라고 말씀해 주세요.")
 
 
 # ── 상태 정의 ──────────────────────────────────────────────────────

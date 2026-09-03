@@ -275,20 +275,22 @@ def describe_screen(window: str = "", question: str = "") -> str:
                 log.debug("임시 파일 삭제 실패: %s", tmp_path)
 
 
-@tool
-def find_ui_element(target: str, window: str = "") -> str:
-    """
-    화면에서 버튼·메뉴·입력창 같은 UI 요소를 찾아 **화면 좌표**를 알려줍니다.
-    사용자가 "저장 버튼 어디 있어?"처럼 위치를 물을 때 사용하세요.
+def locate_ui_element(target: str, window: str = "") -> dict:
+    """화면에서 요소를 찾아 **화면 좌표**를 돌려준다. 도구가 아니라 내부 함수다.
 
-    target: 찾을 것 (예: "저장 버튼", "검색창", "닫기 X 버튼")
-    window: 볼 대상 — 비워두면 전체 화면 / "활성창" / 앱 이름
+    찾으면 `{"found": True, "center", "rect", "size", "label", "window_rect"}`,
+    못 찾으면 `{"found": False, "reason": …}`.
 
-    화면에 없으면 좌표를 만들어내지 않고 "찾지 못했다"고 답합니다.
+    `find_ui_element`(사람에게 알려주기)와 `click_ui_element`(실제로 누르기)가 **같은
+    경로**를 쓰게 하려고 뺐다. 클릭 쪽에서 좌표를 다시 구하면 두 벌이 되어 한쪽만
+    고쳐진다 — 좌표는 어긋나도 그럴듯해 보이므로 특히 위험하다.
+
+    `window_rect`는 캡처 당시 창의 화면 사각형이다. 클릭 직전에 창이 움직이지
+    않았는지 대조하는 데 쓴다.
     """
     tmp_path = ""
     try:
-        from tools.system import take_screenshot, capture_origin
+        from tools.system import take_screenshot, capture_origin, resolve_window_hwnd, window_screen_rect
 
         # ── 1) 캡처 원점 먼저 (좌표를 되돌리려면 반드시 필요) ──────
         # 캡처보다 **먼저** 구한다. 캡처는 됐는데 원점을 못 구하면 좌표를 화면
@@ -296,16 +298,22 @@ def find_ui_element(target: str, window: str = "") -> str:
         # 다음 단계(클릭)가 엉뚱한 데를 누른다.
         try:
             origin = capture_origin(window)
+            window_rect = None
+            if window:
+                hwnd, _ = resolve_window_hwnd(window)
+                if hwnd:
+                    window_rect = window_screen_rect(hwnd)
         except Exception as e:
             log.warning("캡처 원점 실패: %s", e)
-            return f"✗ '{window or '화면'}'의 위치를 확인하지 못해 좌표를 낼 수 없습니다: {e}"
+            return {"found": False,
+                    "reason": f"'{window or '화면'}'의 위치를 확인하지 못했습니다: {e}"}
 
         fd, tmp_path = tempfile.mkstemp(suffix=".png", prefix="pluiz_uiloc_")
         os.close(fd)
         shot = take_screenshot.invoke({"save_path": tmp_path, "window": window})
         if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
             log.warning("캡처 실패: %s", shot)
-            return f"✗ 화면을 캡처하지 못했습니다. {shot}"
+            return {"found": False, "reason": f"화면을 캡처하지 못했습니다. {shot}"}
 
         # ── 2) 원본 크기 (정규화 좌표를 픽셀로 되돌릴 기준) ────────
         try:
@@ -314,7 +322,7 @@ def find_ui_element(target: str, window: str = "") -> str:
                 image_size = im.size
         except Exception as e:
             log.warning("이미지 크기 확인 실패: %s", e)
-            return f"✗ 화면 크기를 확인하지 못해 좌표를 낼 수 없습니다: {e}"
+            return {"found": False, "reason": f"화면 크기를 확인하지 못했습니다: {e}"}
 
         # ── 3) Vision 호출 ────────────────────────────────────────
         b64 = _shrink_and_encode(tmp_path)
@@ -331,29 +339,49 @@ def find_ui_element(target: str, window: str = "") -> str:
 
         if not parsed["found"]:
             log.info("UI 요소 못 찾음: %s", parsed["reason"])
-            return f"✗ 화면에서 '{target}'을(를) 찾지 못했습니다. ({parsed['reason']})"
+            return {"found": False, "reason": parsed["reason"]}
 
         loc = box_to_screen(parsed["box"], image_size, origin)
-        cx, cy = loc["center"]
-        bw, bh = loc["size"]
-        label = parsed["label"] or target
-        where = f" ({window} 창)" if window else ""
-        log.info("UI 요소 찾음: %r → center=%s size=%s", label, loc["center"], loc["size"])
-
-        # 좌표를 냈다고 해서 확인된 건 아니다. Vision의 추정임을 문장에 남긴다 —
-        # 다음 단계(클릭)를 만들 때 이 한계를 잊지 않기 위해서다.
-        return (f"✓ '{label}'{where}을(를) 화면 좌표 ({cx}, {cy})에서 찾았습니다. "
-                f"크기 {bw}×{bh}. (화면을 보고 추정한 위치예요)")
+        loc["found"] = True
+        loc["label"] = parsed["label"] or target
+        loc["window_rect"] = window_rect
+        log.info("UI 요소 찾음: %r → center=%s size=%s",
+                 loc["label"], loc["center"], loc["size"])
+        return loc
 
     except ImportError as e:
         log.exception("Vision 의존성 없음")
-        return f"[오류] 화면 분석에 필요한 패키지가 없습니다: {e}"
+        return {"found": False, "reason": f"필요한 패키지가 없습니다: {e}"}
     except Exception as e:
         log.exception("UI 요소 탐색 실패")
-        return f"[오류] 화면에서 요소를 찾지 못했습니다: {type(e).__name__}: {e}"
+        return {"found": False, "reason": f"{type(e).__name__}: {e}"}
     finally:
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.unlink(tmp_path)
             except Exception:
                 log.debug("임시 파일 삭제 실패: %s", tmp_path)
+
+
+@tool
+def find_ui_element(target: str, window: str = "") -> str:
+    """
+    화면에서 버튼·메뉴·입력창 같은 UI 요소를 찾아 **화면 좌표**를 알려줍니다.
+    사용자가 "저장 버튼 어디 있어?"처럼 위치를 물을 때 사용하세요.
+    (실제로 누르려면 click_ui_element를 쓰세요)
+
+    target: 찾을 것 (예: "저장 버튼", "검색창", "닫기 X 버튼")
+    window: 볼 대상 — 비워두면 전체 화면 / "활성창" / 앱 이름
+
+    화면에 없으면 좌표를 만들어내지 않고 "찾지 못했다"고 답합니다.
+    """
+    loc = locate_ui_element(target, window)
+    if not loc["found"]:
+        return f"✗ 화면에서 '{target}'을(를) 찾지 못했습니다. ({loc['reason']})"
+
+    cx, cy = loc["center"]
+    bw, bh = loc["size"]
+    where = f" ({window} 창)" if window else ""
+    # 좌표를 냈다고 해서 확인된 건 아니다. Vision의 추정임을 문장에 남긴다.
+    return (f"✓ '{loc['label']}'{where}을(를) 화면 좌표 ({cx}, {cy})에서 찾았습니다. "
+            f"크기 {bw}×{bh}. (화면을 보고 추정한 위치예요)")

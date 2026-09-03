@@ -250,3 +250,108 @@ def press_key(key: str) -> str:
         return f"[오류] {e}"
     except Exception as e:
         return f"[press_key 오류] {type(e).__name__}: {e}"
+
+
+# ── 좌표 기반 클릭 (Phase 2) ──────────────────────────────────────
+#
+# ⚠️ **이 도구는 좌표를 인자로 받지 않는다.** 일부러 그렇게 만들었다.
+#    LLM이 좌표를 넘길 수 있으면 언젠가 지어낸다. 그러면 "틀린 좌표를 정확히
+#    클릭하는" 도구가 되고, 클릭은 되돌릴 수 없다. 그래서 찾기와 누르기를 한 도구
+#    안에 묶어, 좌표는 항상 `locate_ui_element`가 방금 화면을 보고 계산한 값만 쓴다.
+#
+# ⚠️ 실행 전 `hitl` 노드가 사용자 승인을 받는다 (core/graph.py DANGEROUS_TOOLS).
+
+def _click_guard(loc: dict, window: str) -> str:
+    """클릭해도 되는 좌표인가. 문제가 있으면 사유(문자열), 괜찮으면 "".
+
+    화면 밖이거나 대상 창 밖이면 누르지 않는다. Vision이 틀린 좌표를 줬을 때
+    **눈에 띄게 틀린 것만이라도** 걸러내려는 최소한의 그물이다.
+    """
+    x, y = loc["center"]
+
+    # 1) 가상 화면(다중 모니터 포함) 안인가
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        vx = u.GetSystemMetrics(76)   # SM_XVIRTUALSCREEN
+        vy = u.GetSystemMetrics(77)   # SM_YVIRTUALSCREEN
+        vw = u.GetSystemMetrics(78)   # SM_CXVIRTUALSCREEN
+        vh = u.GetSystemMetrics(79)   # SM_CYVIRTUALSCREEN
+        if vw > 0 and vh > 0 and not (vx <= x < vx + vw and vy <= y < vy + vh):
+            return f"좌표 ({x}, {y})가 화면 밖입니다"
+    except Exception as e:
+        print(f"[click] 화면 범위 확인 생략(무시): {type(e).__name__}: {e}")
+
+    # 2) 대상 창이 **캡처 때와 같은 자리**에 있는가
+    #    좌표는 캡처 시점의 창 위치를 기준으로 계산됐다. 그 사이 창이 움직였으면
+    #    그 좌표는 더 이상 그 요소를 가리키지 않는다.
+    rect = loc.get("window_rect")
+    if window and rect:
+        try:
+            from tools.system import resolve_window_hwnd, window_screen_rect
+            hwnd, _ = resolve_window_hwnd(window)
+            if not hwnd:
+                return f"'{window}' 창이 사라졌습니다"
+            if window_screen_rect(hwnd) != tuple(rect):
+                return f"'{window}' 창이 그 사이 움직여서 좌표가 맞지 않습니다"
+        except Exception as e:
+            print(f"[click] 창 이동 확인 생략(무시): {type(e).__name__}: {e}")
+
+        left, top, w, h = rect
+        if not (left <= x < left + w and top <= y < top + h):
+            return f"좌표 ({x}, {y})가 '{window}' 창 밖입니다"
+    return ""
+
+
+@tool
+def click_ui_element(target: str, window: str = "") -> str:
+    """
+    화면에서 버튼·메뉴 같은 요소를 찾아 **마우스로 클릭**합니다.
+    사용자가 "저장 버튼 눌러줘", "확인 클릭해줘"처럼 요청할 때 사용하세요.
+
+    target: 누를 것 (예: "저장 버튼", "확인", "닫기 X 버튼")
+    window: 어느 창에서 찾을지 — 비워두면 전체 화면 / "활성창" / 앱 이름
+
+    화면에서 못 찾으면 아무 데도 클릭하지 않습니다.
+    좌표는 이 도구가 직접 화면을 보고 정하며, 좌표를 인자로 받지 않습니다.
+    """
+    try:
+        pyautogui = _get_pyautogui()
+    except ImportError as e:
+        return f"[오류] {e}"
+
+    try:
+        from tools.vision import locate_ui_element
+    except Exception as e:
+        return f"[오류] 화면 분석 기능을 불러오지 못했습니다: {e}"
+
+    loc = locate_ui_element(target, window)
+    if not loc.get("found"):
+        # 못 찾았으면 **아무 데도 누르지 않는다.** 중앙을 누른다든지 하면 안 된다.
+        return (f"✗ 화면에서 '{target}'을(를) 찾지 못해 클릭하지 않았습니다. "
+                f"({loc.get('reason', '알 수 없음')})")
+
+    problem = _click_guard(loc, window)
+    if problem:
+        return f"✗ {problem}. 안전을 위해 클릭하지 않았습니다."
+
+    x, y = loc["center"]
+    try:
+        before = pyautogui.position()
+    except Exception:
+        before = None
+    try:
+        pyautogui.click(x, y)
+    except Exception as e:
+        return f"[click 오류] {type(e).__name__}: {e}"
+    finally:
+        # 마우스를 원래 자리로 돌려놓는다 — 사용자가 쓰던 위치를 뺏지 않는다
+        if before is not None:
+            try:
+                pyautogui.moveTo(before[0], before[1])
+            except Exception:
+                pass
+
+    # 클릭했다는 것과 **의도한 효과가 났다는 것은 다르다.** 지어내지 않는다.
+    return (f"✓ '{loc['label']}'을(를) 화면 ({x}, {y})에서 클릭했습니다. "
+            f"원하는 대로 됐는지는 화면을 확인해 주세요.")

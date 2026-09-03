@@ -20,11 +20,11 @@
 |---|---|
 | **엔진** | `PluizGraphAgent` **단일**. 구 엔진은 M1-P5에서 제거 → [design/M1_P5_엔진단일화.md](design/M1_P5_엔진단일화.md) |
 | **M1 진행** | P0 진단 → P1 맥락 → P1.5 그래프 이관 → P2 HITL → P3 OWASP → P4 캐시학습 → **P5 엔진단일화 · 전부 완료** |
-| **도구** | **36개** (삭제 2개는 HITL 승인 필수 · `describe_screen`·`find_ui_element`는 화면을 외부 LLM에 전송) |
+| **도구** | **37개** (**승인 필수 3개** — 삭제 2 + `click_ui_element` · `describe_screen`·`find_ui_element`는 화면을 외부 LLM에 전송) |
 | **화면 검증** | `visual_verify` 노드 — `type_text`가 **넣으려던 그 창**을 화면으로 재확인(2026-09-03). 기본 ON, `.env` `VISION_VERIFY_ENABLED=false`로 끔. ⚠️ **mock만 통과, 실기 미검증** → [TASKS.md](TASKS.md) ① |
 | **도구 정직성** | `type_text`가 **입력 전에** 대상 창을 확인하고, 못 잡으면 입력하지 않는다(BL-12 해결). 캐시는 **해석 못 한 잔여 명령이 있으면 포기**한다(BL-15 해결) |
 | **보안** | **5층 방어** — 0 로컬 API 접근 제어(토큰) · 1 규칙 · 2 하이브리드 LLM 판정 · 3 HITL · 4 출력 마스킹 → [ARCHITECTURE](ARCHITECTURE.md#보안--5층-방어) |
-| **테스트** | mock **26파일 558개** + 라이브 3스위트. CI는 그중 25파일 526개 자동 실행 (`test_dependencies` 32개는 로컬 전용) — **이 숫자의 출처는 이 표 하나다** |
+| **테스트** | mock **27파일 586개** + 라이브 3스위트. CI는 그중 26파일 554개 자동 실행 (`test_dependencies` 32개는 로컬 전용) — **이 숫자의 출처는 이 표 하나다** |
 | **라이브 실측** | **2026-09-03 · 3스위트 전부 FAIL 0** — `regression` **35/35**(AUTH-01~04 포함) · `commands` 40P/0F/15MANUAL · `sprint1_2` 55/55 → [DEVLOG](DEVLOG.md).<br>더해서 접근제어 16항목 · HITL 오승인 5시나리오 18/18 실측.<br>⚠️ **마이크·UI 시각 확인 + 화면 검증(2026-09-03 신규) 미검증** → [TASKS.md](TASKS.md) ① |
 | **CI** | GitHub Actions 3잡 — mock · 문서링크 · 비밀정보 가드 |
 | **브랜치** | `main` = `develop` = 최신. 작업은 `feature/byeonsoyun` |

@@ -53,6 +53,7 @@ def get_all_tools() -> List[BaseTool]:
         type_text,
         press_key,
         get_clipboard_text,
+        click_ui_element,
     )
     from tools.calendar import (
         create_calendar_event,
@@ -105,6 +106,9 @@ def get_all_tools() -> List[BaseTool]:
         describe_screen,
         find_ui_element,
     ]
+
+    # 좌표 기반 클릭(위험 동작 — 되돌릴 수 없다). 승인 후 실행된다.
+    tools += [click_ui_element]
 
     # 파일 삭제(위험 동작). 실행 전 반드시 사람 승인을 받는다.
     # → core/graph.py 의 DANGEROUS_TOOLS 에 등록돼 hitl 노드가 interrupt 를 건다.

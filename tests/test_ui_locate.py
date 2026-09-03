@@ -151,6 +151,8 @@ _sys_stub = types.ModuleType("tools.system")
 def _boom_origin(window=""):
     raise ValueError("창을 찾을 수 없습니다")
 _sys_stub.capture_origin = _boom_origin
+_sys_stub.resolve_window_hwnd = lambda w: (0, w)
+_sys_stub.window_screen_rect = lambda h: (0, 0, 1, 1)
 _sys_stub.take_screenshot = None      # 여기까지 오면 안 된다 (오면 TypeError로 드러남)
 _saved = sys.modules.get("tools.system")
 sys.modules["tools.system"] = _sys_stub
@@ -159,7 +161,7 @@ try:
     check("✗ 로 답한다", r.startswith("✗"), f"→ {r[:70]}")
     check("좌표를 지어내지 않는다", "(" not in r.split("좌표")[0] or "찾았습니다" not in r,
           f"→ {r[:70]}")
-    check("사유를 알린다", "위치를 확인하지 못해" in r, f"→ {r[:70]}")
+    check("사유를 알린다", "위치를 확인하지 못했습니다" in r, f"→ {r[:90]}")
 finally:
     if _saved is not None:
         sys.modules["tools.system"] = _saved
