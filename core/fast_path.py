@@ -21,6 +21,12 @@ from __future__ import annotations
 import re
 from typing import Optional, Callable, Any
 
+from core.logger import get_logger
+
+# BL-15는 "고치기 전에 빈도부터 재라"가 원칙이었다. 고치면서 **함께** 잰다 —
+# 이 로그가 임베딩 캐시(10월)의 "좋아졌다"를 숫자로 말할 근거가 된다.
+_log = get_logger("FastPath")
+
 
 # ── 복합 명령 감지 패턴 ────────────────────────────────────────────
 # "닫고/열고" 동사 연결형 + 문맥 참조형("방금","빼고" 등) → 캐시 바이패스
@@ -67,6 +73,23 @@ def is_compound_command(text: str) -> bool:
             or is_multi_app_command(text))
 
 
+def has_uncovered_command(cache: Any, text: str) -> bool:
+    """캐시가 문장의 **일부만** 이해했는가. (BL-15)
+
+    판정 자체는 캐시가 한다 — entity/action 어휘를 가진 쪽이 거기이기 때문이다.
+    여기서 다시 구현하면 두 벌이 되어 한쪽만 고쳐진다.
+    메서드가 없는 mock/구버전 캐시면 False(=예전 동작).
+    """
+    fn = getattr(cache, "has_uncovered_command", None)
+    if fn is None:
+        return False
+    try:
+        return bool(fn(text))
+    except Exception as e:
+        print(f"[fast_path] 잔여명령 검사 오류(무시): {type(e).__name__}: {e}")
+        return False
+
+
 # 라우터 타입: user_input -> (결과 텍스트 | None)
 RouterResolve = Callable[[str], Optional[str]]
 
@@ -99,6 +122,12 @@ def resolve_fast_path(
     if cache is not None:
         try:
             hit = cache.find(text)
+            if hit and has_uncovered_command(cache, text):
+                # 캐시가 문장의 일부만 이해했다. 실행하면 나머지 명령이 조용히 사라진다.
+                # → LLM이 문장 전체를 보게 한다. (BL-15)
+                _log.info("[BL-15] 잔여 명령 감지 → 캐시 포기, LLM으로: %r "
+                          "(캐시가 잡은 패턴=%r)", text, getattr(hit[0], "pattern", "?"))
+                return None
             if hit:
                 entry, _score = hit
                 result = cache.execute_sync(entry)

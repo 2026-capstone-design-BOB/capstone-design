@@ -222,6 +222,41 @@ ACTION_PATTERNS: list[tuple[str, list[str]]] = [
 ]
 
 
+# 명령형 어미 — **캐시가 해석하지 못한 말에 또 명령이 있는지** 판정할 때 쓴다. (BL-15)
+#
+# 왜 필요한가: entity+action 추출은 문장에서 **처음 걸린 것 하나씩만** 본다.
+# 그래서 "메모장 열어서 회의록 써줘"는 (notepad, open)으로 히트해 메모장만 열고
+# **뒷문장이 조용히 사라졌다.** 사용자는 "왜 안 적혔지?"만 겪고 로그엔 성공으로 남는다.
+# (2026-09-03 실기에서 실제로 발생 — 사용자가 "회의록 써달라니까 씹었다"고 지적)
+#
+# 여기서 어미 목록을 늘리는 식의 땜질을 하지 않는다. **캐시가 커버한 어절을 빼고**
+# 남은 말에 명령의 꼴이 있으면 캐시를 포기한다 — 어느 동사인지는 알 필요가 없다.
+# 의미를 바꾸지 않는 삽입어. "스크린샷 **좀** 찍어줘"처럼 명령어와 그 동사 사이에 끼어든다.
+_FILLER_TOKENS = frozenset([
+    "좀", "다", "빨리", "당장", "어서", "얼른", "그냥", "지금", "제발",
+    "이제", "다시", "한번", "한 번", "정말", "진짜", "빨랑",
+])
+
+# 캐시가 **표현할 수 없는** 수식어. (BL-15와 같은 뿌리)
+#
+# 캐시 엔트리는 도구 이름만 저장하고 **파라미터를 저장하지 않는다**(P4 오염 방지 정책).
+# 그래서 파라미터를 바꾸는 말이 남아 있으면 그 명령은 캐시가 재현할 수 없다:
+#   "새로 메모장 열어줘" → 캐시는 open_app(app='메모장')만 안다. **new=True를 모른다.**
+#   → 기존 창을 앞으로 가져와 놓고 "새로 열었다"고 답한다.
+# 2026-09-03 실기에서 사용자가 지적한 그대로다:
+#   *"메모장을 새로 열라고 하면 기존 창을 앞으로 가져오는 게 아니라 새 탭을 추가하라는 건데"*
+#
+# ※ 어절 **완전일치**로만 본다. 부분일치면 "새로고침"이 "새로"에 걸린다.
+_RESIDUAL_MODIFIERS = frozenset([
+    "새로", "새로운", "새", "새창", "새탭", "또", "추가로", "하나", "더", "따로",
+])
+
+_RESIDUAL_CMD_TAIL = re.compile(
+    r'(줘|줄래|주라|주세요|주시겠어요|주시겠어|달라|달라니까|다오'
+    r'|봐|봐라|보여|알려|해라|하렴|하자)$'
+)
+
+
 # ── CommandCache 클래스 ───────────────────────────────────────────
 
 class CommandCache:
@@ -264,22 +299,122 @@ class CommandCache:
 
     # ── Intent 추출 ───────────────────────────────────────────────
 
+    def _match_entity(self, text_ns: str) -> Optional[tuple[str, str]]:
+        """(entity 키, 실제로 걸린 표면형) — 더 긴 표면형 우선. 둘 다 공백 제거된 값."""
+        for surface, key in ALL_ENTITIES:
+            s = surface.replace(" ", "")
+            if s in text_ns:
+                return (key, s)
+        return None
+
+    def _match_action(self, text_ns: str) -> Optional[tuple[str, str]]:
+        """(action 키, 실제로 걸린 트리거) — 우선순위 순서대로. 둘 다 공백 제거된 값."""
+        for action_key, triggers in ACTION_PATTERNS:
+            for trigger in triggers:
+                t = trigger.replace(" ", "")
+                if t in text_ns:
+                    return (action_key, t)
+        return None
+
     def _extract_entity(self, text: str) -> Optional[str]:
         """텍스트에서 entity 키 추출. 더 긴 표면형 우선."""
-        text_ns = text.replace(" ", "")
-        for surface, key in ALL_ENTITIES:
-            if surface.replace(" ", "") in text_ns:
-                return key
-        return None
+        m = self._match_entity(text.replace(" ", ""))
+        return m[0] if m else None
 
     def _extract_action(self, text: str) -> Optional[str]:
         """텍스트에서 action 키 추출. 우선순위 순서대로 확인."""
-        text_ns = text.replace(" ", "")
-        for action_key, triggers in ACTION_PATTERNS:
-            for trigger in triggers:
-                if trigger.replace(" ", "") in text_ns:
-                    return action_key
-        return None
+        m = self._match_action(text.replace(" ", ""))
+        return m[0] if m else None
+
+    def has_uncovered_command(self, user_input: str) -> bool:
+        """캐시가 해석한 부분 **말고 남은 말에 또 다른 명령**이 있는가. (BL-15)
+
+        남은 말이 **또 다른 명령**이거나(→ 뒷문장이 증발), **파라미터를 바꾸는
+        수식어**이면(→ 캐시는 파라미터를 저장하지 않아 재현 불가) True.
+
+        캐시는 문장에서 entity 하나 + action 하나만 집어내고 **나머지는 보지 않는다.**
+        그래서 뒤에 붙은 명령이 조용히 사라졌다:
+
+            "새로 메모장 열어서 거기에 회의록이라고 써줘"
+              → (notepad, open) 히트 → 메모장만 열림. "회의록 써줘"는 증발.
+            "새로 메모장 열어줘"
+              → 같은 히트 → open_app(app='메모장'). **new=True를 모른다.**
+                 기존 창을 앞으로 가져와 놓고 "새로 열었다"고 답한다.
+
+        판정 방법: 걸린 entity 표면형과 action 트리거가 **차지한 어절**을 지우고,
+        남은 어절 중 명령형 어미로 끝나는 게 있으면 True.
+
+        - 어느 동사인지는 묻지 않는다. 동사 목록을 늘리는 땜질은 하지 않는다는 뜻이다.
+          (`열어서`를 패턴에 추가하는 식이면 `띄워서`·`실행해서`에서 또 터진다)
+        - 오판의 방향이 안전하다 — True로 잘못 봐도 **LLM이 문장 전체를 해석**한다.
+          느려질 뿐 틀리지 않는다. 반대로 놓치면 명령이 사라진다.
+        - **Stage 1(intent) 히트에만 해당한다.** 이유는 본문 주석 참조.
+        """
+        text = self._normalize(user_input)
+        tokens = [t for t in text.split(" ") if t]
+        if not tokens:
+            return False
+        text_ns_all = "".join(tokens)
+
+        # ⚠️ **Stage 1(intent) 히트에만 적용한다.**
+        # Stage 2는 문장 전체의 문자열 유사도(≥0.80)로 매칭하므로, 뒤에 명령이 더
+        # 붙으면 점수가 알아서 떨어진다 — 커버 범위를 따질 일이 없다.
+        # 이 구분을 빼면 정상 명령이 무더기로 캐시를 못 탄다. 실측 오탐 3건:
+        #   "볼륨 좀 올려줘"("볼륨 올" 트리거가 '좀' 때문에 안 걸림) ·
+        #   "음소거 해줘"·"스크린샷 찍어줘"(엔티티가 아예 없음)
+        # → 셋 다 action이나 entity 한쪽이 없어 S2로 가던 것들이었다.
+        matched_entity = self._match_entity(text_ns_all)
+        matched_action = self._match_action(text_ns_all)
+        if not matched_entity or not matched_action:
+            return False
+
+        # 공백 없는 문자열 ↔ 어절 인덱스 매핑
+        # (트리거가 "볼륨 올"처럼 두 어절에 걸쳐 있어서 공백 제거 후 찾아야 한다)
+        owner: list[int] = []
+        for i, tok in enumerate(tokens):
+            owner.extend([i] * len(tok))
+        text_ns = text_ns_all
+
+        # entity와 action이 **같은 낱말**인 명령이 있다("음소거", "스크린샷", "최대화").
+        # 이런 건 낱말 자체가 명령이고 동사를 따로 데리고 다닌다 — "음소거 해줘",
+        # "스크린샷 찍어줘". 그 동사를 잔여 명령으로 읽으면 정상 명령이 캐시를 못 탄다.
+        # 그래서 이때만 **바로 뒤 어절 하나**를 같은 명령의 일부로 본다.
+        # (entity ≠ action이면 이미 동사가 커버 안에 있다 — "계산기 실행해서 계산해줘"의
+        #  '계산해줘'까지 삼키면 안 되므로 흡수하지 않는다)
+        absorb_next = matched_entity[1] == matched_action[1]
+
+        covered: set[int] = set()
+        for matched in (matched_entity, matched_action):
+            surface = matched[1]
+            start = text_ns.find(surface)
+            if start < 0:
+                continue
+            # 트리거가 걸친 어절은 통째로 커버로 본다.
+            # "열어줘"에 트리거 "열어"가 걸리면 어절 전체가 커버다 — 안 그러면
+            # 남은 "줘"가 명령으로 읽혀 **모든 캐시 히트가 무효화된다.**
+            covered.update(owner[start:start + len(surface)])
+
+        if absorb_next and covered:
+            # 명령어와 그 동사 사이에 삽입어가 끼어들 수 있다("스크린샷 **좀** 찍어줘").
+            # 삽입어를 건너뛰고 **실질 어절 하나**를 흡수한다.
+            j = max(covered) + 1
+            while j < len(tokens) and (len(tokens[j]) < 2 or tokens[j] in _FILLER_TOKENS):
+                covered.add(j)
+                j += 1
+            if j < len(tokens):
+                covered.add(j)
+
+        for i, tok in enumerate(tokens):
+            if i in covered:
+                continue
+            # 파라미터를 바꾸는 수식어("새로"…)는 한 글자여도 본다 — 캐시가 못 담는다
+            if tok in _RESIDUAL_MODIFIERS:
+                return True
+            if len(tok) < 2:
+                continue          # 한 글자 어절("줘","좀")은 잡음이라 세지 않는다
+            if _RESIDUAL_CMD_TAIL.search(tok):
+                return True
+        return False
 
     def _extract_intent(self, text: str) -> Optional[tuple[str, str]]:
         """(entity_key, action_key) 쌍 추출. 둘 다 있을 때만 반환."""
