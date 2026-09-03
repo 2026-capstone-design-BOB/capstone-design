@@ -120,7 +120,7 @@ P3 OWASP 가드레일 → P4 캐시 동적 학습 → P5 엔진 단일화. 전�
 | 9월 | 실행 결과 검증 (*"됐어?"*) | ✅ **2026-09-03 완료.** `output_guard`(텍스트 수준) + `visual_verify` 노드(화면 수준). ⚠️ 실기 미검증 |
 | 10월 | 병렬 명령 실행 (Plan-and-Execute) | ❌ 미구현. 단 **선행조건(커스텀 그래프)은 충족됨** |
 
-도구는 27개 → **35개**로 증가(Vision·목록 포함). → [ARCHITECTURE.md § 도구](ARCHITECTURE.md#도구-35개)
+도구는 27개 → **36개**로 증가(Vision·목록·좌표 인식 포함). → [ARCHITECTURE.md § 도구](ARCHITECTURE.md#도구-36개)
 
 ---
 

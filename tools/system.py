@@ -173,6 +173,61 @@ def brightness_down(amount: int = 10) -> str:
 
 # ── 시스템 정보 ───────────────────────────────────────────────────
 
+# 캡처 대상 지정어. "활성창"·"현재창" 등은 지금 포커스된 창을 뜻한다.
+_ACTIVE_WINDOW_WORDS = {"활성창", "현재창", "지금창", "포커스", "active"}
+
+
+def window_screen_rect(hwnd: int) -> tuple[int, int, int, int]:
+    """창의 **화면 좌표** 사각형 (left, top, width, height).
+
+    ⚠️ `_capture_hwnd`가 캡처하는 영역과 **반드시 같아야 한다.** 그래서 한 곳에만 둔다.
+      캡처 이미지의 (0,0)이 화면의 (left, top)이라는 관계가 여기서 나오고,
+      Vision이 찾은 좌표를 화면 좌표로 되돌릴 때 그 관계를 쓴다.
+      따로 구현하면 좌표가 조용히 어긋난다 — 클릭이 엉뚱한 데를 누른다.
+    """
+    import ctypes, ctypes.wintypes
+
+    # DWM 실제 표시 영역 (그림자 제외) — DWMWA_EXTENDED_FRAME_BOUNDS = 9
+    rect = ctypes.wintypes.RECT()
+    if ctypes.windll.dwmapi.DwmGetWindowAttribute(
+        hwnd, 9, ctypes.byref(rect), ctypes.sizeof(rect)
+    ) != 0:
+        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+
+    w = rect.right - rect.left
+    h = rect.bottom - rect.top
+    if w <= 0 or h <= 0:
+        raise ValueError("창 크기가 유효하지 않습니다")
+    return (rect.left, rect.top, w, h)
+
+
+def resolve_window_hwnd(window: str) -> tuple[int, str]:
+    """캡처 대상 문자열 → (hwnd, 표시용 이름). 못 찾으면 (0, 이름).
+
+    `take_screenshot`과 좌표 계산이 **같은 창을 가리키도록** 한 곳에 둔다.
+    """
+    import ctypes
+
+    if window.lower() in _ACTIVE_WINDOW_WORDS:
+        return (ctypes.windll.user32.GetForegroundWindow(), "활성 창")
+    from tools.app_control import find_hwnd_for_app
+    return (find_hwnd_for_app(window), window)
+
+
+def capture_origin(window: str = "") -> tuple[int, int]:
+    """캡처 이미지의 (0,0)이 화면의 어느 좌표인지. 전체화면이면 (0, 0).
+
+    Vision이 이미지 안에서 찾은 위치를 **화면 좌표**로 옮길 때 쓴다.
+    """
+    if not window:
+        return (0, 0)
+    hwnd, _label = resolve_window_hwnd(window)
+    if not hwnd:
+        raise ValueError(f"'{window}' 창을 찾을 수 없습니다")
+    left, top, _w, _h = window_screen_rect(hwnd)
+    return (left, top)
+
+
 def _capture_hwnd(hwnd: int):
     """
     PrintWindow API로 HWND 창 픽셀만 캡처. PIL Image(RGB) 반환.
@@ -182,17 +237,7 @@ def _capture_hwnd(hwnd: int):
     import ctypes, ctypes.wintypes
     from PIL import Image
 
-    # DWM 실제 표시 영역 (그림자 제외) — DWMWA_EXTENDED_FRAME_BOUNDS = 9
-    rect = ctypes.wintypes.RECT()
-    if ctypes.windll.dwmapi.DwmGetWindowAttribute(
-        hwnd, 9, ctypes.byref(rect), ctypes.sizeof(rect)
-    ) != 0:
-        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-
-    w = rect.right  - rect.left
-    h = rect.bottom - rect.top
-    if w <= 0 or h <= 0:
-        raise ValueError("창 크기가 유효하지 않습니다")
+    _left, _top, w, h = window_screen_rect(hwnd)
 
     # GDI DC + 비트맵 생성
     hdc_src = ctypes.windll.user32.GetWindowDC(hwnd)
@@ -265,18 +310,11 @@ def take_screenshot(save_path: str = "", window: str = "") -> str:
             img.save(save_path)
             return f"✓ 전체 화면 스크린샷을 저장했습니다.\n경로: {save_path}"
 
-        # ── HWND 획득 ────────────────────────────────────────────
-        _ACTIVE = {"활성창", "현재창", "지금창", "포커스", "active"}
-        if window.lower() in _ACTIVE:
-            hwnd = ctypes.windll.user32.GetForegroundWindow()
-            label = "활성 창"
-        else:
-            try:
-                from tools.app_control import find_hwnd_for_app
-                hwnd = find_hwnd_for_app(window)
-            except Exception as import_err:
-                return f"✗ 앱 창 조회 실패: {import_err}"
-            label = window
+        # ── HWND 획득 (좌표 계산과 같은 해석기를 쓴다) ────────────
+        try:
+            hwnd, label = resolve_window_hwnd(window)
+        except Exception as import_err:
+            return f"✗ 앱 창 조회 실패: {import_err}"
 
         if not hwnd:
             return f"✗ '{window}' 창을 찾을 수 없습니다. 앱이 실행 중인지 확인해주세요."

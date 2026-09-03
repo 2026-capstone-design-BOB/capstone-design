@@ -179,7 +179,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 
 ---
 
-## 도구 (35개)
+## 도구 (36개)
 
 [`core/tool_registry.py`](../core/tool_registry.py)에 단일 등록.
 
@@ -191,7 +191,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 | 시스템 | 10 | `volume_up/down/set` `mute_toggle` `brightness_up/down` `take_screenshot` `get_battery_status` `get_current_time` `get_running_apps` |
 | 입력 | 3 | `type_text` `press_key` `get_clipboard_text` |
 | 캘린더 | 1 | `create_calendar_event` |
-| 화면 이해 | 1 | `describe_screen` — ⚠️ **화면 내용을 외부 LLM로 전송** (아래 참조) |
+| 화면 이해 | 2 | `describe_screen`(무엇이 보이나) · `find_ui_element`(어디에 있나 — **화면 좌표**) — ⚠️ 둘 다 **화면 내용을 외부 LLM로 전송** (아래 참조) |
 | **삭제** | **2** | `delete_file` `delete_folder` — **HITL 승인 필수** |
 
 > **삭제 도구 안전장치**: `core/graph.py`의 `DANGEROUS_TOOLS`에 등록돼 있어
@@ -208,6 +208,21 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 > - 반환된 설명은 `mask_sensitive_output()`을 거쳐 나간다 — **출력 노출은 막지만
 >   전송 자체는 막지 못한다.** 원천 차단하려면 로컬 Vision 모델이 필요하다(범위 밖).
 >
+> **`find_ui_element` — 좌표를 지어내지 않는 것이 전부다 (2026-09-03)**
+> `describe_screen`은 설명이 틀려도 사용자가 읽고 거른다. **좌표는 다르다.** 숫자라
+> 그럴듯해 보이고 다음 단계(좌표 기반 클릭)가 그대로 믿는다. 그래서 이렇게 막는다.
+> - 모델에게 **JSON으로만** 답하게 하고 `[ymin, xmin, ymax, xmax]` 0~1000을 명시한다
+>   (모델 기본 관례에 기대면 조용히 어긋난다)
+> - 뒤집힌 좌표 · 범위 밖 · 화면의 95% 이상을 덮는 박스("모르겠다"를 그림으로 그린 것) ·
+>   **후보가 여럿인 응답**은 전부 **못 찾음**으로 처리한다. 조용히 첫 번째를 고르지 않는다
+> - **캡처 원점을 먼저 구한다.** 창 위치를 모르면 창 기준 좌표밖에 없는데, 그걸 화면
+>   좌표인 척 내보내면 클릭이 엉뚱한 데를 누른다. 원점은 `tools/system.capture_origin`
+>   하나만 쓴다 — `_capture_hwnd`가 찍는 영역과 **같은 함수**(`window_screen_rect`)에서
+>   나와야 좌표가 어긋나지 않는다
+>
+> ⚠️ **아직 실측되지 않았다.** Gemini가 좌표를 얼마나 맞히는지는 mock으로 알 수 없다.
+> **클릭을 붙이기 전에 반드시 실측할 것.**
+
 > ⚠️ **`visual_verify` 노드는 이 제한을 넘어선다** — 사용자가 화면을 묻지 않아도
 > `type_text`·`open_app` 실행 시 자동으로 캡처해 보낸다. 끄는 법과 근거는
 > [§ 실행 결과 시각적 검증](#실행-결과-시각적-검증--visual_verify-2026-09-03).

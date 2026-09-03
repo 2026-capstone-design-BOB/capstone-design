@@ -59,6 +59,7 @@ def get_all_tools() -> List[BaseTool]:
     )
     from tools.vision import (
         describe_screen,
+        find_ui_element,
     )
 
     tools = [
@@ -102,6 +103,7 @@ def get_all_tools() -> List[BaseTool]:
         create_calendar_event,
         # 화면 이해 (Vision) — 화면 내용을 외부 LLM에 전송한다. tools/vision.py 주의사항 참조
         describe_screen,
+        find_ui_element,
     ]
 
     # 파일 삭제(위험 동작). 실행 전 반드시 사람 승인을 받는다.
