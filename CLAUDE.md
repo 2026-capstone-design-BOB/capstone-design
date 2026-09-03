@@ -32,6 +32,7 @@ FastAPI 서버(:8765) + Electron 오버레이 UI + LangGraph `StateGraph` 에이
 | **전체 문서 지도 · 작업별 라우팅** | [docs/README.md](docs/README.md) |
 | 뭘 어디에 두는가 · 새 파일 배치 | [docs/STRUCTURE.md](docs/STRUCTURE.md) |
 | 시스템이 어떻게 도는가 (그래프·도구·보안·캐시) | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| **로그로 무슨 일이 있었는지 보기** | `logs/pluiz.log` — `[Agent] 턴 완료`·`[Graph] 승인 판정`·`[FastPath] [BL-15]`·`[Vision]` |
 | 어떻게 작업하는가 (테스트·DEVLOG·커밋) | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
 | 지금까지 무엇을 했나 | [docs/DEVLOG.md](docs/DEVLOG.md) ← 최상단이 최신 |
 | 무엇이 남았나 | [docs/BACKLOG.md](docs/BACKLOG.md) |
@@ -66,7 +67,17 @@ FastAPI 서버(:8765) + Electron 오버레이 UI + LangGraph `StateGraph` 에이
    Windows 기본 cp949로 읽으면 `UnicodeDecodeError`가 납니다.
    `tests/`의 테스트는 루트를 `dirname(dirname(abspath(__file__)))`로 계산합니다.
 
-8. **`main.py`의 `allow_origins=["null"]`과 OPTIONS 면제를 "정리"하지 말 것** —
+8. **`/voice`의 `thread_id`·`use_tts`에서 `Form(...)`을 빼지 말 것** — FastAPI가
+   스칼라를 **쿼리 파라미터**로 해석해 렌더러가 FormData로 보내는 값을 통째로 무시한다.
+   그러면 **음성과 텍스트가 서로 다른 대화가 되고**, 평범한 명령은 멀쩡해 보이다가
+   승인·지칭처럼 맥락이 필요한 순간에만 무너진다. → [BACKLOG BL-16](docs/BACKLOG.md)
+
+9. **클릭 도구에 좌표 인자(`x`, `y`)를 추가하지 말 것** — `click_ui_element`가
+   `(target, window)`만 받는 건 실수가 아니다. LLM이 좌표를 넘길 수 있으면 언젠가
+   지어내고, 그러면 **틀린 좌표를 정확히 클릭하는** 도구가 된다. 클릭은 되돌릴 수 없다.
+   → [ARCHITECTURE § 도구](docs/ARCHITECTURE.md#도구-37개)
+
+10. **`main.py`의 `allow_origins=["null"]`과 OPTIONS 면제를 "정리"하지 말 것** —
    둘 다 오타가 아니라 **UI가 돌기 위한 조건**입니다. 렌더러는 `file://`이라 `Origin: null`을
    보내고, `X-Pluiz-Token`은 safelisted 헤더가 아니라 모든 요청이 프리플라이트를 거칩니다.
    여기를 조이면 공격자가 아니라 **UI 자신이 막힙니다.** 실질적 방어는 토큰입니다.
