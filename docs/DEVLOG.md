@@ -158,8 +158,11 @@ import 하지 않는다** — CI mock 잡은 langgraph와 langchain-core만 설�
 
 또 하나 정직하게 적어 둔다 — **감지 지연은 최대 "간격 + Vision 시간"(약 5 + 8 = 13초)이다.**
 즉시 알림이 아니다. 고지 문구도 그걸 과장하지 않는다.
-다중 모니터에서 전체화면 감시는 `ImageGrab.grab()`이라 주 모니터만 본다
-(`find_ui_element`와 같은 한계다).
+다중 모니터에서 전체화면 감시는 `ImageGrab.grab()`이라 주 모니터만 본다.
+`describe_screen`·`find_ui_element`와 **같은 한계를 공유**하게 됐으므로
+[BACKLOG BL-18](BACKLOG.md)로 따로 세웠다 — 감시에서는 이게 특히 나쁘다.
+보조 모니터의 오류는 못 보고, **못 봤다는 사실조차 알려줄 수 없다.**
+(`window=`로 창을 지정하면 어느 모니터에 있든 잡히므로 전체화면 모드만의 문제다)
 
 ---
 
