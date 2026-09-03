@@ -90,7 +90,7 @@ C:\pluiz_v2\
 
 `core/`의 모듈은 **의존성 주입 가능하게** 작성한다. `graph.py`가 llm·tools·security_check를
 인자로 받는 이유는, Windows나 LLM API 없이 mock으로 단위 테스트하기 위해서다.
-이 원칙 덕분에 mock 스위트가 어떤 환경에서든 돈다 (개수는 [README 상태표](README.md#지금-상태-2026-09-02-기준)).
+이 원칙 덕분에 mock 스위트가 어떤 환경에서든 돈다 (개수는 [README 상태표](README.md#지금-상태-2026-09-03-기준)).
 
 ### `tools/` — LLM이 호출하는 도구
 

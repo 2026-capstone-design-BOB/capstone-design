@@ -45,9 +45,15 @@ START → input_guard ─(차단)────→ output_guard → END
         fast_path ─(캐시 히트)──→ output_guard → END
            │(miss)
          agent ⇄ tools ────────→ output_guard → END
+           │        │
+           │        └─(못 믿을 도구)→ visual_verify (화면 확인) → agent
            │
            └─(삭제 등 위험 도구)→ hitl (사람 승인) → tools | output_guard
 ```
+
+> `visual_verify`는 `type_text`·`open_app`처럼 **거짓으로 성공을 보고한 적이 있는 도구**의
+> 결과를 화면으로 확인해 그 증거를 붙입니다. 판정하거나 재시도하지 않고 **정직하게
+> 보고만** 합니다. → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#실행-결과-시각적-검증--visual_verify-2026-09-03)
 
 **설계의 핵심은 모든 경로가 단일 상태(`messages`)를 공유한다는 점입니다.**
 
@@ -127,7 +133,7 @@ python tests/test_guardrail_hybrid.py # 하이브리드 가드레일
 ```
 
 전체 mock 스위트는 push마다 CI가 자동 실행합니다.
-(현재 개수는 [docs/README.md 상태표](docs/README.md#지금-상태-2026-09-02-기준) — 숫자의 출처는 그 표 하나입니다.)
+(현재 개수는 [docs/README.md 상태표](docs/README.md#지금-상태-2026-09-03-기준) — 숫자의 출처는 그 표 하나입니다.)
 
 ---
 
