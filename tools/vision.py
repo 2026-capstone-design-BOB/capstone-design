@@ -181,26 +181,38 @@ def box_to_screen(box, image_size, origin=(0, 0)) -> dict:
     }
 
 
+def _shrink_and_encode_image(img) -> str:
+    """PIL 이미지를 축소해 base64(PNG)로 인코딩한다.
+
+    파일 경로가 아니라 **메모리의 이미지**를 받는 판이다. 화면 감시(watch_screen)는
+    이미 픽셀 비교를 위해 캡처를 해 둔 상태라, 파일로 저장했다 다시 여는 왕복이
+    있으면 같은 화면을 두 번 찍게 된다.
+    """
+    from PIL import Image
+
+    w, h = img.size
+    longest = max(w, h)
+    if longest > _MAX_EDGE:
+        ratio = _MAX_EDGE / longest
+        img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+        log.debug("축소: %dx%d → %dx%d", w, h, img.size[0], img.size[1])
+    rgb = img.convert("RGB")
+    buf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    buf.close()
+    rgb.save(buf.name, "PNG")
+    with open(buf.name, "rb") as f:
+        data = f.read()
+    os.unlink(buf.name)
+    return base64.b64encode(data).decode("ascii")
+
+
 def _shrink_and_encode(path: str) -> str:
-    """이미지를 축소해 base64로 인코딩. 실패하면 원본을 그대로 인코딩한다."""
+    """이미지 파일을 축소해 base64로 인코딩. 실패하면 원본을 그대로 인코딩한다."""
     try:
         from PIL import Image
 
         with Image.open(path) as img:
-            w, h = img.size
-            longest = max(w, h)
-            if longest > _MAX_EDGE:
-                ratio = _MAX_EDGE / longest
-                img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
-                log.debug("축소: %dx%d → %dx%d", w, h, img.size[0], img.size[1])
-            rgb = img.convert("RGB")
-            buf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-            buf.close()
-            rgb.save(buf.name, "PNG")
-            with open(buf.name, "rb") as f:
-                data = f.read()
-            os.unlink(buf.name)
-            return base64.b64encode(data).decode("ascii")
+            return _shrink_and_encode_image(img)
     except Exception as e:
         log.warning("축소 실패 → 원본 전송: %s", e)
         with open(path, "rb") as f:
@@ -385,3 +397,237 @@ def find_ui_element(target: str, window: str = "") -> str:
     # 좌표를 냈다고 해서 확인된 건 아니다. Vision의 추정임을 문장에 남긴다.
     return (f"✓ '{loc['label']}'{where}을(를) 화면 좌표 ({cx}, {cy})에서 찾았습니다. "
             f"크기 {bw}×{bh}. (화면을 보고 추정한 위치예요)")
+
+
+# ── 화면 변화 모니터링 (Phase 2 마지막 항목) ───────────────────────
+#
+# *"오류 뜨면 알려줘"* — 턴이 끝난 뒤에도 지켜보다가 **먼저 말을 건다.**
+# 루프·상한·중단 조건은 core/screen_monitor.py 가 담당하고, 여기는 그 엔진에
+# 넣어 줄 **눈**(캡처·판정)과 사용자에게 보이는 **도구 2개**만 둔다.
+#
+# ⚠️ 이 기능은 지금까지 중 화면 전송량이 가장 크다(OWASP LLM02). 방어는 두 겹이다 —
+#    ① 픽셀 차이로 먼저 거르고(캡처는 전부 로컬), ② 상한이 곧 전송 장수의 상한이다.
+#    배경은 core/screen_monitor.py 의 모듈 docstring 참조.
+
+_WATCH_PROMPT = (
+    "이 스크린샷은 사용자의 Windows 화면입니다.\n"
+    "사용자가 알려달라고 한 것: {what}\n\n"
+    "그것이 화면에 **실제로 보이면** JSON으로만 답하세요. 설명 문장은 쓰지 마세요.\n"
+    '{{"detected": true, "detail": "무엇이 보이는지 화면의 문구를 그대로 옮겨 한두 문장"}}\n\n'
+    "보이지 않거나 확실하지 않으면 반드시 이렇게 답하세요.\n"
+    '{{"detected": false, "reason": "왜 아닌지 한 문장"}}\n\n'
+    "⚠️ 추측하지 마세요. 화면에 없으면 detected를 false로 두는 것이 맞습니다.\n"
+    "⚠️ detected가 true인데 무엇을 봤는지 말할 수 없다면 그건 false입니다."
+)
+
+
+def parse_watch_result(text: str) -> dict:
+    """Vision 응답에서 감지 여부를 꺼낸다.
+
+    반환: `{"ok": bool, "detected": bool, "detail": str, "reason": str}`
+    `ok`가 False면 **응답을 해석하지 못한 것**이다 — 호출부는 아무것도 알리면 안 된다.
+
+    `parse_ui_box`와 같은 방침이다: **의심스러우면 아무 일도 없던 것으로 본다.**
+    감시는 사용자가 화면을 안 볼 때 도는 기능이라, 잘못된 알림은 "확인하지 않고
+    됐다고 말하는 것"과 똑같은 결함이 된다.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return {"ok": False, "detected": False, "detail": "",
+                "reason": "응답이 비어 있습니다"}
+
+    fenced = re.match(r"^```[a-zA-Z]*\s*(.*?)\s*```$", raw, re.S)
+    if fenced:
+        raw = fenced.group(1).strip()
+
+    try:
+        data = json.loads(raw)
+    except Exception:
+        m = re.search(r"\{.*\}", raw, re.S)
+        if not m:
+            return {"ok": False, "detected": False, "detail": "",
+                    "reason": "JSON이 아닌 답을 받았습니다"}
+        try:
+            data = json.loads(m.group(0))
+        except Exception:
+            return {"ok": False, "detected": False, "detail": "",
+                    "reason": "답을 해석하지 못했습니다"}
+
+    # 배열로 답하는 경우 — 하나면 받아주고, 여럿이면 고르지 않는다.
+    # (parse_ui_box와 같은 이유: 조용히 첫 번째를 집으면 사용자는 모른다)
+    if isinstance(data, list):
+        items = [d for d in data if isinstance(d, dict)]
+        if len(items) == 1:
+            data = items[0]
+        else:
+            return {"ok": False, "detected": False, "detail": "",
+                    "reason": "답이 하나로 특정되지 않았습니다"}
+
+    if not isinstance(data, dict):
+        return {"ok": False, "detected": False, "detail": "",
+                "reason": "답을 해석하지 못했습니다"}
+
+    if "detected" not in data:
+        # 필드가 없으면 "안 보인다"가 아니라 **못 알아들은 것**이다. 그 둘을 섞으면
+        # 모델이 형식을 어길 때마다 조용히 "이상 없음"으로 집계된다.
+        return {"ok": False, "detected": False, "detail": "",
+                "reason": "detected 항목이 없습니다"}
+
+    detected = data.get("detected")
+    if not isinstance(detected, bool):
+        return {"ok": False, "detected": False, "detail": "",
+                "reason": "detected가 참/거짓이 아닙니다"}
+
+    return {
+        "ok": True,
+        "detected": detected,
+        "detail": str(data.get("detail") or "").strip(),
+        "reason": str(data.get("reason") or "").strip(),
+    }
+
+
+def _capture_image(window: str = ""):
+    """감시용 캡처 — PIL 이미지를 **메모리로** 돌려준다. 실패하면 예외.
+
+    ⚠️ **`take_screenshot`을 쓰지 않는다.** 그 도구는 최소화된 창을
+      `SW_RESTORE` → 캡처 → `SW_MINIMIZE` 한다(tools/system.py). 한 번 찍을 땐
+      친절한 동작이지만, **5초마다 그러면 창이 계속 깜빡인다.**
+      감시는 사용자를 방해하지 않아야 하므로, 최소화된 창은 되살리지 않고
+      **못 본다고 말한다**(→ 엔진이 사유와 함께 감시를 멈춘다).
+
+    창 해석은 `resolve_window_hwnd`를, 캡처는 `_capture_hwnd`를 그대로 재사용한다.
+    여기서 따로 구현하면 `take_screenshot`·좌표 계산과 **다른 창**을 볼 수 있다.
+    """
+    from PIL import ImageGrab
+
+    if not window:
+        return ImageGrab.grab()
+
+    import ctypes
+    from tools.system import resolve_window_hwnd, _capture_hwnd
+
+    hwnd, label = resolve_window_hwnd(window)
+    if not hwnd:
+        raise ValueError(f"'{window}' 창을 찾을 수 없습니다")
+    if ctypes.windll.user32.IsIconic(hwnd):
+        raise ValueError(f"'{label}' 창이 최소화돼 있습니다")
+    return _capture_hwnd(hwnd)
+
+
+def screen_signature(window: str = ""):
+    """화면을 32×32 그레이스케일로 줄인 **서명**. 실패하면 None.
+
+    감시 루프가 5초마다 부르는 값이다. **여기서는 아무것도 외부로 나가지 않는다** —
+    변화가 있는지 로컬에서 판단하는 게 목적이고, 그래야 Vision 호출을 아낀다.
+    """
+    from core.screen_monitor import SIGNATURE_SIDE
+
+    try:
+        img = _capture_image(window)
+        small = img.convert("L").resize((SIGNATURE_SIDE, SIGNATURE_SIDE))
+        return tuple(small.getdata())
+    except Exception as e:
+        log.debug("서명 캡처 실패(%s): %s", window or "전체화면", e)
+        return None
+
+
+def vision_watch_check(window: str, what: str) -> dict:
+    """화면을 실제로 보고 *"그게 보이나?"* 를 판정한다. 감시 엔진이 부른다.
+
+    반환 규약은 `parse_watch_result`와 같다. **예외를 밖으로 내보내지 않는다** —
+    감시가 서버를 죽이면 안 된다.
+    """
+    try:
+        img = _capture_image(window)
+    except Exception as e:
+        log.warning("감시 캡처 실패: %s", e)
+        return {"ok": False, "detected": False, "detail": "", "reason": str(e)}
+
+    try:
+        b64 = _shrink_and_encode_image(img)
+
+        from langchain_core.messages import HumanMessage
+        from core.llm import build_llm
+
+        res = build_llm().invoke([HumanMessage(content=[
+            {"type": "text", "text": _WATCH_PROMPT.format(what=what)},
+            {"type": "image_url", "image_url": f"data:image/png;base64,{b64}"},
+        ])])
+        text = (getattr(res, "content", "") or "").strip()
+        log.info("감시 판독 응답 %d자", len(text))
+        return parse_watch_result(text)
+    except Exception as e:
+        log.exception("감시 판독 실패")
+        return {"ok": False, "detected": False, "detail": "",
+                "reason": f"{type(e).__name__}: {e}"}
+
+
+def _watch_notice(cfg: dict, what: str, window: str) -> str:
+    """감시 시작 **고지문**. 사용자가 승인 대신 받는 것이 이것이다.
+
+    승인 질문을 붙이지 않기로 한 이상(감시는 멈추면 끝나므로 되돌릴 수 있다),
+    **무엇을 얼마나 어떻게 보는지**는 반드시 말해야 한다. 네 가지를 다 담는다:
+    ① 무엇을 보는지 ② 얼마나 자주 ③ 언제 자동으로 멈추는지 ④ 어떻게 멈추는지.
+    """
+    where = f"'{window}' 창" if window else "화면 전체"
+    return (
+        f"✓ {where}를 지켜볼게요. '{what}'이(가) 보이면 바로 알려드릴게요.\n"
+        f"{cfg['interval']}초마다 화면을 확인하고, 변화가 있을 때만 화면을 읽어요.\n"
+        f"최대 {cfg['max_minutes']}분(화면 읽기 {cfg['max_vision_calls']}회)까지만 보고 "
+        "자동으로 멈춰요.\n"
+        '그만두려면 "그만 봐"라고 말씀해 주세요.'
+    )
+
+
+@tool
+def watch_screen(what: str, window: str = "") -> str:
+    """
+    화면을 계속 지켜보다가 어떤 일이 생기면 먼저 알려줍니다.
+    사용자가 "오류 뜨면 알려줘", "다운로드 끝나면 알려줘"처럼 앞으로 생길 변화를
+    알려달라고 명확히 요청할 때만 사용하세요. 스스로 판단해서 시작하지 마세요.
+
+    what: 알려줄 것 (예: "오류 메시지", "다운로드 완료", "빨간 경고창")
+    window: 볼 대상 — 비워두면 전체 화면 / "활성창" / 앱 이름(예: "크롬")
+            가능하면 창을 지정하세요. 화면 전체보다 정확하고 덜 노출됩니다.
+
+    한 번에 하나만 지켜볼 수 있고, 정해진 시간·횟수가 지나면 자동으로 멈춥니다.
+    """
+    from core.screen_monitor import get_monitor
+
+    res = get_monitor().start(what, window)
+
+    if res.get("started"):
+        return _watch_notice(res, what.strip(), window.strip())
+
+    reason = res.get("reason")
+    if reason == "no_target":
+        return '✗ 무엇을 알려드릴지 알려주세요. (예: "오류 뜨면 알려줘")'
+    if reason == "disabled":
+        return ("✗ 화면 감시가 꺼져 있어 시작하지 않았습니다. "
+                "(.env 의 SCREEN_WATCH_ENABLED=true 로 켤 수 있어요)")
+    if reason == "already_watching":
+        # **새로 시작하지 않았다는 사실을 분명히 말한다.** 두 개가 돌면 화면
+        # 전송량이 두 배가 되므로 거절하는 게 맞지만, 거절을 숨기면 안 된다.
+        cur = res.get("what", "")
+        where = f"'{res.get('window')}' 창에서 " if res.get("window") else ""
+        return (f"✗ 이미 {where}'{cur}'을(를) 지켜보는 중이라 새로 시작하지 않았어요. "
+                '먼저 "그만 봐"로 멈춘 뒤 다시 말씀해 주세요.')
+    return "✗ 화면 감시를 시작하지 못했습니다."
+
+
+@tool
+def stop_watching() -> str:
+    """
+    진행 중인 화면 감시를 중단합니다.
+    사용자가 "그만 봐", "감시 그만", "이제 안 봐도 돼"라고 할 때 사용하세요.
+    """
+    from core.screen_monitor import get_monitor
+
+    res = get_monitor().stop()
+    if not res.get("stopped"):
+        return "✓ 지금 지켜보고 있는 건 없어요."
+    what = res.get("what", "")
+    calls = res.get("vision_calls", 0)
+    # ⚠️ "못 봤어요"라고 단정하지 않는다. 멈추는 순간 화면 확인이 진행 중일 수 있고,
+    #    그러면 확인할 수 없는 것을 확인한 척하는 셈이 된다. 사실만 적는다.
+    return f"✓ '{what}' 감시를 멈췄어요. (그동안 화면을 {calls}번 확인했어요)"

@@ -28,6 +28,14 @@ from services.stt import get_stt
 # 서버가 이번 기동에 발급한 토큰. lifespan에서 채워진다.
 _AUTH_TOKEN = ""
 
+# ── 화면 감시 알림 채널 (Phase 2) ─────────────────────────────────
+# 감시(core/screen_monitor.py)는 **턴이 끝난 뒤에** 도는 백그라운드 스레드라
+# 응답으로 돌려줄 곳이 없다. 열려 있는 /ws로 서버가 직접 밀어넣는다.
+_ws_clients: set = set()
+_main_loop = None                 # 감시 스레드가 이벤트 루프로 건너오는 다리
+_pending_notifications: list = [] # 붙어 있는 UI가 없을 때 잠시 보관
+_MAX_PENDING = 5
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -56,9 +64,19 @@ async def lifespan(_app: FastAPI):
               f"/cache/ui?{auth.QUERY_NAME}={_AUTH_TOKEN}")
     else:
         print("[auth] ⚠️ AUTH_ENABLED=false — 로컬 API 접근 제어가 꺼져 있습니다 (BL-14)")
+    # 화면 감시가 UI로 말을 걸 수 있게 다리를 놓는다. 감시 스레드는 이벤트 루프
+    # 밖에 있으므로, 여기서 잡아 둔 루프로 run_coroutine_threadsafe 해서 건너온다.
+    global _main_loop
+    _main_loop = asyncio.get_running_loop()
+    from core import screen_monitor
+    screen_monitor.set_notifier(_push_from_monitor)
+
     try:
         yield
     finally:
+        # 서버가 내려가면 감시도 멈춘다. 안 그러면 알릴 곳도 없이 화면만 계속 나간다.
+        screen_monitor.set_notifier(None)
+        screen_monitor.reset_monitor()
         # 내 토큰일 때만 지운다 (위와 같은 이유의 2차 방어)
         auth.clear_token(expected=_AUTH_TOKEN)
 
@@ -557,6 +575,66 @@ async def cache_delete_entry(pattern: str):
     return {"status": "ok" if ok else "not_found_or_seed", "pattern": pattern}
 
 
+# ── 화면 감시 → UI 푸시 ───────────────────────────────────────────
+
+def _push_from_monitor(payload: dict) -> None:
+    """감시 **스레드**에서 호출된다. 이벤트 루프로 넘겨 실제 전송을 시킨다.
+
+    ⚠️ 여기서 직접 `send_json`을 부르면 안 된다 — 다른 스레드다.
+    """
+    loop = _main_loop
+    if loop is None or loop.is_closed():
+        print(f"[Monitor] 서버 루프가 없어 알림을 전달하지 못했습니다: {payload}")
+        return
+    try:
+        asyncio.run_coroutine_threadsafe(_broadcast(payload), loop)
+    except Exception as e:
+        print(f"[Monitor] 알림 전달 실패: {type(e).__name__}: {e}")
+
+
+async def _broadcast(payload: dict) -> None:
+    """열려 있는 모든 /ws로 payload를 보낸다. 알림이면 TTS 음성을 함께 싣는다.
+
+    감시는 **사용자가 화면을 안 보고 있을 때** 쓰는 기능이라 소리까지 있어야
+    실제로 전달된다. TTS가 실패해도 텍스트는 보낸다(기존 /ws end 페이로드와 같은 방식).
+    """
+    if payload.get("type") == "notify" and payload.get("text"):
+        try:
+            import base64
+            spoken = payload["text"].replace(chr(0x1F441), " ").strip()
+            audio = await get_tts().to_bytes_async(spoken)
+            payload = {**payload, "audio_base64": base64.b64encode(audio).decode()}
+        except Exception as e:
+            print(f"[Monitor] 알림 TTS 실패(텍스트만 전송): {e}")
+
+    sent = 0
+    for ws in list(_ws_clients):
+        try:
+            await ws.send_json(payload)
+            sent += 1
+        except Exception:
+            _ws_clients.discard(ws)
+
+    if sent == 0 and payload.get("type") == "notify":
+        # 붙어 있는 UI가 없다 → **버리지 않는다.** 감시가 말없이 사라지는 것은
+        # 이 기능이 고치려는 바로 그 문제다. 다음 연결 때 전한다.
+        _pending_notifications.append(payload)
+        del _pending_notifications[:-_MAX_PENDING]
+        print(f"[Monitor] 연결된 UI가 없어 알림을 보관합니다 "
+              f"({len(_pending_notifications)}건)")
+
+
+async def _flush_pending(websocket: WebSocket) -> None:
+    """UI가 (다시) 붙었을 때 보관해 둔 알림을 흘려보낸다."""
+    while _pending_notifications:
+        payload = _pending_notifications.pop(0)
+        try:
+            await websocket.send_json(payload)
+        except Exception:
+            _pending_notifications.insert(0, payload)
+            return
+
+
 # ── WebSocket (실시간 스트리밍) ───────────────────────────────────
 
 @app.websocket("/ws")
@@ -581,7 +659,20 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     agent = get_graph_agent()
 
+    # 감시 알림을 밀어넣을 대상으로 등록한다(인증을 통과한 뒤에만).
+    _ws_clients.add(websocket)
     try:
+        # UI가 새로 떴거나 재연결됐을 수 있다 — 놓친 알림과 현재 감시 상태를 맞춘다.
+        await _flush_pending(websocket)
+        try:
+            from core.screen_monitor import get_monitor
+            st = get_monitor().status()
+            await websocket.send_json({"type": "watch_state",
+                                       "active": bool(st.get("active")),
+                                       "what": st.get("what", "")})
+        except Exception as e:
+            print(f"[Monitor] 감시 상태 동기화 생략(무시): {e}")
+
         while True:
             data = await websocket.receive_json()
             text = data.get("text", "")
@@ -630,6 +721,8 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:
             pass
+    finally:
+        _ws_clients.discard(websocket)
 
 
 # ── 진입점 ────────────────────────────────────────────────────────

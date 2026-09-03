@@ -231,6 +231,10 @@ if (!app.requestSingleInstanceLock()) {
 // 서버가 늦게 뜨면 여기서 기다리므로, 렌더러는 그냥 await 하면 된다.
 ipcMain.handle('get-token', () => waitForToken());
 
+// 화면 감시 알림 — 웨이크워드와 같은 경로로 창을 앞으로 꺼낸다 (Phase 2).
+// 사용자가 다른 창을 보고 있을 때 알림이 뒤에 묻히면 감시가 무의미하다.
+ipcMain.on('show-window',   () => { mainWindow?.show(); mainWindow?.focus(); });
+
 ipcMain.on('resize-idle',   () => resizeTo('idle'));
 ipcMain.on('resize-active', () => resizeTo('active'));
 ipcMain.on('quit-app',      () => { forceQuit = true; wakeProc?.kill(); app.quit(); });

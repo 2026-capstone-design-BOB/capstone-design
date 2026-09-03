@@ -46,6 +46,16 @@ class Settings(BaseSettings):
     #    넓은 전송이다. 끄려면 .env 에 VISION_VERIFY_ENABLED=false 한 줄.
     vision_verify_enabled: bool = True
 
+    # 화면 변화 모니터링 (Phase 2) — "오류 뜨면 알려줘"
+    # ⚠️ OWASP LLM02 — 지금까지 중 화면 전송량이 가장 큰 기능이다. 방어는 두 겹:
+    #    ① 5초마다 찍는 건 전부 로컬(픽셀 비교)이고, 변화가 있을 때만 Vision을 부른다.
+    #    ② **max_vision_calls가 곧 외부로 나가는 화면 장수의 상한이다.**
+    #    시간·횟수 중 먼저 닿는 쪽에서 자동 종료한다. → core/screen_monitor.py
+    screen_watch_enabled: bool = True
+    screen_watch_interval: int = 5           # 초 — 캡처 주기(로컬, 전송 없음)
+    screen_watch_max_minutes: int = 10
+    screen_watch_max_vision_calls: int = 20  # ← 실질적인 외부 전송량 상한
+
     # 커맨드 캐시 (P4)
     cache_learning: bool = True      # 동적 학습 on/off 스위치
     cache_max_dynamic: int = 200     # 동적 학습 상한(초과 시 LRU 정리)

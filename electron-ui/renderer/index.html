@@ -374,6 +374,21 @@
       animation: dot-f .7s ease-in-out infinite;
     }
 
+    /* 화면 감시 중 배지 — 감시가 돌고 있다는 걸 사용자가 항상 볼 수 있어야 한다.
+       "켜 둔 걸 잊는 것"이 이 기능의 가장 큰 위험이다. */
+    .watch-badge {
+      display: none;
+      font-size: 11px;
+      line-height: 1;
+      margin-left: 4px;
+      opacity: .9;
+      animation: dot-b 2.5s ease-in-out infinite;
+    }
+
+    .watch-badge.show {
+      display: inline-block;
+    }
+
     @keyframes dot-b {
 
       0%,
@@ -1167,6 +1182,7 @@
           <div class="a-logo">🎙️</div>
           Pluiz
           <span class="sdot spin" id="sdot2"></span>
+          <span class="watch-badge" id="watch-badge" title="화면 감시 중">👁</span>
         </div>
         <button class="hbtn" id="fav-btn" onclick="event.stopPropagation(); toggleFavorites()" ondblclick="event.stopPropagation()"
           title="즐겨찾기">⭐</button>
@@ -1531,6 +1547,12 @@
         } else if (m.type === 'error') {
           addMsg('a', '⚠️ ' + m.message);
           setBusy(false); setState('ready'); setWf('');
+        } else if (m.type === 'notify') {
+          // 화면 감시 알림. 사용자가 시킨 턴이 아니라 **서버가 먼저 거는 말**이라
+          // start/chunk/end 흐름과 독립적이다. streamEl·busy를 건드리지 않는다.
+          onWatchNotify(m);
+        } else if (m.type === 'watch_state') {
+          setWatchBadge(m.active);
         }
       };
     }
@@ -1823,6 +1845,22 @@
         a.onended = () => { URL.revokeObjectURL(url); currentAudio = null; };
         currentAudio = a;
       } catch (e) { console.error('[TTS] error', e); }
+    }
+
+    // ── 화면 감시 알림 ────────────────────────────────────────────
+    // 감시는 사용자가 화면을 안 보고 있을 때 쓰는 기능이다. 그래서 조용히
+    // 채팅에만 적으면 전달되지 않는다 — 창을 앞으로 꺼내고 소리로도 알린다.
+    function onWatchNotify(m) {
+      setWatchBadge(false);
+      window.pluiz.showWindow();
+      activate(false);
+      addMsg('a', m.text || '');
+      if (m.audio_base64) playAudio(m.audio_base64);
+    }
+
+    function setWatchBadge(active) {
+      const el = document.getElementById('watch-badge');
+      if (el) el.className = 'watch-badge' + (active ? ' show' : '');
     }
 
     // ── IPC ───────────────────────────────────────────────────────

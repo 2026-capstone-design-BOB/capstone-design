@@ -61,6 +61,8 @@ def get_all_tools() -> List[BaseTool]:
     from tools.vision import (
         describe_screen,
         find_ui_element,
+        watch_screen,
+        stop_watching,
     )
 
     tools = [
@@ -105,6 +107,12 @@ def get_all_tools() -> List[BaseTool]:
         # 화면 이해 (Vision) — 화면 내용을 외부 LLM에 전송한다. tools/vision.py 주의사항 참조
         describe_screen,
         find_ui_element,
+        # 화면 감시 — 한 번이 아니라 **지켜보는 동안 반복해서** 화면이 나간다.
+        # 승인 대상은 아니지만(멈추면 끝나므로 되돌릴 수 있다) 시작할 때 간격·상한·
+        # 중단법을 사용자에게 고지하고, 상한에 닿으면 스스로 멈춘다.
+        # → core/screen_monitor.py
+        watch_screen,
+        stop_watching,
     ]
 
     # 좌표 기반 클릭(위험 동작 — 되돌릴 수 없다). 승인 후 실행된다.
