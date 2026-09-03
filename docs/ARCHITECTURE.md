@@ -454,7 +454,7 @@ LLM API 없이 자주 쓰는 명령을 즉시 실행한다. 저지연 + 오프�
 |---|---|---|---|
 | GET | `/health` | **면제** | 서버 상태 |
 | POST | `/chat` | 필요 | 텍스트 명령 (비스트리밍) |
-| POST | `/voice` | 필요 | 음성 파일 → STT + 에이전트 + TTS |
+| POST | `/voice` | 필요 | 음성 파일 → STT + 에이전트 + TTS. **`thread_id`·`use_tts`는 `Form(...)`이어야 한다** — 빼면 폼 필드가 무시돼 음성이 텍스트와 다른 대화가 된다 |
 | WS | `/ws` | 필요 (`?token=`) | 텍스트 스트리밍 (※ 현재 단일 청크 — BACKLOG BL-04) |
 | GET/POST | `/api/config` | 필요 | LLM 설정 조회 / API 키 변경 + 에이전트 재초기화 |
 | POST | `/api/wakeword` | 필요 | 웨이크워드 설정 (`.env` 갱신, 재시작 불필요) |

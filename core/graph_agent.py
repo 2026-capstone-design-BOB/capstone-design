@@ -165,11 +165,21 @@ class PluizGraphAgent:
         return self.graph.invoke(payload, config=config)
 
     def _pending_interrupt(self, config) -> bool:
-        """해당 thread가 승인 대기(interrupt)로 멈춰 있는지."""
+        """해당 thread가 승인 대기(interrupt)로 멈춰 있는지.
+
+        ⚠️ 여기서 False가 나오면 사용자의 "네"가 **승인이 아니라 새 명령**이 된다.
+          예외를 조용히 삼키면 그 사실을 아무도 모른다 — 2026-09-03 실기에서
+          "네"가 승인으로 안 먹은 원인을 로그로 못 밝혔다. 그래서 남긴다.
+        """
         try:
             st = self.graph.get_state(config)
-            return bool(getattr(st, "next", ()))
-        except Exception:
+            nxt = tuple(getattr(st, "next", ()) or ())
+            _log.debug("승인 대기 확인 | thread=%s | next=%s",
+                       config.get("configurable", {}).get("thread_id"), nxt or "없음")
+            return bool(nxt)
+        except Exception as e:
+            _log.warning("승인 대기 확인 실패(새 명령으로 처리됨): %s: %s",
+                         type(e).__name__, e)
             return False
 
     def _clear_thread(self, thread_id: str):
@@ -196,6 +206,7 @@ class PluizGraphAgent:
 
         # 승인 대기 상태면 이번 발화를 재개(resume) 신호로 전달
         if self._pending_interrupt(config):
+            _log.info("승인 재개 | thread=%s | 답변=%r", thread_id, user_input)
             payload = Command(resume=user_input)
         else:
             # 하이브리드 가드(P3-4): 규칙 통과했지만 의심스러운 신규 입력만 LLM 판정.

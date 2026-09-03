@@ -9,7 +9,7 @@ import os
 from typing import Literal
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -295,10 +295,21 @@ async def chat(req: TextRequest):
 
 
 @app.post("/voice")
-async def voice_input(audio: UploadFile = File(...), thread_id: str = "default", use_tts: bool = True):
+async def voice_input(audio: UploadFile = File(...),
+                      thread_id: str = Form("default"),
+                      use_tts: bool = Form(True)):
     """
     음성 파일 업로드 → STT → 에이전트 처리 → (TTS) 응답.
     Electron에서 마이크 녹음 후 전송.
+
+    ⚠️ **`Form(...)`을 빼지 말 것.** 스칼라 파라미터를 그냥 두면 FastAPI가 이걸
+    **쿼리 파라미터**로 해석해서, 렌더러가 FormData로 보내는 `thread_id`를 통째로
+    무시하고 항상 "default"를 쓴다. 그러면 **음성과 텍스트가 서로 다른 대화가 된다.**
+
+    2026-09-03 실기에서 이것 때문에 삭제 승인이 무너졌다. 텍스트로 "그 파일 지워줘"
+    → 승인 질문(thread=pluiz_…)이 뜬 상태에서 음성으로 "어 삭제해 줘"라고 하면
+    thread=default 로 가서 승인이 아니라 **새 명령**이 됐고("무엇을 삭제할까요?"),
+    텍스트 쪽 승인 대기는 100초 뒤 엉뚱한 "메모장 열어줘"를 삼켰다.
     """
     audio_bytes = await audio.read()
 

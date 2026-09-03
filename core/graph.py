@@ -37,6 +37,7 @@ import re
 from typing import Callable, Optional, Any
 from datetime import datetime
 
+from core.logger import get_logger
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode
@@ -48,6 +49,8 @@ from langchain_core.messages import (
 
 # ── HITL: 위험 도구 정의 & 승인 해석 (P2) ─────────────────────────
 # 이 도구 호출은 실행 전 hitl 노드에서 사용자 승인을 받는다.
+_log = get_logger("Graph")
+
 DANGEROUS_TOOLS = {"delete_file", "delete_folder"}
 
 # ── 실행 결과 시각적 검증: **못 믿을 도구** 정의 (Phase 2) ─────────
@@ -673,9 +676,12 @@ def build_pluiz_graph(
         question = _confirm_question(dcall)
         verdict = "unclear"
         answer: Any = ""
-        for _ in range(_MAX_CONFIRM_ASKS):
+        for _ask in range(_MAX_CONFIRM_ASKS):
             answer = interrupt({"question": question})
             verdict = classify_confirmation(answer)
+            # 승인 판정은 사용자 말버릇에 가장 많이 부딪히는 자리다. 무엇을 어떻게
+            # 읽었는지 남기지 않으면 "왜 '네'가 안 먹었나"를 사후에 알 수 없다.
+            _log.info("승인 판정 | %d번째 | 답변=%r → %s", _ask + 1, answer, verdict)
             if verdict != "unclear":
                 break
             question = _reask_question(dcall)

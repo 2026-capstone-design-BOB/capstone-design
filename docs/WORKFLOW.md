@@ -75,6 +75,7 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_visual_verify.py     # 실행 결과 시각적 검증  46/46
 "$PY" tests/test_type_text_focus.py   # BL-12 사전 포커스 확인 21/21
 "$PY" tests/test_bl15_truncation.py   # BL-15 캐시 명령 절단   43/43
+"$PY" tests/test_voice_thread.py      # 음성·텍스트 대화 공유  11/11
 "$PY" tests/test_trim.py              # 히스토리 trim
 "$PY" tests/test_injection.py         # 프롬프트 인젝션
 "$PY" tests/test_sensitive.py         # 민감정보 보호
@@ -82,8 +83,8 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_dependencies.py     # ★ requirements.txt 선언 = 실제 설치인지
 ```
 
-전체 mock 스위트는 **24파일 506개**([README 상태표](README.md#지금-상태-2026-09-03-기준)가 출처). 이 중 `test_dependencies.py`(32개)는 로컬 전용이라
-CI는 23파일 474개를 돌린다. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
+전체 mock 스위트는 **25파일 517개**([README 상태표](README.md#지금-상태-2026-09-03-기준)가 출처). 이 중 `test_dependencies.py`(32개)는 로컬 전용이라
+CI는 24파일 485개를 돌린다. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
 
 ### 테스트는 제품 로그를 건드리지 않는다
 

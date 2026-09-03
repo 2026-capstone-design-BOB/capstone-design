@@ -4,6 +4,7 @@ P2-2 그래프 HITL(interrupt) 검증 (동기 invoke, mock)
 - resume '응' → 실행 / resume '아니' → 취소
 실행: python test_hitl_graph.py
 """
+import _testenv  # noqa: F401  — 제품 로그를 더럽히지 않는다(tests/_testenv.py 참조)
 import sys, os, importlib.util
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
