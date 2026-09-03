@@ -18,7 +18,12 @@ Pluiz Graph (M1-P1.5) — 명시적 LangGraph StateGraph
                             (miss)
                               ▼
                             agent ⇄ tools → output_guard → END
+                                     └─(못 믿을 도구)→ visual_verify ─┐
+                                                                     └→ agent
     input_guard 차단 시 → output_guard → END (사유 응답만)
+
+    visual_verify는 type_text·open_app처럼 **거짓 성공이 실측된 도구**의 결과를
+    화면으로 확인해 증거를 붙인다(Phase 2). visual_check 미주입 시 노드 자체가 없다.
 
 핵심(맥락 버그 해결):
     fast_path가 캐시/라우터로 명령을 처리해도, 그 결과를 AIMessage로
@@ -44,6 +49,25 @@ from langchain_core.messages import (
 # ── HITL: 위험 도구 정의 & 승인 해석 (P2) ─────────────────────────
 # 이 도구 호출은 실행 전 hitl 노드에서 사용자 승인을 받는다.
 DANGEROUS_TOOLS = {"delete_file", "delete_folder"}
+
+# ── 실행 결과 시각적 검증: **못 믿을 도구** 정의 (Phase 2) ─────────
+# 위가 "위험해서 멈추는 도구"라면 여기는 **못 믿어서 확인하는 도구**다.
+# 실행 직후 visual_verify 노드가 화면을 실제로 보고, 그 증거를 도구 결과에 붙인다.
+#
+# **거짓 성공이 실측됐고, 화면으로만 확인 가능한 것**만 넣는다:
+#   type_text : BL-12 — pyautogui가 예외만 안 내면 "✓ 텍스트 입력 완료"를 반환한다.
+#               2026-09-02 실측에서 도구는 "✓ 입력 완료", Vision은 "본문 0자"였다.
+#
+# ⚠️ describe_screen을 넣지 말 것 — 자기 자신을 검증하는 재귀가 된다.
+# ⚠️ **open_app을 뺐다** (2026-09-03). 넣어 봤는데 물음에 답할 수 없는 검증이었다 —
+#    `take_screenshot(window=앱)`은 그 창**만** 찍으므로, 이미지만 봐서는 그 창이
+#    맨 앞인지 뒤에 가려져 있는지 Vision이 알 수 없다. "앞에 있나요?"라고 물어놓고
+#    답할 수 없는 그림을 준 셈이다. 창이 앞에 있는지는 Win32로 즉시·정확히 알 수 있고
+#    (`open_app`이 이미 `_focus_window()` 결과로 판단한다) 8초도 안 든다.
+#    **Vision은 Win32로 알 수 없는 것에만 쓴다.**
+# ⚠️ 하나 늘릴 때마다 그 도구를 쓴 **모든 턴이 Vision 1회(약 8초) 느려진다.**
+#    실측 근거 없이 늘리지 말 것.
+VISUAL_VERIFY_TOOLS = {"type_text"}
 
 _REJECT_RE = re.compile(r'아니|취소|하지\s*마|하지마|싫|안\s*돼|안돼|관둬|그만|멈춰|ㄴㄴ|말아')
 
@@ -218,6 +242,11 @@ class PluizState(MessagesState):
     # output_guard가 최종 응답 앞에 "삭제는 취소했어요"를 붙인다 — 이걸 안 알리면
     # 사용자는 삭제가 어떻게 됐는지 모른 채 새 명령의 결과만 보게 된다.
     deletion_cancelled: bool
+    # 이번 턴에 화면 검증(visual_verify)을 이미 한 번 했는지.
+    # Vision 1회가 약 8초라 **턴당 1회**로 묶는다. deletion_cancelled와 같은 이유로
+    # input_guard가 새 턴 시작 시 끈다 — 플래그가 턴을 넘어 새면, 다음 턴의 type_text가
+    # 검증 없이 통과한다(앞선 R-2 사고와 같은 계열).
+    visual_verified: bool
 
 
 # ── 시스템 프롬프트 (날짜 갱신) ───────────────────────────────────
@@ -238,6 +267,11 @@ def build_system_prompt() -> str:
         # 사용자가 같은 말을 두 번 해야 한다 — 실기에서 실제로 겪은 불편이다.
         "삭제 요청을 받으면 '삭제할까요?'라고 되묻지 말고 바로 삭제 도구를 호출하세요. "
         "확인 절차는 시스템이 자동으로 진행합니다.\n"
+        # target 없이 부르면 '그때 포커스된 창'에 들어간다 — 실기에서 Pluiz 자기
+        # 입력창에 글자가 들어간 적이 있다(BL-12).
+        "type_text로 글자를 입력할 땐 target에 **어느 앱에 넣을지**를 반드시 주세요"
+        "(예: target=\"메모장\"). 그래야 그 창이 앞에 온 걸 확인하고 입력합니다. "
+        "'✗ …입력하지 않았습니다'가 오면 입력이 **안 된 것**이니 됐다고 하지 마세요.\n"
         # 창 규칙: 기본은 기존 창 재사용. "새로/하나 더/새 탭"일 때만 new=True.
         "앱을 열 땐 open_app을 그대로 부르세요(이미 켜져 있으면 그 창을 앞으로 가져옵니다). "
         "사용자가 '새로 열어줘'·'하나 더'·'새 탭'처럼 새 창/탭을 원할 때만 new=True를 주세요.\n"
@@ -333,6 +367,16 @@ _SUCCESS_LIKE_RE = re.compile(
 )
 
 
+# LLM 응답이 비었고 **이번 턴에 실행된 도구도 없을 때** 쓰는 말.
+#
+# ⚠️ 예전엔 여기서 "명령을 실행했습니다."라고 답했다. 그건 **거짓말이다** —
+#    이 자리에 오면 아무 일도 일어나지 않았다. 2026-09-03 실기에서 실제로
+#    "메모장 새로 열어줘"에 "명령을 실행했습니다"라고 답해 놓고 새 탭은 안 열렸고,
+#    사용자가 "안 됐는데"라고 해서야 다시 시도해 열렸다.
+#    도구가 거짓 성공을 보고하던 것(BL-12)과 **같은 계열의 결함**이다.
+_NOTHING_HAPPENED_MSG = "죄송해요, 방금 건 처리하지 못했어요. 다시 한 번 말씀해 주시겠어요?"
+
+
 def verify_output(messages: list[AnyMessage]) -> Optional[str]:
     """도구 실행 결과를 검증해 필요 시 보정 텍스트를 반환한다.
 
@@ -370,7 +414,8 @@ def verify_output(messages: list[AnyMessage]) -> Optional[str]:
                 c = _msg_text(m).strip()
                 if c:
                     return c
-        return "명령을 실행했습니다."
+        # 도구도 안 돌고 응답도 없다 = **아무 일도 없었다.** 됐다고 하지 않는다.
+        return _NOTHING_HAPPENED_MSG
 
     # 2) 도구 오류 + 성공처럼 보이는 응답 → 오류로 보정
     if tool_errors and _SUCCESS_LIKE_RE.search(response):
@@ -390,6 +435,74 @@ def extract_response(state: dict) -> str:
     return ""
 
 
+# ── 실행 결과 시각적 검증 (Phase 2) — visual_verify 노드의 순수 로직 ─
+#
+# **왜 이 층이 따로 필요한가.**
+# 바로 위 verify_output()은 "도구가 [오류]를 반환했는데 AI가 성공처럼 답하는" 경우를
+# 잡는다. 즉 **도구의 자기보고를 믿는다.** 그런데 이 프로젝트가 반복해서 데인 건
+# 도구가 **거짓으로 ✓를 반환하는** 경우다(BL-12: 입력이 안 됐는데 "✓ 입력 완료").
+# 그건 텍스트로는 알 수 없고 화면을 봐야 안다.
+#
+# ⚠️ 이 층은 **판정하지 않는다.** Vision의 답을 정규식으로 성공/실패로 접지 않고,
+#    원문 증거를 도구 결과에 붙여 agent에게 넘긴다. 손으로 쓴 정규식이 이 프로젝트를
+#    반복해서 무너뜨렸다(BL-02 부정어 오매칭 · BL-15 복합명령 절단 · HITL 승인 무한루프).
+#    자동 재시도도 하지 않는다 — **정직하게 보고만** 한다.
+
+_VISUAL_EVIDENCE_PREFIX = "[화면 확인]"
+
+
+def build_visual_question(tool_name: str, args: Optional[dict]) -> Optional[tuple[str, str]]:
+    """도구 호출에서 (캡처할 창, Vision에게 물을 것)을 만든다. 대상 아니면 None.
+
+    전체 화면이 아니라 **창 하나만** 찍는다. 판독 정확도가 오르고, 외부로 나가는
+    화면 범위가 줄어든다(OWASP LLM02 — tools/vision.py 주의사항 참조).
+    """
+    args = args or {}
+    if tool_name == "type_text":
+        text = str(args.get("text", "")).strip()
+        target = str(args.get("target", "")).strip()
+        if not text or not target:
+            # ⚠️ **target을 모르면 검증하지 않는다.** 예전엔 "활성창"을 찍었는데,
+            #    type_text는 애초에 활성창에 글자를 넣는다 — 글자가 간 그 창을 그대로
+            #    확인하니 **항상 "있다"**가 나온다. 순환이라 틀린 창에 들어간 걸
+            #    원리적으로 못 잡고, 오히려 **거짓 성공에 화면 증거를 붙여 줬다.**
+            #    2026-09-03 실기에서 실제로 그렇게 오보했다.
+            #    어디에 넣으려 했는지 모르면 확인할 방법이 없는 게 맞다.
+            return None
+        snippet = text[:30] + ("..." if len(text) > 30 else "")
+        return (target, (
+            f"이 창은 '{target}'입니다. 방금 여기에 '{snippet}' 라는 내용을 "
+            "입력했습니다. 그 내용이 실제로 들어가 있나요? "
+            "본문이 비어 있으면 '비어 있다'고, 다른 내용만 있으면 그 내용을 "
+            "그대로 말해주세요."
+        ))
+    return None
+
+
+def _tool_reported_failure(content: str) -> bool:
+    """도구가 이미 실패를 자백했는가. (그렇다면 화면을 볼 이유가 없다 — 8초를 아낀다)"""
+    c = str(content).strip()
+    return c.startswith("✗") or bool(_TOOL_ERROR_RE.match(c))
+
+
+def last_tool_result(messages: list[AnyMessage]) -> Optional[tuple[str, dict, ToolMessage]]:
+    """**이번 턴**의 마지막 ToolMessage와 그 짝인 도구 호출을 (이름, 인자, 메시지)로.
+
+    ⚠️ 반드시 current_turn_messages()를 거친다(절대규칙 6). 전체 히스토리를 훑으면
+      몇 턴 전의 type_text가 지금 턴을 8초 느리게 만든다.
+    """
+    turn = current_turn_messages(messages)
+    tm = next((m for m in reversed(turn) if isinstance(m, ToolMessage)), None)
+    if tm is None:
+        return None
+    call_id = getattr(tm, "tool_call_id", None)
+    for m in reversed(turn):
+        for c in (getattr(m, "tool_calls", None) or []):
+            if isinstance(c, dict) and c.get("id") == call_id:
+                return (c.get("name", ""), c.get("args", {}) or {}, tm)
+    return None
+
+
 # ── 그래프 빌더 ────────────────────────────────────────────────────
 def build_pluiz_graph(
     *,
@@ -400,8 +513,10 @@ def build_pluiz_graph(
     checkpointer: Optional[Any] = None,
     dangerous_tools: Optional[set] = None,
     target_exists: Optional[Callable[[dict], bool]] = None,
+    visual_check: Optional[Callable[[str, str], str]] = None,
+    visual_verify_tools: Optional[set] = None,
 ):
-    """Pluiz StateGraph를 구성해 compiled graph를 반환한다. (async 노드)
+    """Pluiz StateGraph를 구성해 compiled graph를 반환한다. (동기 노드)
 
     Args:
         llm: bind_tools/invoke를 지원하는 채팅 모델 (또는 동일 인터페이스 mock).
@@ -413,9 +528,16 @@ def build_pluiz_graph(
         target_exists(dangerous_tool_call) -> bool: 삭제 대상이 실제로 있는지.
             None이면 확인하지 않는다(mock 테스트 기본값). 없는 대상이면 승인을
             묻지 않고 바로 "못 찾았다"로 답한다 — 묻고 나서 없다고 하면 헷갈린다.
+        visual_check(window, question) -> str: 화면을 실제로 보고 답하는 함수
+            (프로덕션에서는 tools/vision.describe_screen). **None이면 visual_verify
+            노드를 아예 만들지 않는다** — 그래프가 이 인자 없이 지금까지와 완전히
+            동일하게 동작한다(mock 테스트·설정 OFF 경로).
+        visual_verify_tools: 화면으로 확인할 도구 이름 집합. 기본 VISUAL_VERIFY_TOOLS.
     """
     tools = tools or []
     dangerous = dangerous_tools if dangerous_tools is not None else DANGEROUS_TOOLS
+    visual_tools = (visual_verify_tools if visual_verify_tools is not None
+                    else VISUAL_VERIFY_TOOLS)
     llm_with_tools = llm.bind_tools(tools) if tools else llm
 
     # ── 노드 ───────────────────────────────────────────────────────
@@ -427,8 +549,8 @@ def build_pluiz_graph(
         # (승인 질문 상태로 턴이 끝나면 output_guard를 거치지 않아 값이 살아남는다)
         if blocked:
             return {"messages": [AIMessage(content=reason)], "decision": "blocked",
-                    "deletion_cancelled": False}
-        return {"decision": "", "deletion_cancelled": False}
+                    "deletion_cancelled": False, "visual_verified": False}
+        return {"decision": "", "deletion_cancelled": False, "visual_verified": False}
 
     def fast_path(state: PluizState) -> dict:
         """캐시/라우터 빠른 경로. 히트 시 결과를 messages에 기록(맥락 통합 핵심)."""
@@ -465,6 +587,52 @@ def build_pluiz_graph(
                 return {"messages": [AIMessage(content=note + _msg_text(last))],
                         "deletion_cancelled": False}
         return {}
+
+    def visual_verify(state: PluizState) -> dict:
+        """도구 실행 결과를 **화면으로** 확인해 그 증거를 도구 결과에 붙인다.
+
+        ⚠️ **async로 바꾸지 말 것** — 이 그래프의 노드는 전부 동기다(절대규칙 1).
+
+        증거는 새 메시지를 append 하지 않고 **마지막 ToolMessage를 같은 id로 교체**해
+        전달한다. add_messages 리듀서가 같은 id를 덮어쓰기 때문이다.
+        다른 방법은 전부 깨진다:
+          - SystemMessage → _prepare_messages()가 걸러내서 LLM이 못 본다
+          - HumanMessage  → current_turn_messages()가 거기서 턴을 새로 시작한다(절대규칙 6)
+          - ToolMessage 추가 append → 한 tool_call_id에 둘이 되어 Gemini 400
+          - 별도 state 필드 → LLM에는 messages만 가므로 agent가 못 본다
+
+        **응답을 조작하지 않는다.** 증거를 붙일 뿐, 성공/실패 판정도 재시도도 하지 않는다.
+        """
+        found = last_tool_result(state["messages"])
+        if not found:
+            return {"visual_verified": True}
+        name, args, tm = found
+        built = build_visual_question(name, args)
+        if built is None:
+            return {"visual_verified": True}
+        window, question = built
+
+        try:
+            evidence = str(visual_check(window, question) or "").strip()
+        except Exception as e:
+            # 검증이 본 명령을 망치면 안 된다. Vision은 네트워크·쿼터·포커스 등
+            # 실패 요인이 많다 — 증거 없이 원본 그대로 통과시킨다.
+            print(f"[graph.visual_verify] 화면 확인 실패(무시): {type(e).__name__}: {e}")
+            return {"visual_verified": True}
+
+        # 화면을 **못 봤을 때**는 아무것도 붙이지 않는다. 못 본 걸 봤다고 하면
+        # 이 노드가 고치려던 바로 그 정직성 문제를 스스로 저지르는 꼴이다.
+        if not evidence or _tool_reported_failure(evidence):
+            return {"visual_verified": True}
+
+        merged = ToolMessage(
+            content=(f"{_msg_text(tm)}\n"
+                     f"{_VISUAL_EVIDENCE_PREFIX} {evidence}"),
+            tool_call_id=tm.tool_call_id,
+            id=tm.id,                 # ← 같은 id여야 리듀서가 '교체'한다
+            name=getattr(tm, "name", None),
+        )
+        return {"messages": [merged], "visual_verified": True}
 
     def hitl(state: PluizState) -> dict:
         """위험 도구 실행 전 사람 승인(HITL, Lab19). interrupt로 그래프를 일시정지.
@@ -560,6 +728,26 @@ def build_pluiz_graph(
             return "agent"
         return "output_guard"
 
+    def route_after_tools(state: PluizState) -> str:
+        """도구 실행 직후 — **화면을 볼 값어치가 있을 때만** visual_verify로 보낸다.
+
+        Vision 1회가 약 8초다. 아래를 전부 통과할 때만 그 비용을 쓴다.
+        (visual_check가 없으면 이 라우터 자체가 그래프에 붙지 않는다)
+        """
+        if state.get("visual_verified"):
+            return "agent"                      # 턴당 1회
+        found = last_tool_result(state["messages"])
+        if not found:
+            return "agent"
+        name, args, tm = found
+        if name not in visual_tools:
+            return "agent"
+        if _tool_reported_failure(_msg_text(tm)):
+            return "agent"                      # 이미 정직하다. 확인할 이유가 없다
+        if build_visual_question(name, args) is None:
+            return "agent"
+        return "visual_verify"
+
     # ── 조립 ───────────────────────────────────────────────────────
     g = StateGraph(PluizState)
     g.add_node("input_guard", input_guard)
@@ -583,7 +771,16 @@ def build_pluiz_graph(
         g.add_conditional_edges("hitl", route_after_hitl,
                                 {"tools": "tools", "agent": "agent",
                                  "output_guard": "output_guard"})
-        g.add_edge("tools", "agent")
+        if visual_check is not None:
+            # 도구 실행 결과를 화면으로 확인하고 agent에게 넘긴다.
+            # ⚠️ visual_check가 없으면 이 분기 전체를 건너뛰어 **예전과 완전히 동일한**
+            #    tools → agent 엣지를 쓴다. 설정 OFF와 mock 테스트가 그 경로다.
+            g.add_node("visual_verify", visual_verify)
+            g.add_conditional_edges("tools", route_after_tools,
+                                    {"visual_verify": "visual_verify", "agent": "agent"})
+            g.add_edge("visual_verify", "agent")
+        else:
+            g.add_edge("tools", "agent")
     else:
         g.add_conditional_edges("fast_path", route_after_fast,
                                 {"agent": "agent", "output_guard": "output_guard"})

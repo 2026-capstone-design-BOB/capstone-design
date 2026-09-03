@@ -31,9 +31,20 @@ class Settings(BaseSettings):
 
     # 에이전트
     agent_max_iterations: int = 10   # 무한루프 방지
-    agent_timeout: int = 30          # 초
+    # ⚠️ 30 → 45로 올렸다(2026-09-03). 실행 결과 시각적 검증이 켜지면 한 턴에
+    #    Vision 1회(약 8초)가 더해진다: agent LLM ~3초 + 도구 + Vision 8초 + agent LLM ~3초.
+    #    30초로는 정상 동작이 타임아웃으로 잘릴 수 있었다.
+    agent_timeout: int = 45          # 초
     # ※ use_graph 플래그는 M1-P5(엔진 단일화)에서 제거됨.
     #   PluizGraphAgent가 유일한 엔진이다. → docs/design/M1_P5_엔진단일화.md
+
+    # 실행 결과 시각적 검증 (Phase 2)
+    # 도구 실행 직후 화면을 보고 "진짜 됐나?"를 확인해 그 증거를 도구 결과에 붙인다.
+    # 대상은 거짓 성공이 실측된 도구뿐이다 → core/graph.py 의 VISUAL_VERIFY_TOOLS
+    # ⚠️ OWASP LLM02 — 켜져 있으면 **사용자가 화면을 묻지 않아도** type_text·open_app
+    #    실행 시 스크린샷이 외부 LLM으로 나간다. describe_screen("물어볼 때만")보다
+    #    넓은 전송이다. 끄려면 .env 에 VISION_VERIFY_ENABLED=false 한 줄.
+    vision_verify_enabled: bool = True
 
     # 커맨드 캐시 (P4)
     cache_learning: bool = True      # 동적 학습 on/off 스위치

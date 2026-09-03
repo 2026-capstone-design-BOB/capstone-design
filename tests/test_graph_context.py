@@ -102,8 +102,14 @@ def run():
               AIMessage(content="82% 남았어요."),
               HumanMessage("고마워"),
               AIMessage(content="")]
+    # 문구를 문자열로 박지 않는다 — 여기서 보는 건 "과거 턴의 '배터리 82%'를
+    # 끌어오지 않는다"는 것이다. 문구 자체는 2026-09-03에 바뀌었다
+    # ("명령을 실행했습니다" → 아무 일도 없었으면 됐다고 하지 않는다).
+    _fallback = G.verify_output(stale2)
     check("빈 응답 복구가 과거 턴 ToolMessage를 끌어오지 않음",
-          G.verify_output(stale2) == "명령을 실행했습니다.")
+          _fallback == G._NOTHING_HAPPENED_MSG and "82%" not in _fallback)
+    check("아무 일도 없었으면 '실행했다'고 하지 않는다",
+          "실행했" not in _fallback)
 
     check("current_turn_messages: 마지막 발화부터",
           [type(m).__name__ for m in G.current_turn_messages(stale)]

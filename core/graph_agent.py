@@ -25,7 +25,15 @@ from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
-from core.graph import build_pluiz_graph, extract_response, current_turn_messages
+from core.graph import (
+    build_pluiz_graph, extract_response, current_turn_messages, _NOTHING_HAPPENED_MSG,
+)
+from core.logger import get_logger
+
+# 턴 요약 로그. 2026-09-03에 "명령을 실행했습니다"만 나온 턴이 왜 그랬는지
+# **로그로 답할 수 없었다** — 그래프가 턴 단위로 아무것도 남기지 않았기 때문이다.
+# 도구가 돌았는지/응답이 비었는지만 알아도 원인이 갈린다.
+_log = get_logger("Agent")
 from core.fast_path import resolve_fast_path
 
 
@@ -54,6 +62,16 @@ def _prod_target_exists(dcall: dict) -> bool:
     if not target:
         return True            # 판단할 수 없으면 원래대로 승인 절차를 밟는다
     return os.path.exists(_resolve_location_in_path(str(target)))
+
+def _prod_visual_check(window: str, question: str) -> str:
+    """화면을 실제로 보고 답한다. (visual_verify 노드가 도구 실행 직후 호출)
+
+    Vision 도구를 다시 짜지 않고 `tools/vision.describe_screen`을 **그대로 재사용**한다.
+    축소(긴 변 1600px)·임시파일 정리·오류 문자열 규약이 전부 거기 있어서, 여기서
+    다시 구현하면 두 벌이 되어 한쪽만 고쳐진다.
+    """
+    from tools.vision import describe_screen
+    return describe_screen.invoke({"window": window, "question": question})
 
 def _prod_tools():
     from core.tool_registry import get_all_tools
@@ -97,6 +115,7 @@ class PluizGraphAgent:
         checkpointer: Any = None,
         settings: Any = None,
         target_exists: Optional[Callable[[dict], bool]] = None,
+        visual_check: Optional[Callable[[str, str], str]] = None,
     ):
         self.settings = settings if settings is not None else _prod_settings()
         self.llm = llm if llm is not None else _prod_llm(self.settings)
@@ -111,9 +130,20 @@ class PluizGraphAgent:
         # 삭제 대상 존재 확인 (hitl이 묻기 전에). mock 테스트는 가짜 경로를 쓰므로
         # 주입할 수 있어야 한다 — 안 그러면 "없는 대상"으로 판정돼 승인 절차가 통째로 건너뛰어진다.
         self.target_exists = target_exists if target_exists is not None else _prod_target_exists
+        # 실행 결과 시각적 검증 (Phase 2). None이면 graph.py가 노드 자체를 만들지 않아
+        # 예전과 완전히 동일한 tools → agent 경로로 돈다.
+        # ⚠️ 켜져 있으면 사용자가 화면을 묻지 않아도 스크린샷이 외부 LLM으로 나간다
+        #    (OWASP LLM02). 그래서 설정 스위치를 통과해야만 붙인다.
+        if visual_check is not None:
+            self.visual_check = visual_check
+        elif getattr(self.settings, "vision_verify_enabled", False):
+            self.visual_check = _prod_visual_check
+        else:
+            self.visual_check = None
 
         self.graph = self._build()
-        print(f"[PluizGraphAgent] 초기화 완료 | tools={len(self.tools)}개")
+        print(f"[PluizGraphAgent] 초기화 완료 | tools={len(self.tools)}개 | "
+              f"화면검증={'on' if self.visual_check else 'off'}")
 
     def _build(self):
         return build_pluiz_graph(
@@ -122,6 +152,7 @@ class PluizGraphAgent:
             fast_resolve=self._fast_resolve,
             checkpointer=self.checkpointer,
             target_exists=self.target_exists,
+            visual_check=self.visual_check,
         )
 
     def _default_fast_resolve(self, text: str) -> Optional[str]:
@@ -216,8 +247,14 @@ class PluizGraphAgent:
             return question
 
         response = extract_response(result)
+        tool_names = self._turn_tool_names(result)
         if not response.strip():
-            response = "명령을 실행했습니다."
+            # 여기까지 왔는데 비었으면 도구도 안 돌았다는 뜻이다(output_guard가
+            # 도구 결과로 복원하기 때문). 됐다고 하지 않는다.
+            _log.warning("빈 응답 — 도구도 실행되지 않았다. 입력=%r", user_input)
+            response = _NOTHING_HAPPENED_MSG
+        _log.info("턴 완료 | 입력=%r | 도구=%s | 응답 %d자",
+                  user_input, tool_names or "없음", len(response))
 
         # LLM02/05: 출력 최종 마스킹(주민번호·카드번호·API키) — 사용자/TTS/기록 전에 적용
         try:
@@ -235,6 +272,16 @@ class PluizGraphAgent:
             print(f"[PluizGraphAgent] session_memory 저장 실패(무시): {e}")
 
         return response
+
+    @staticmethod
+    def _turn_tool_names(result: Any) -> list[str]:
+        """이번 턴에 실제로 호출된 도구 이름. (로그용 — 실패해도 무시)"""
+        try:
+            msgs = current_turn_messages(result.get("messages", []))
+            return [c.get("name", "?") if isinstance(c, dict) else getattr(c, "name", "?")
+                    for m in msgs for c in (getattr(m, "tool_calls", None) or [])]
+        except Exception:
+            return []
 
     def _maybe_learn(self, user_input: str, result: Any) -> None:
         """그래프 실행 결과에서 도구 호출을 추출해, 성공 + 화이트리스트면 캐시에 학습.
