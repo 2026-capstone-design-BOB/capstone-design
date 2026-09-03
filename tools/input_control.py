@@ -80,19 +80,90 @@ def _get_pyperclip():
         )
 
 
-@tool
-def type_text(text: str) -> str:
+def _foreground_window() -> tuple[int, str]:
+    """현재 포그라운드 창의 (hwnd, 제목). 확인 못 하면 (0, "")."""
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        hwnd = u.GetForegroundWindow()
+        if not hwnd:
+            return (0, "")
+        n = u.GetWindowTextLengthW(hwnd)
+        buf = ctypes.create_unicode_buffer(n + 1)
+        u.GetWindowTextW(hwnd, buf, n + 1)
+        return (int(hwnd), buf.value or "")
+    except Exception:
+        return (0, "")
+
+
+def _ensure_target_focused(target: str) -> tuple[bool, str]:
+    """target 앱 창이 실제로 앞에 와 있는가. (진행해도 되는가, 거부 사유)
+
+    ⚠️ **이게 BL-12의 핵심이다.** `pyautogui`는 지정한 창이 아니라 **그때 포커스된
+    창**에 키를 보낸다. 대상이 앞에 없는데 입력하면 사용자가 보고 있던 엉뚱한 창에
+    글자가 들어간다. 2026-09-03 실기에서 실제로 그랬다 — *"메모장에 회의록 적어줘"*
+    라고 했는데 **Pluiz 오버레이 입력창**에 "회의록"이 들어갔고, 도구는 `"✓ 입력 완료"`
+    라고 답했다.
+
+    그래서 **확인이 안 되면 입력하지 않는다.** 잘못 들어간 글자는 되돌릴 수 없다.
+    창 조회·포커스는 `tools/app_control.py`의 것을 재사용한다 — 여기서 따로 구현하면
+    앱 별칭("메모장"→notepad) 해석이 어긋난다.
     """
-    현재 포그라운드(활성) 앱에 텍스트를 입력한다.
+    try:
+        from tools.app_control import find_hwnd_for_app, _focus_window, _normalize
+    except Exception as e:
+        # 확인할 수단이 없으면 막지는 않는다(예전 동작). 다만 조용히 넘어가지 않는다.
+        print(f"[type_text] 대상 창 확인 불가(그대로 진행): {type(e).__name__}: {e}")
+        return (True, "")
+
+    hwnd = find_hwnd_for_app(target)
+    if not hwnd:
+        return (False, f"✗ '{target}' 창을 찾을 수 없어 입력하지 않았습니다. "
+                       f"먼저 {target}을(를) 열어주세요.")
+
+    fg, _title = _foreground_window()
+    if fg and fg == hwnd:
+        return (True, "")
+
+    # 앞에 없으면 한 번 가져와 본다
+    try:
+        _focus_window(_normalize(target))
+    except Exception as e:
+        print(f"[type_text] 포커스 시도 실패: {type(e).__name__}: {e}")
+    time.sleep(0.25)
+
+    fg, title = _foreground_window()
+    if fg and fg == hwnd:
+        return (True, "")
+    where = f"'{title}' 창" if title else "다른 창"
+    return (False, f"✗ '{target}' 창을 앞으로 가져오지 못해 입력하지 않았습니다. "
+                   f"지금 앞에 있는 건 {where}라서, 그대로 입력하면 거기에 글자가 "
+                   f"들어갔을 거예요.")
+
+
+@tool
+def type_text(text: str, target: str = "") -> str:
+    """
+    지정한 앱 창에 텍스트를 입력한다.
     한국어, 영어, 특수문자 모두 지원.
     예: 메모장에 'Hello 안녕' 입력, 검색창에 키워드 입력.
 
     Args:
         text: 입력할 텍스트 (한국어 포함 가능)
+        target: 어느 앱 창에 넣을지 (예: "메모장", "크롬"). **어디에 넣을지 알면
+                반드시 지정하세요.** 지정하면 그 창이 실제로 앞에 와 있는지 확인한
+                뒤에만 입력하고, 확인이 안 되면 입력하지 않고 그 사실을 알립니다.
+                비워두면 현재 앞에 있는 창에 입력합니다.
     """
     try:
         pyperclip = _get_pyperclip()
         pyautogui = _get_pyautogui()
+
+        # ── 대상 창 확인 (BL-12) — 입력 '전에' 한다 ──────────────
+        if target.strip():
+            ok, reason = _ensure_target_focused(target.strip())
+            if not ok:
+                return reason          # ⚠️ 입력하지 않고 끝낸다
 
         # 클립보드에 복사 후 Ctrl+V 붙여넣기 (한국어 안전 처리)
         original_clipboard = ""
@@ -112,7 +183,13 @@ def type_text(text: str) -> str:
         except Exception:
             pass
 
-        return f"✓ 텍스트 입력 완료: '{text[:30]}{'...' if len(text) > 30 else ''}'"
+        # **어느 창에 들어갔는지 함께 보고한다.** 예전엔 "✓ 입력 완료"만 말해서,
+        # 엉뚱한 창에 들어가도 사용자가 알 방법이 없었다.
+        preview = f"{text[:30]}{'...' if len(text) > 30 else ''}"
+        _, title = _foreground_window()
+        if title:
+            return f"✓ '{title}' 창에 입력했습니다: '{preview}'"
+        return f"✓ 텍스트 입력 완료: '{preview}'"
     except ImportError as e:
         return f"[오류] {e}"
     except Exception as e:
