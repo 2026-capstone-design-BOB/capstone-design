@@ -14,17 +14,21 @@
 같은 날 코드 리뷰로 **HITL 오승인·"턴 경계" 결함을 수정**했고(mock 검증 완료,
 **실기 확인은 남음** → [TASKS.md](TASKS.md) ①), 이어서 **BL-14(로컬 API 무인증)를
 막아 보안이 4층 → 5층**이 됐다 → [ARCHITECTURE § 보안](ARCHITECTURE.md#보안--5층-방어).
-다음은 로드맵상 **9월 Phase 2 — 화면 이해(Vision)** 다. → [ROADMAP.md](ROADMAP.md)
+**2026-09-03에 Phase 2(화면 이해)의 마지막 항목인 화면 변화 모니터링까지 넣어
+9월 로드맵이 코드상으로는 닫혔다** — 보기 → 찾기 → 누르기 → 지켜보기.
+⚠️ 다만 **좌표 클릭과 화면 감시는 아직 실기 미검증**이다 → [TASKS.md](TASKS.md) ①.
+다음은 로드맵상 **10월 Plan-and-Execute + 개인화**다. → [ROADMAP.md](ROADMAP.md)
 
 | 항목 | 상태 |
 |---|---|
 | **엔진** | `PluizGraphAgent` **단일**. 구 엔진은 M1-P5에서 제거 → [design/M1_P5_엔진단일화.md](design/M1_P5_엔진단일화.md) |
 | **M1 진행** | P0 진단 → P1 맥락 → P1.5 그래프 이관 → P2 HITL → P3 OWASP → P4 캐시학습 → **P5 엔진단일화 · 전부 완료** |
-| **도구** | **37개** (**승인 필수 3개** — 삭제 2 + `click_ui_element` · `describe_screen`·`find_ui_element`는 화면을 외부 LLM에 전송) |
+| **도구** | **39개** (**승인 필수 3개** — 삭제 2 + `click_ui_element` · `describe_screen`·`find_ui_element`·`watch_screen`은 화면을 외부 LLM에 전송) |
 | **화면 검증** | `visual_verify` 노드 — `type_text`가 **넣으려던 그 창**을 화면으로 재확인(2026-09-03). 기본 ON, `.env` `VISION_VERIFY_ENABLED=false`로 끔. ⚠️ **mock만 통과, 실기 미검증** → [TASKS.md](TASKS.md) ① |
+| **화면 감시** | `watch_screen` — *"오류 뜨면 알려줘"*. 5초마다 **로컬** 픽셀 비교로 거르고 변화가 있을 때만 Vision. 최대 10분·화면 20장에서 자동 종료하고 **어떤 이유로 멈추든 알린다**(2026-09-03). 승인 대신 **고지**. ⚠️ **mock만 통과, 실기 미검증** → [TASKS.md](TASKS.md) ① |
 | **도구 정직성** | `type_text`가 **입력 전에** 대상 창을 확인하고, 못 잡으면 입력하지 않는다(BL-12 해결). 캐시는 **해석 못 한 잔여 명령이 있으면 포기**한다(BL-15 해결) |
 | **보안** | **5층 방어** — 0 로컬 API 접근 제어(토큰) · 1 규칙 · 2 하이브리드 LLM 판정 · 3 HITL · 4 출력 마스킹 → [ARCHITECTURE](ARCHITECTURE.md#보안--5층-방어) |
-| **테스트** | mock **27파일 586개** + 라이브 3스위트. CI는 그중 26파일 554개 자동 실행 (`test_dependencies` 32개는 로컬 전용) — **이 숫자의 출처는 이 표 하나다** |
+| **테스트** | mock **28파일 678개** + 라이브 3스위트. CI는 그중 27파일 646개 자동 실행 (`test_dependencies` 32개는 로컬 전용) — **이 숫자의 출처는 이 표 하나다** |
 | **라이브 실측** | **2026-09-03 · 3스위트 전부 FAIL 0** — `regression` **35/35**(AUTH-01~04 포함) · `commands` 40P/0F/15MANUAL · `sprint1_2` 55/55 → [DEVLOG](DEVLOG.md).<br>더해서 접근제어 16항목 · HITL 오승인 5시나리오 18/18 실측.<br>⚠️ **마이크·UI 시각 확인 + 화면 검증(2026-09-03 신규) 미검증** → [TASKS.md](TASKS.md) ① |
 | **CI** | GitHub Actions 3잡 — mock · 문서링크 · 비밀정보 가드 |
 | **브랜치** | `main` = `develop` = 최신. 작업은 `feature/byeonsoyun` |
@@ -51,7 +55,7 @@
 
 | 하려는 작업 | 읽을 문서 |
 |---|---|
-| **새 도구 추가** | [ARCHITECTURE.md § 도구](ARCHITECTURE.md#도구-36개) → [WORKFLOW.md § 도구 추가 절차](WORKFLOW.md#새-도구-추가) |
+| **새 도구 추가** | [ARCHITECTURE.md § 도구](ARCHITECTURE.md#도구-39개) → [WORKFLOW.md § 도구 추가 절차](WORKFLOW.md#새-도구-추가) |
 | **버그 수정** | [BACKLOG.md](BACKLOG.md)에서 항목 확인 → [WORKFLOW.md § 작업 루프](WORKFLOW.md#작업-루프) |
 | **새 파일을 어디 둘지 모를 때** | [STRUCTURE.md § 배치 결정 트리](STRUCTURE.md#새-파일-배치-결정-트리) |
 | **에이전트 동작(그래프) 수정** | [ARCHITECTURE.md § 그래프](ARCHITECTURE.md#그래프-파이프라인) → [design/M1_아키텍처_설계.md](design/M1_아키텍처_설계.md) |
