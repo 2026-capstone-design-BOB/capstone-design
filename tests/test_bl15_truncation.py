@@ -25,6 +25,7 @@ BL-15 — 캐시가 명령을 **조용히 절단**하던 것 검증
 실제로 만들면서 오탐 5건이 나왔고(`"볼륨 좀 올려줘"` · `"음소거 해줘"` ·
 `"스크린샷 좀 찍어줘"` …) 전부 아래 ①에 케이스로 남겼다.
 """
+import _testenv  # noqa: F401  — 제품 로그를 더럽히지 않는다(tests/_testenv.py 참조)
 import sys, os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

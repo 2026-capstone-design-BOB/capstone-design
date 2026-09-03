@@ -40,7 +40,10 @@ from logging.handlers import RotatingFileHandler
 
 # ── 위치 ──────────────────────────────────────────────────────────
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG_DIR = os.path.join(_ROOT, "logs")
+# 테스트가 제품 로그를 더럽히지 않도록 경로를 바꿀 수 있게 한다. (BL-11 계열)
+# 2026-09-03에 mock 테스트가 남긴 `[BL-15] … 'x'` 6줄이 실제 사용 기록 사이에 섞여
+# 실기 진단을 방해했다. 테스트는 PLUIZ_LOG_DIR을 임시 경로로 잡고 돈다.
+LOG_DIR = os.environ.get("PLUIZ_LOG_DIR") or os.path.join(_ROOT, "logs")
 LOG_PATH = os.path.join(LOG_DIR, "pluiz.log")
 
 # 루트 로거 이름. 모든 Pluiz 로거는 이 아래에 붙어 핸들러를 공유한다.

@@ -5,6 +5,7 @@ P2-3 오케스트레이터 레벨 HITL 흐름 검증 (실제 사용 경로, mock
 - run_async("아니")    → 취소
 실행: python test_hitl_agent.py
 """
+import _testenv  # noqa: F401  — 제품 로그를 더럽히지 않는다(tests/_testenv.py 참조)
 import sys, os, asyncio, importlib.util
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

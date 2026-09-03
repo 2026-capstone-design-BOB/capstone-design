@@ -15,6 +15,7 @@ Vision(화면 이해) 도구 검증 — mock (LLM API 불필요)
 Linux에서는 그 경로를 못 탄다. **없으면 PASS가 아니라 SKIP으로 표시한다** —
 2026-09-01에 "의존성이 없는데 통과하던 테스트"로 크게 데였기 때문이다.
 """
+import _testenv  # noqa: F401  — 제품 로그를 더럽히지 않는다(tests/_testenv.py 참조)
 import sys, os, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

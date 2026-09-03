@@ -2,6 +2,7 @@
 P1.5-c PluizGraphAgent 오케스트레이터 검증 (동기 그래프, async 오케스트레이터, mock)
 실행: python test_graph_agent.py
 """
+import _testenv  # noqa: F401  — 제품 로그를 더럽히지 않는다(tests/_testenv.py 참조)
 import sys, os, asyncio, time, importlib.util
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
