@@ -462,7 +462,26 @@ i = gsrc.index("DANGEROUS_TOOLS = ")
 check("watch_screen은 DANGEROUS_TOOLS가 아니다",
       "watch_screen" not in gsrc[i:i + 200], gsrc[i:i + 200])
 check("시스템 프롬프트가 '스스로 시작하지 말라'고 못박는다",
-      "스스로 판단해서 감시를 시작하지 마세요" in gsrc)
+      "스스로 감시를 시작하지는 마세요" in gsrc)
+
+# BL-19 — **금지문이 앞에 서면 모델이 아무것도 안 하는 쪽으로 기운다.**
+# 2026-09-04 실기: "메모장 지켜보다가 오류 뜨면 알려줘"에 도구를 하나도 부르지 않고
+# "지켜보다가 알려드릴게요!"라고 답했다. 아무도 화면을 안 보고 있었다.
+# 그래서 **호출하라는 말이 먼저** 오는지를 고정한다.
+_i_call = gsrc.find("반드시 watch_screen을 호출하세요")
+_i_dont = gsrc.find("스스로 감시를 시작하지는 마세요")
+check("프롬프트가 watch_screen 호출을 먼저 지시한다 (BL-19)", _i_call != -1)
+check("금지문은 그 뒤에 온다 (BL-19)", _i_call != -1 and _i_dont > _i_call,
+      f"호출지시={_i_call} 금지문={_i_dont}")
+check("프롬프트가 stop_watching 호출을 지시한다 (BL-19)",
+      "반드시 stop_watching을 호출하세요" in gsrc)
+
+# 도구 docstring에도 같은 억제문이 한 번 더 있어 이중으로 눌렀다. 한쪽만 남긴다.
+vsrc = open(os.path.join(_ROOT, "tools", "vision.py"), encoding="utf-8").read()
+check("watch_screen docstring이 호출을 먼저 지시한다 (BL-19)",
+      "이 도구를 호출하세요" in vsrc)
+check("watch_screen docstring에 '부르지 않으면 아무것도 지켜보지 않는다'가 있다 (BL-19)",
+      "부르지 않으면 아무것도 지켜보지 않습니다" in vsrc)
 
 # 캐시는 **파라미터를 저장하지 않는다**(P4 오염 방지). 감시가 학습되면
 # "오류 뜨면 알려줘"가 what 없이 재생돼, 무엇을 보는지도 모르는 감시가 시작된다.
@@ -483,6 +502,173 @@ psrc = open(os.path.join(_ROOT, "electron-ui", "preload.js"), encoding="utf-8").
 check("preload가 showWindow를 노출한다", "showWindow" in psrc)
 jsrc = open(os.path.join(_ROOT, "electron-ui", "main.js"), encoding="utf-8").read()
 check("main.js가 show-window IPC를 받는다", "'show-window'" in jsrc)
+
+
+# ── 11. 정직성 그물 — 말이 아니라 상태로 본다 (BL-19) ─────────────
+print("")
+print("[11] BL-19 — 도구를 안 부르고 '지켜볼게요'라고 말한 경우")
+
+from core.graph import detect_watch_lie, watch_notice_to_deliver
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+
+def _turn(ai_text):
+    return [HumanMessage(content="메모장 지켜보다가 오류 뜨면 알려줘"),
+            AIMessage(content=ai_text)]
+
+
+# ① 도구 0개 + 모니터 꺼짐 + 감시 주장 → 교정한다
+_lie = detect_watch_lie(_turn("메모장을 지켜보다가 오류 메시지가 뜨면 바로 알려드릴게요!"),
+                        watching=False)
+check("도구 없이 '지켜볼게요'라고 하면 교정한다",
+      _lie is not None and "시작하지 못했" in _lie, str(_lie))
+
+# ⚠️ 실제로 새어나간 거짓말은 '지켜보'도 '감시'도 없었다 (2026-09-04 라이브).
+#    응답 문구만 보는 검사는 이걸 통과시킨다 → 범위를 **사용자 입력**으로 잡는다.
+_leaked = detect_watch_lie(_turn("메모장에서 오류 메시지가 뜨면 바로 알려드릴게요!"),
+                           watching=False)
+check("'지켜보'가 없는 거짓 약속도 잡는다 (실기에서 샜던 문장)",
+      _leaked is not None and "시작하지 못했" in _leaked, str(_leaked))
+
+_stop = detect_watch_lie([HumanMessage(content="그만 봐"),
+                          AIMessage(content="알겠습니다, 화면 감시를 중단했어요.")],
+                         watching=False)
+check("도구 없이 '중단했어요'라고 하면 교정한다",
+      _stop is not None and "지켜보고 있는 화면은 없" in _stop, str(_stop))
+
+# ② 진짜 돌고 있으면 거짓말이 아니다 — 손대지 않는다
+check("실제로 감시 중이면 손대지 않는다",
+      detect_watch_lie(_turn("메모장을 지켜볼게요!"), watching=True) is None)
+
+# ③ 도구가 돌았으면 손대지 않는다 (판정은 도구 결과가 한다)
+_with_tool = [HumanMessage(content="메모장 지켜봐"),
+              AIMessage(content="",
+                        tool_calls=[{"name": "watch_screen", "args": {}, "id": "c1"}]),
+              ToolMessage(content="✓ 지켜볼게요", tool_call_id="c1", name="watch_screen"),
+              AIMessage(content="메모장을 지켜볼게요!")]
+check("이번 턴에 도구가 돌았으면 손대지 않는다",
+      detect_watch_lie(_with_tool, watching=False) is None)
+
+# ④ 오탐 — 감시를 요청하지 않은 턴은 건드리지 않는다.
+#    범위를 사용자 입력으로 잡으므로, 평범한 명령의 응답은 무슨 말을 하든 통과한다.
+for _u, _t in [("메모장 열어줘", "메모장을 열었어요."),
+               ("안녕", "네, 안녕하세요!"),
+               ("소리 키워줘", "볼륨을 높였어요."),
+               ("무슨 기능 있어?", "화면 감시 기능도 있어요. 필요하면 말씀해 주세요."),
+               ("오늘 날씨 알려줘", "오늘은 맑아요.")]:
+    check("오탐 없음: " + _u,
+          detect_watch_lie([HumanMessage(content=_u), AIMessage(content=_t)],
+                           watching=False) is None)
+
+# 감시를 요청했더라도 응답이 **해줬다고 말하지 않으면** 손대지 않는다
+check("못 한다고 답하면 교정하지 않는다",
+      detect_watch_lie(_turn("죄송해요, 지금은 화면을 지켜볼 수 없어요."),
+                       watching=False) is None)
+
+# ⑤ 시작 고지는 **원문 그대로** 전달된다
+#    LLM이 요약하면 간격·상한·중단법이 사라진다. 감시를 승인이 아니라 고지로
+#    하기로 한 근거가 바로 그 고지다(DEVLOG 2026-09-03).
+_notice = ("✓ '메모장' 창를 지켜볼게요. '오류'이(가) 보이면 바로 알려드릴게요.\n"
+           "5초마다 화면을 확인하고, 변화가 있을 때만 화면을 읽어요.\n"
+           "최대 10분(화면 읽기 20회)까지만 보고 자동으로 멈춰요.\n"
+           '그만두려면 "그만 봐"라고 말씀해 주세요.')
+_started = [HumanMessage(content="메모장 지켜봐"),
+            AIMessage(content="",
+                      tool_calls=[{"name": "watch_screen", "args": {}, "id": "c1"}]),
+            ToolMessage(content=_notice, tool_call_id="c1", name="watch_screen"),
+            AIMessage(content="네, 알려드릴게요!")]
+_out = watch_notice_to_deliver(_started)
+check("시작 고지를 원문 그대로 전달한다", _out == _notice, str(_out)[:80])
+check("고지에 간격·상한·중단법이 살아 있다",
+      _out is not None and "초마다" in _out and "까지만" in _out and "그만 봐" in _out)
+
+# 거절(✗)은 고지가 아니다 — LLM이 전해도 된다
+_refused = [HumanMessage(content="메모장 지켜봐"),
+            AIMessage(content="",
+                      tool_calls=[{"name": "watch_screen", "args": {}, "id": "c1"}]),
+            ToolMessage(content="✗ 이미 '오류'를 지켜보는 중이라 새로 시작하지 않았어요.",
+                        tool_call_id="c1", name="watch_screen"),
+            AIMessage(content="이미 보고 있어요.")]
+check("거절은 고지로 덮어쓰지 않는다", watch_notice_to_deliver(_refused) is None)
+check("감시와 무관한 턴은 고지가 없다",
+      watch_notice_to_deliver([HumanMessage(content="안녕"),
+                               AIMessage(content="안녕하세요!")]) is None)
+
+
+# ── 12. 도구 미호출 재시도 (BL-19) ────────────────────────────────
+print("")
+print("[12] BL-19 — 감시 요청인데 도구를 안 불렀으면 한 번 더 묻는다")
+
+from core.graph import needs_watch_retry, with_watch_directive
+from langchain_core.messages import SystemMessage
+
+
+class _Resp:
+    def __init__(self, tool_calls=None):
+        self.tool_calls = tool_calls or []
+
+
+check("감시 요청 + 도구 미호출 + 꺼짐 → 재시도한다",
+      needs_watch_retry("메모장 지켜보다가 오류 뜨면 알려줘", _Resp(), watching=False))
+check("'지켜보'가 없는 요청도 재시도 대상",
+      needs_watch_retry("다운로드 끝나면 알려줘", _Resp(), watching=False))
+check("도구를 불렀으면 재시도하지 않는다",
+      not needs_watch_retry("메모장 지켜봐",
+                            _Resp([{"name": "watch_screen"}]), watching=False))
+check("이미 감시 중이면 재시도하지 않는다",
+      not needs_watch_retry("메모장 지켜봐", _Resp(), watching=True))
+check("감시와 무관한 요청은 재시도하지 않는다",
+      not needs_watch_retry("메모장 열어줘", _Resp(), watching=False))
+
+# 중단은 **돌고 있을 때만** 다시 묻는다. 이미 꺼져 있으면 결과가 같다.
+check("중단 요청 + 감시 중 → 재시도한다",
+      needs_watch_retry("그만 봐", _Resp(), watching=True))
+check("중단 요청인데 이미 꺼져 있으면 재시도하지 않는다",
+      not needs_watch_retry("그만 봐", _Resp(), watching=False))
+
+# 재시도 메시지 — 시스템 메시지를 **교체**한다(두 개면 Gemini가 무시하거나 400)
+_m = [SystemMessage(content="원래 프롬프트"), HumanMessage(content="메모장 지켜봐")]
+_out = with_watch_directive(_m)
+check("재시도 메시지의 SystemMessage는 하나뿐이다",
+      sum(1 for x in _out if isinstance(x, SystemMessage)) == 1)
+check("재시도 지시가 원래 프롬프트 뒤에 붙는다",
+      _out[0].content.startswith("원래 프롬프트") and "반드시 지금 호출" in _out[0].content)
+check("사람 발화는 그대로 남는다", _out[-1].content == "메모장 지켜봐")
+
+# agent 노드가 실제로 재시도하는가 — 첫 호출은 말만, 두 번째는 도구
+class _FlakyLLM:
+    """첫 invoke는 도구를 안 부르고, 두 번째는 부른다."""
+    def __init__(self): self.calls = []
+    def bind_tools(self, tools): return self
+    def invoke(self, msgs):
+        self.calls.append(msgs)
+        if len(self.calls) == 1:
+            return AIMessage(content="오류 뜨면 바로 알려드릴게요!")
+        return AIMessage(content="", tool_calls=[
+            {"name": "watch_screen", "args": {"what": "오류"}, "id": "c1"}])
+
+
+from core.graph import build_pluiz_graph
+_flaky = _FlakyLLM()
+_g = build_pluiz_graph(
+    llm=_flaky, tools=[], security_check=lambda t: (False, ""),
+    is_watching=lambda: False)
+_res = _g.invoke({"messages": [HumanMessage(content="메모장 지켜보다가 오류 뜨면 알려줘")]},
+                 {"configurable": {"thread_id": "bl19_retry"}})
+check("agent가 도구 미호출을 보고 한 번 다시 묻는다", len(_flaky.calls) == 2,
+      f"invoke {len(_flaky.calls)}회")
+check("재시도 호출에 지시가 실려 있다",
+      len(_flaky.calls) == 2
+      and any("반드시 지금 호출" in getattr(m, "content", "") for m in _flaky.calls[1]))
+# tools=[] 라 도구 노드가 없어서 실제 실행은 안 된다(그래서 마지막 응답은
+# _NOTHING_HAPPENED_MSG다). 여기서 볼 건 **재시도 결과가 채택됐는가**뿐이다.
+_adopted = [m for m in _res["messages"]
+            if isinstance(m, AIMessage) and getattr(m, "tool_calls", None)]
+check("재시도 결과(도구 호출)가 채택된다", len(_adopted) == 1,
+      f"도구호출 AIMessage {len(_adopted)}개")
+check("첫 응답(말뿐인 답)은 채택되지 않는다",
+      not any("알려드릴게요" in str(getattr(m, "content", ""))
+              for m in _res["messages"] if isinstance(m, AIMessage)))
 
 
 # ── 결과 ──────────────────────────────────────────────────────────

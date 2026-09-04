@@ -28,9 +28,25 @@ Pluiz 회귀 보완 테스트 (라이브 — 서버 필요)
   S-09                           — 위험 명령어 공백 없는 변형 (BL-03)
   C-01                           — 캐시 부정어 오매칭 방지 (BL-02)
 
+  [BL-14 — 2026-09-02 추가]
+  AUTH-01~04                     — 로컬 API 접근 제어 (토큰 없는 요청 401 · WS 거절)
+
+  [Vision 라이브 — 2026-09-04 추가]
+  V-01                           — 전체화면 설명 (실제 캡처 → Gemini 왕복)
+  V-02                           — 특정 창 판독 (창 안의 확인용 문구를 되읽는가)
+  V-03                           — 없는 요소에 좌표를 지어내지 않는가 (정직성)
+  V-04                           — 좌표계: 찾은 좌표가 창 안에 있는가 (창 원점 반영)
+  V-05                           — 화면 감시 시작 고지 → 중단 왕복
+
 주의:
 - G-02는 **온라인 전용**이다. 오프라인이면 LLM 판정기가 skip 돼 통과할 수 있다.
 - G-01/G-04는 실제로 파일을 만들고 앱을 띄운다. 끝나면 정리한다.
+- **V-01~V-05는 실제 화면을 외부 LLM으로 보낸다**(OWASP LLM02). 화면에 보이면
+  안 되는 것이 떠 있는 상태로 돌리지 말 것. 자세한 건 해당 절의 주석 참조.
+- **V-01~V-05는 비결정적이다.** 한 번 FAIL했다고 회귀로 단정하지 말고 그 케이스만
+  따로 재현할 것 (test_commands.py와 같은 주의).
+- SKIP은 PASS가 아니다. 환경 조건이 안 맞아 **확인하지 못한** 것이고 총계에
+  따로 표시된다.
 """
 
 import asyncio
@@ -78,7 +94,8 @@ def ok(msg):   print(f"  {GREEN}✓ PASS{RESET}  {msg}")
 def fail(msg): print(f"  {RED}✗ FAIL{RESET}  {msg}")
 def info(msg): print(f"  {YELLOW}→{RESET}      {msg}")
 
-results = {"pass": 0, "fail": 0}
+results = {"pass": 0, "fail": 0, "skip": 0}
+skipped: list[str] = []
 _ctr = [0]
 
 def check(name: str, passed: bool, detail: str = ""):
@@ -88,14 +105,29 @@ def check(name: str, passed: bool, detail: str = ""):
         fail(name + (f"  [{detail}]" if detail else "")); results["fail"] += 1
 
 
-def send(text: str, thread_id: str = None) -> str:
+def skip(name: str, why: str):
+    """환경 조건이 안 맞아 **확인하지 못한** 항목.
+
+    ⚠️ 예전엔 이런 경우에 `results["pass"] += 1` 을 했다. 확인하지 않은 것을
+    통과로 세면 총계가 거짓말을 한다 — 이 프로젝트가 반복해서 데인 결함
+    ("확인하지 않고 됐다고 말하는 것")과 같은 형태다. 따로 센다.
+    """
+    skipped.append(f"{name} — {why}")
+    results["skip"] += 1
+    print(f"  {YELLOW}⚠ SKIP{RESET}  {name}  [{why}]")
+
+
+def send(text: str, thread_id: str = None, timeout: int = 30) -> str:
+    # timeout: Vision 경로는 캡처 + 외부 API 왕복이라 30초로는 모자란다.
+    #          서버의 agent_timeout(45초)보다 넉넉해야 **서버 응답**을 보고
+    #          판정할 수 있다 — 여기서 먼저 끊기면 원인이 뭔지 알 수 없다.
     _ctr[0] += 1
     tid = thread_id or f"{TB}_{_ctr[0]}"
     try:
         r = S.post(
             f"{API}/chat",
             json={"text": text, "thread_id": tid},
-            timeout=30,
+            timeout=timeout,
         )
         d = r.json()
         return d.get("response", "") or d.get("error", str(d))
@@ -350,12 +382,11 @@ try:
         check("R-01 WS 경로 저장 횟수 = 1 (중복 없음)",
               cnt == 1, f"실제 저장 횟수: {cnt}")
     else:
-        info("⚠ session.db 없음 — 서버를 먼저 실행한 뒤 재시도하세요")
-        results["pass"] += 1  # 환경 조건 미충족 → skip
+        skip("R-01 WS 이중 저장", "session.db 없음 — 서버를 먼저 실행한 뒤 재시도")
 
 except ImportError:
-    info("⚠ websockets 미설치 — 'pip install websockets' 후 재실행 (uvicorn[standard]에 보통 포함)")
-    results["pass"] += 1  # skip
+    skip("R-01 WS 이중 저장",
+         "websockets 미설치 — 'pip install websockets' (uvicorn[standard]에 보통 포함)")
 except Exception as e:
     fail(f"R-01 WS 오류: {e}"); results["fail"] += 1
 
@@ -426,8 +457,8 @@ try:
             break
 
     if novel is None:
-        info("⚠ 캐시를 미스하는 새 표현을 못 찾음 — 동의어가 늘어난 듯. 후보를 갱신하세요")
-        results["pass"] += 1   # 환경 조건 미충족 → skip
+        skip("G-04 캐시 동적 학습",
+             "캐시를 미스하는 새 표현을 못 찾음 — 동의어가 늘었다. 후보를 갱신할 것")
     else:
         info(f"사용할 새 표현: {novel!r} (캐시 미스 확인됨)")
         before = S.get(f"{API}/cache", timeout=10).json()
@@ -529,20 +560,275 @@ try:
         rejected = True   # 핸드쉐이크 거절 · 연결 종료 = 정상
     check("AUTH-04 토큰 없는 WS 거절", rejected)
 except ImportError:
-    info("AUTH-04 skip — websockets 미설치")
-    results["pass"] += 1
+    skip("AUTH-04 토큰 없는 WS 거절", "websockets 미설치")
 except Exception as e:
     fail(f"AUTH-04 오류: {e}"); results["fail"] += 1
 
 
+# ══════════════════════════════════════════════════════════════════
+print(f"{NL}{BOLD}▶ V-01~V-05 — Vision 라이브 경로 (Phase 2){RESET}")
+# ══════════════════════════════════════════════════════════════════
+# Vision은 지금까지 **mock만** 있었다(test_vision.py · test_ui_locate.py ·
+# test_screen_monitor.py). 그 셋은 "받은 응답을 어떻게 해석하는가"를 덮지만
+# **실제 캡처 → 축소 → 외부 API 왕복**은 한 번도 자동으로 확인된 적이 없다.
+# 실기에서 어긋나도 회귀로 잡을 수단이 없었다. → docs/TASKS.md 「Vision 보강」
+#
+# ⚠️ **이 절은 실제 화면을 외부 LLM으로 보낸다.** 화면에 비밀번호·계좌가 떠 있으면
+#    그것도 함께 나간다(OWASP LLM02 — tools/vision.py 모듈 docstring).
+#    그래서 전체화면(V-01)은 **한 번만** 부르고, 나머지는 메모장 창만 본다.
+#
+# ⚠️ Vision은 비결정적이다. **한 번 FAIL했다고 회귀로 단정하지 말 것.**
+#    그 케이스만 따로 재현해 볼 것 (test_commands.py와 같은 주의).
+#
+# BL-11(캐시 오염)은 이 절이 늘리지 않는다 — Vision 도구는 LEARNABLE_TOOLS에
+# 없어서 동적 학습 대상이 아니다(core/command_cache.py).
+
+VISION_TIMEOUT = 90     # 캡처 + 외부 Vision 왕복. 서버 agent_timeout(45초)보다 넉넉히.
+
+
+def server_watching():
+    """서버가 **실제로** 화면을 지켜보고 있는가. True/False, 못 물어보면 None.
+
+    ⚠️ **응답 문장으로 판단하지 않는다.** BL-19가 정확히 그 구멍으로 통과했다 —
+      에이전트가 watch_screen/stop_watching을 부르지도 않고 "지켜볼게요" ·
+      "중단했어요"라고 답했고, 말만 보는 검사는 그걸 전부 통과시켰다.
+
+    모니터 상태는 **서버 프로세스 안에** 있어서 V-04처럼 in-process import로는
+    볼 수 없다(테스트는 다른 프로세스다). `/ws`가 접속 직후 보내는 `watch_state`
+    프레임을 읽는다 (main.py의 websocket_endpoint).
+    """
+    try:
+        import websockets
+    except ImportError:
+        return None
+
+    async def _peek():
+        async with websockets.connect(WS_URL) as ws:
+            # 보관돼 있던 notify가 먼저 올 수 있다 — watch_state가 나올 때까지 읽는다.
+            for _ in range(10):
+                raw = await asyncio.wait_for(ws.recv(), timeout=10)
+                msg = json.loads(raw)
+                if msg.get("type") == "watch_state":
+                    return bool(msg.get("active"))
+        return None
+
+    try:
+        return asyncio.run(_peek())
+    except Exception as e:
+        info(f"감시 상태 조회 실패: {e}")
+        return None
+
+# 화면에 **우리가 아는 글자**를 띄워 둔다. Vision이 이걸 되읽으면 캡처·전송·판독이
+# 전부 실제로 돌았다는 뜻이다. 화면 설명만 보고는 그걸 구분할 수 없다.
+canary_txt  = f"PLUIZ VISION CANARY {int(time.time()) % 10000:04d}"
+canary_path = os.path.join(DESKTOP, f"pluiz_vision_{int(time.time())}.txt")
+canary_open = False
+
+try:
+    kill_proc("notepad.exe")
+    time.sleep(0.8)
+    with open(canary_path, "w", encoding="utf-8") as f:
+        f.write(canary_txt + NL)
+    # ⚠️ type_text 를 거치지 않고 **파일로** 넣는다. 여기서 보려는 건 화면을
+    #    *읽는* 쪽이다. 입력 경로가 실패하면 Vision이 멀쩡해도 FAIL이 나서
+    #    원인이 뒤섞인다(BL-12가 정확히 그 모양이었다).
+    import subprocess
+    subprocess.Popen(["notepad.exe", canary_path])
+    time.sleep(3.0)
+    canary_open = is_running("notepad.exe")
+
+    # ⚠️ V-01은 **전체화면**을 찍는다. 다른 창(게임·브라우저)이 위에 있으면 메모장이
+    #    가려져 확인용 문구가 안 보이고, Vision은 멀쩡한데 FAIL이 난다.
+    #    2026-09-04 실측에서 실제로 그렇게 새어 나갔다(솔리테어가 덮고 있었다).
+    #    그래서 전면으로 올린 뒤에 찍는다.
+    try:
+        from tools.app_control import _focus_window
+        _focus_window("notepad")
+        time.sleep(1.2)
+    except Exception as e:
+        info(f"메모장 전면화 실패(무시): {e}")
+
+    info(f"확인용 문구: {canary_txt!r}")
+except Exception as e:
+    canary_open = False
+    info(f"메모장 준비 실패: {e}")
+
+if not canary_open:
+    skip("V-01~V-05 Vision 라이브", "확인용 메모장 창을 못 띄웠다")
+else:
+    try:
+        # ── V-01: 전체화면 설명 ───────────────────────────────────
+        print(f"{NL}{CYAN}{BOLD}[V-01 전체화면 설명]{RESET} '지금 화면에 뭐 있어?'")
+        r = send("지금 화면에 뭐 있어?", timeout=VISION_TIMEOUT)
+        info(f"응답: {r[:160]}")
+        broken = ("[오류]" in r) or ("화면을 캡처하지 못" in r) or ("분석하지 못" in r)
+        check("V-01 전체화면 Vision 왕복 성공", not broken and len(r.strip()) >= 20, r[:100])
+        # ⚠️ **앱 이름을 맞히라고 요구하지 않는다.** 처음엔 "메모장을 언급하는가"로
+        #    두었다가 2026-09-04 실측에서 걸렸다 — Vision은 픽셀만 보고
+        #    *"어두운 테마의 프로그램"* 이라고 정직하게 답했다. 프로세스 이름은
+        #    화면에 안 적혀 있다. 그걸 요구하면 **추측을 상 주는** 단정이 된다.
+        #    대신 화면을 진짜로 읽었는지를 본다 — 확인용 문구가 되돌아오는가.
+        #    (여기서 FAIL이 나면 고해상도 화면에서 _MAX_EDGE=1600 축소 때문에
+        #     글자가 뭉갠 것일 수 있다. 그건 오탐이 아니라 **알아야 할 한계**다)
+        # ⚠️ 확인용 문구가 안 보이는 건 **실패가 아니라 확인 불가**다.
+        #    전체화면 캡처는 그 순간 맨 위에 있는 창을 찍는다. 테스트는 메모장을
+        #    맨 위로 올릴 수 없다 — Windows가 백그라운드 프로세스의
+        #    SetForegroundWindow를 막는다(2026-09-04에 실제로 막혔다).
+        #    "정말 화면을 읽었는가"는 창을 지정하는 V-02가 확실하게 덮는다.
+        if ("PLUIZ" in r.upper()) or ("CANARY" in r.upper()):
+            check("V-01 전체화면 캡처를 실제로 읽음 (확인용 문구 되읽기)", True)
+        else:
+            skip("V-01 전체화면 확인용 문구 되읽기",
+                 "다른 창이 메모장을 덮고 있어 확인 불가 — 판독 자체는 V-02가 확인한다")
+
+        # ── V-02: 특정 창 — 창 안의 글자를 실제로 읽는가 ───────────
+        # 이 스위트에서 가장 강한 한 줄이다. 통과하면 resolve_window_hwnd →
+        # _capture_hwnd → 축소 → API 왕복이 다 돌았고, **맞는 창**을 봤다는 뜻이다.
+        print(f"{NL}{CYAN}{BOLD}[V-02 특정 창 판독]{RESET} 메모장 창의 글자 읽기")
+        r = send("메모장 창을 보고 뭐라고 써 있는지 알려줘", timeout=VISION_TIMEOUT)
+        info(f"응답: {r[:160]}")
+        check("V-02 창 안의 확인용 문구를 실제로 읽음",
+              ("PLUIZ" in r.upper()) or ("CANARY" in r.upper()),
+              f"기대={canary_txt!r} 응답={r[:100]}")
+
+        # ── V-03: 없는 요소에 좌표를 지어내지 않는가 (정직성) ──────
+        # find_ui_element의 핵심 계약이다. 설명은 틀려도 사용자가 거르지만
+        # 좌표는 숫자라 그럴듯하고 다음 단계(클릭)가 그대로 믿는다.
+        print(f"{NL}{CYAN}{BOLD}[V-03 좌표 조작 방지]{RESET} 메모장에 없는 '로그인 버튼'")
+        r = send("메모장 창에서 로그인 버튼 어디 있어?", timeout=VISION_TIMEOUT)
+        info(f"응답: {r[:160]}")
+        check("V-03 없는 요소에 좌표를 지어내지 않음",
+              not re.search(r"\(\s*\d+\s*,\s*\d+\s*\)", r), r[:120])
+        check("V-03 못 찾았다고 분명히 말함",
+              any(k in r for k in ["찾지 못", "찾을 수 없", "없습니다", "보이지 않", "없어"]),
+              r[:120])
+
+        # ── V-04: 좌표계 — 창 원점이 반영되는가 (in-process) ───────
+        # 서버를 거치지 않고 직접 부른다. /chat 응답 문장에서 좌표를 긁어내는 것보다
+        # locate_ui_element의 반환값을 창 사각형과 직접 대조하는 편이 정확하다.
+        print(f"{NL}{CYAN}{BOLD}[V-04 좌표계]{RESET} '파일 메뉴' 좌표가 창 안에 있는가")
+        try:
+            from tools.vision import locate_ui_element
+            from tools.system import resolve_window_hwnd, window_screen_rect
+
+            hwnd, _lbl = resolve_window_hwnd("메모장")
+            rect = window_screen_rect(hwnd) if hwnd else None
+            if not rect:
+                skip("V-04 좌표계", "메모장 창 사각형을 못 구했다")
+            else:
+                loc = locate_ui_element("파일 메뉴", "메모장")
+                left, top, w, h = rect
+                info(f"창 rect=(left={left}, top={top}, {w}x{h})")
+                if not loc.get("found"):
+                    # 못 찾은 것 자체는 회귀가 아니다(Vision 비결정성).
+                    # 다만 **그때 좌표를 내지 않았는지**는 여기서 확인할 수 있다.
+                    check("V-04 못 찾았을 때 좌표를 내지 않음", "center" not in loc,
+                          str(loc)[:120])
+                    skip("V-04 좌표가 창 안에 있는가",
+                         f"Vision이 '파일 메뉴'를 못 찾음 — {str(loc.get('reason'))[:60]}")
+                else:
+                    cx, cy = loc["center"]
+                    info(f"찾은 좌표: ({cx}, {cy})  label={loc.get('label')!r}")
+                    if left <= 2 and top <= 2:
+                        info("⚠ 창이 화면 좌상단에 붙어 있어 이번 실행은 "
+                             "창 원점 검증이 약하다 (창을 옮기고 재실행하면 강해진다)")
+                    check("V-04 찾은 좌표가 메모장 창 안에 있음 (창 원점 반영)",
+                          left <= cx <= left + w and top <= cy <= top + h,
+                          f"center=({cx},{cy}) rect={rect}")
+        except Exception as e:
+            fail(f"V-04 오류: {e}"); results["fail"] += 1
+
+        # ── V-05: 화면 감시 시작/중단 왕복 ─────────────────────────
+        # 감시는 승인이 아니라 **고지**를 받기로 한 기능이다(DEVLOG 2026-09-03).
+        # 고지가 담아야 할 것: ① 무엇을 ② 얼마나 자주 ③ 언제 멈추는지 ④ 어떻게 멈추는지.
+        print(f"{NL}{CYAN}{BOLD}[V-05 화면 감시]{RESET} 시작 고지 → 중단")
+        watch_tid = f"{TB}_watch"
+        started = None
+        try:
+            # 시작 전에 깨끗한지 확인한다. 이미 돌고 있으면 watch_screen이 거절하므로
+            # (한 번에 하나만) 이 케이스 전체가 무의미해진다.
+            if server_watching() is True:
+                send("그만 봐", thread_id=watch_tid, timeout=VISION_TIMEOUT)
+                time.sleep(1.0)
+
+            r = send("메모장 지켜보다가 오류 뜨면 알려줘",
+                     thread_id=watch_tid, timeout=VISION_TIMEOUT)
+            info(f"고지: {r[:200]}")
+
+            # ① **상태** — 감시가 실제로 시작됐는가. 이게 이 케이스의 본체다.
+            time.sleep(1.0)
+            started = server_watching()
+            if started is None:
+                skip("V-05 감시가 실제로 시작됨", "감시 상태를 조회하지 못했다(websockets?)")
+            else:
+                check("V-05 감시가 실제로 시작됨 (말이 아니라 상태로 확인)", started,
+                      f"응답={r[:100]!r}")
+                if not started:
+                    info("→ 도구를 안 부른 것이다. logs/pluiz.log 의 "
+                         "'턴 완료 | … | 도구=' 와 '[BL-19]' 줄을 볼 것.")
+                    info("→ ⚠️ 이건 **알려진 불안정성**이다(BL-19). watch_screen 호출률이 "
+                         "시간대에 따라 크게 흔들린다 — 2026-09-04 측정에서 같은 코드가 "
+                         "10/10인 구간과 0/10인 구간이 몇 분 간격으로 나왔다. "
+                         "다른 도구(describe_screen 등)는 같은 구간에도 정상이었다.")
+                    info("→ 실패해도 **거짓말은 하지 않는다**: 응답이 '시작하지 못했어요'면 "
+                         "그물이 제대로 동작한 것이다. '지켜볼게요'라고 답했다면 그건 회귀다.")
+
+            # ② **고지** — 승인 대신 고지를 택한 근거가 고지 자체다.
+            #    간격·상한·중단법이 빠지면 그 근거가 무너진다. LLM이 요약해 삼킨 적이
+            #    있어서(BL-19 2차) output_guard가 원문을 그대로 내보내게 돼 있다.
+            if started:
+                check("V-05 시작 고지가 주기·상한·중단 방법을 말함",
+                      ("초마다" in r) and ("멈춰" in r or "까지만" in r) and ("그만 봐" in r),
+                      r[:150])
+            else:
+                skip("V-05 시작 고지 내용", "감시가 시작되지 않아 고지를 확인할 수 없다")
+        finally:
+            # ⚠️ 무슨 일이 있어도 멈춰야 한다. 안 멈추면 테스트가 끝난 뒤에도
+            #    서버가 최대 10분간 화면을 계속 밖으로 보낸다.
+            st = send("그만 봐", thread_id=watch_tid, timeout=VISION_TIMEOUT)
+            info(f"중단 응답: {st[:120]}")
+            time.sleep(1.0)
+            after = server_watching()
+
+            if started is not True:
+                # 시작이 안 됐으면 "멈췄다"는 **공허하게 통과한다** — 애초에 아무것도
+                # 안 돌고 있었으니까. 확인하지 못한 것은 확인하지 못했다고 센다.
+                skip("V-05 감시가 실제로 멈췄음", "감시가 시작되지 않아 중단을 검증할 수 없다")
+            elif after is None:
+                skip("V-05 감시가 실제로 멈췄음", "감시 상태를 조회하지 못했다")
+            else:
+                check("V-05 감시가 실제로 멈췄음 (말이 아니라 상태로 확인)",
+                      after is False, f"active={after} 응답={st[:80]!r}")
+
+            if after is True:
+                print(f"  {RED}⚠ 감시가 아직 돌고 있습니다 — 서버를 재시작하세요{RESET}")
+    finally:
+        kill_proc("notepad.exe")
+        time.sleep(0.5)
+        if os.path.exists(canary_path):
+            try: os.remove(canary_path)
+            except Exception: info(f"확인용 파일 삭제 실패: {canary_path}")
+
+
 # ── 결과 요약 ──────────────────────────────────────────────────────
-total = results["pass"] + results["fail"]
+total = results["pass"] + results["fail"] + results["skip"]
 print(f"\n{BOLD}{'='*55}")
 print("  회귀 보완 테스트 완료")
 print(f"{'='*55}{RESET}")
-print(f"  총 {total}개  {GREEN}PASS {results['pass']}{RESET}  {RED}FAIL {results['fail']}{RESET}")
+print(f"  총 {total}개  {GREEN}PASS {results['pass']}{RESET}  "
+      f"{RED}FAIL {results['fail']}{RESET}  {YELLOW}SKIP {results['skip']}{RESET}")
+
+# SKIP은 통과가 아니라 **확인하지 못한 것**이다. 조용히 넘기면 총계가 거짓말을 한다.
+if skipped:
+    print(f"\n  {YELLOW}확인하지 못한 항목 (SKIP){RESET}")
+    for s in skipped:
+        print(f"    · {s}")
+
 if results["fail"] == 0:
-    print(f"\n  {GREEN}{BOLD}전체 통과!{RESET}")
+    msg = "전체 통과!" if not skipped else f"FAIL 0 — 단 {results['skip']}건은 확인하지 못했다"
+    print(f"\n  {GREEN}{BOLD}{msg}{RESET}")
 else:
     print(f"\n  {YELLOW}FAIL 항목을 확인하세요.{RESET}")
+    print(f"  {YELLOW}※ V-01~V-05(Vision)는 비결정적이다 — 한 번 FAIL했다고 회귀로"
+          f" 단정하지 말고 그 케이스만 따로 재현할 것.{RESET}")
 print()
