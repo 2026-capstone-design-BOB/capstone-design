@@ -293,9 +293,19 @@ def build_system_prompt() -> str:
         "사용자가 '새로 열어줘'·'하나 더'·'새 탭'처럼 새 창/탭을 원할 때만 new=True를 주세요.\n"
         # 감시는 사용자가 안 보는 동안 화면을 반복 전송한다. LLM이 스스로 켜면
         # 사용자는 켜진 줄도 모른 채 화면이 나간다 — 그래서 요청이 명시적일 때만 쓴다.
-        "화면 감시(watch_screen)는 사용자가 '~하면 알려줘'처럼 앞으로 생길 일을 "
-        "알려달라고 명확히 요청할 때만 쓰세요. 스스로 판단해서 감시를 시작하지 마세요. "
-        "'그만 봐'처럼 중단을 요청하면 stop_watching을 부르세요.\n"
+        #
+        # ⚠️ **금지문을 앞에 두지 말 것** (BL-19). 예전 문장은 "…할 때만 쓰세요.
+        #    스스로 판단해서 시작하지 마세요."로 시작해, 모델이 안전한 쪽
+        #    = **아무것도 안 하고 말로만 답하는 쪽**으로 기울었다. 실기에서
+        #    "메모장 지켜보다가 오류 뜨면 알려줘"에 도구를 하나도 부르지 않고
+        #    "지켜보다가 알려드릴게요!"라고 답했다. 아무도 안 보고 있었다.
+        #    지금은 **해야 할 일이 먼저**, 제약이 뒤다.
+        "'~하면 알려줘'·'~되면 알려줘'처럼 앞으로 생길 일을 알려달라고 하면 "
+        "반드시 watch_screen을 호출하세요. 도구를 부르지 않고 '지켜볼게요'라고만 "
+        "답하면 실제로는 아무도 화면을 보고 있지 않습니다.\n"
+        "'그만 봐'·'감시 그만'처럼 중단을 요청하면 반드시 stop_watching을 호출하세요. "
+        "부르지 않고 '중단했어요'라고 답하면 감시는 계속 돕니다. "
+        "(다만 사용자가 요청하지 않았는데 스스로 감시를 시작하지는 마세요.)\n"
         "이전 대화 맥락을 활용하세요. '그거', '아까 그거' 같은 지칭은 직전 대화를 참고해 해석하세요.\n"
         "사용자가 '안 됐어/안 열렸어/실행 안 됨'처럼 실패를 알리면, 같은 답을 반복하지 말고 "
         "get_running_apps로 실제 실행 여부를 확인한 뒤 다른 방법으로 다시 시도하세요. "
@@ -446,6 +456,182 @@ def verify_output(messages: list[AnyMessage]) -> Optional[str]:
     return None
 
 
+# ── 화면 감시 정직성 (BL-19) ───────────────────────────────────────
+#
+# 감시는 이 프로젝트에서 드물게 **진실이 싸게 확인되는** 기능이다 — 모니터가
+# 자기가 켜졌는지 알고 있다. 그래서 말이 아니라 **상태**로 검사한다.
+#
+# 2026-09-04 실기에서 두 가지가 한꺼번에 드러났다:
+#   ① 도구를 하나도 안 부르고 "지켜보다가 알려드릴게요!"라고 답했다 (아무도 안 봤다)
+#   ② 고쳐서 도구가 불린 뒤엔, LLM이 **고지를 요약해 삼켰다** —
+#      "5초마다 · 최대 10분 · '그만 봐'"가 사라지고 "알려드릴게요!"만 남았다.
+# ②가 특히 중요하다. 감시를 **승인이 아니라 고지**로 하기로 한 근거가 고지 자체다
+# (DEVLOG 2026-09-03 「설계 전에 정한 것 4가지」). 고지가 사라지면 그 근거가 무너진다.
+
+_WATCH_NOTICE_MARK = "그만 봐"   # 시작 고지에만 들어가는 문구 (tools/vision._watch_notice)
+
+
+def watch_notice_to_deliver(messages: list[AnyMessage]) -> Optional[str]:
+    """이번 턴에 감시가 **시작됐으면** 그 고지 원문을 반환한다. 아니면 None.
+
+    LLM이 요약하지 못하게 **도구가 만든 문장을 그대로** 사용자에게 보낸다.
+    Vision의 답을 요약하지 않는 것과 같은 방침이다(DEVLOG 2026-09-03 § 정직성).
+    """
+    turn = current_turn_messages(messages)
+    for m in reversed(turn):
+        if isinstance(m, ToolMessage) and getattr(m, "name", "") == "watch_screen":
+            c = _msg_text(m).strip()
+            # 시작에 성공한 경우만. 거절(✗ 이미 …/꺼져 있어)은 LLM이 전해도 된다.
+            if c.startswith("✓") and _WATCH_NOTICE_MARK in c:
+                return c
+            return None
+    return None
+
+
+# 무엇을 보고 거짓말이라고 판단하는가.
+#
+# **판정은 상태가 한다** — 도구가 0개 돌았고 모니터가 꺼져 있다는 두 사실이 전부
+# 결정적이다. 아래 정규식들은 판정하지 않고 **범위만 좁힌다**:
+#   ① 사용자가 감시를 요청한 턴인가  ② 응답이 해줬다고 말하는가
+# 손으로 쓴 정규식이 이 프로젝트를 반복해서 무너뜨렸기에(BL-02 · BL-15 ·
+# HITL 무한루프) 정규식에 판단을 맡기지 않는다.
+#
+# ⚠️ **응답 문구만 보면 안 된다.** 2026-09-04 실기에서 새어나간 거짓말은
+#    "메모장에서 오류 메시지가 뜨면 바로 알려드릴게요!" 였다 — '지켜보'도 '감시'도
+#    없다. 그래서 범위는 **사용자 입력**으로 잡는다. 무엇을 요청했는지가
+#    어떻게 답했는지보다 안정적이다.
+_WATCH_WORD_RE = re.compile(r'지켜보|감시')
+_COND_RE = re.compile(r'뜨면|나오면|되면|생기면|끝나면|바뀌면|보이면|열리면|닫히면|완료되면')
+_TELL_RE = re.compile(r'알려|말해|알림')
+_STOP_REQUEST_RE = re.compile(r'그만\s*(봐|보지|볼래)|감시\s*(그만|중단|꺼)|안\s*봐도|그만 두')
+# 응답이 "해줬다/해주겠다"고 말하는가.
+_WATCH_ASSERT_RE = re.compile(r'게요|했어요|했습니다|멈췄|중단|시작했')
+
+_WATCH_LIE_MSG = (
+    "죄송해요, 화면 감시를 실제로 시작하지 못했어요. "
+    '다시 한 번 "…하면 알려줘"라고 말씀해 주시겠어요?'
+)
+_STOP_LIE_MSG = "지금 지켜보고 있는 화면은 없어요."
+
+
+def _is_watch_request(text: str) -> bool:
+    """사용자가 '앞으로 생길 일을 알려달라'고 한 턴인가."""
+    return bool(_WATCH_WORD_RE.search(text)
+                or (_COND_RE.search(text) and _TELL_RE.search(text)))
+
+
+# 감시 요청인데 도구를 안 불렀을 때 **한 번만** 다시 묻는 말.
+#
+# 왜 재시도가 필요한가: 2026-09-04 실측에서 `watch_screen` 호출률이
+# **회차마다 크게 흔들렸다**(같은 시각 교차 측정에서 5회 중 2~4회). temperature=0인데도
+# 그렇다. 프롬프트를 긍정문으로 고쳐 많이 나아졌지만 **확실해지지는 않는다.**
+# 감시는 실패해도 사용자가 알아채기 어려운 기능이라(그래서 BL-19이 오래 숨었다)
+# 한 겹을 더 둔다. 실패의 대가가 비대칭이다 — 안 켜졌는데 켜진 줄 알면 아무도 안 본다.
+#
+# ⚠️ **한 번만** 한다. 무한 재시도는 응답 지연을 그만큼 늘리고, HITL 무한루프
+#    사고와 같은 계열의 위험이다. 두 번째도 실패하면 output_guard가 정직하게 말한다.
+_WATCH_RETRY_DIRECTIVE = (
+    "\n\n[중요] 사용자는 지금 화면 감시를 요청했습니다. "
+    "watch_screen(또는 중단이면 stop_watching) 도구를 **반드시 지금 호출**하세요. "
+    "도구를 부르지 않고 말로만 답하면 실제로는 아무 일도 일어나지 않습니다."
+)
+
+
+def needs_watch_retry(user_text: str, response: Any, *, watching: bool) -> bool:
+    """감시 요청인데 도구를 안 불렀는가 — 한 번 더 물어볼 자리인지 판단한다.
+
+    `detect_watch_lie`와 같은 신호를 쓰지만 시점이 다르다. 이건 **agent 노드 안**
+    에서 아직 되돌릴 수 있을 때 보고, 저건 다 끝난 뒤 마지막 그물이다.
+    """
+    if getattr(response, "tool_calls", None):
+        return False
+    if not user_text.strip():
+        return False
+    if _STOP_REQUEST_RE.search(user_text):
+        # 이미 꺼져 있으면 stop_watching을 안 불러도 결과가 같다 — 굳이 더 묻지 않는다.
+        return watching
+    return _is_watch_request(user_text) and not watching
+
+
+def with_watch_directive(msgs: list[AnyMessage]) -> list[AnyMessage]:
+    """재시도용 메시지 — 시스템 프롬프트에 지시를 덧붙인다.
+
+    ⚠️ 시스템 메시지를 **뒤에 새로 붙이지 않는다.** Gemini는 시스템 지시를 따로
+      받아서, 두 번째 SystemMessage는 무시되거나 400이 된다. 기존 것을 교체한다.
+    """
+    out = list(msgs)
+    for i, m in enumerate(out):
+        if isinstance(m, SystemMessage):
+            out[i] = SystemMessage(content=_msg_text(m) + _WATCH_RETRY_DIRECTIVE)
+            return out
+    return [SystemMessage(content=_WATCH_RETRY_DIRECTIVE.strip())] + out
+
+
+def detect_watch_lie(messages: list[AnyMessage], *, watching: bool) -> Optional[str]:
+    """응답이 감시를 해줬다고 말하는데 **실제로는 아무 일도 없었으면** 정직한 말로 바꾼다.
+
+    네 조건이 **모두** 맞을 때만 동작한다:
+      ① 이번 턴에 실행된 도구가 0개            (상태 — 결정적)
+      ② 모니터가 돌고 있지 않다                (상태 — 결정적)
+      ③ 사용자가 감시/중단을 요청한 턴이다     (범위)
+      ④ 응답이 해줬다고 말한다                 (범위)
+
+    `watching`을 주입받는 이유: 이 모듈은 Windows도 모니터도 없이 mock으로 검증된다.
+
+    ⚠️ **캐시 히트(fast_hit) 턴에는 부르지 말 것.** fast_path는 도구를 실제로
+      실행하고도 messages에는 AIMessage 하나만 남긴다(절대규칙 2). 그래서 여기서는
+      "도구 0개"로 보인다. output_guard가 decision을 보고 걸러낸다.
+    """
+    turn = current_turn_messages(messages)
+
+    # ① 이번 턴에 도구가 하나라도 돌았으면 손대지 않는다.
+    if any(getattr(m, "tool_calls", None) for m in turn):
+        return None
+    if any(isinstance(m, ToolMessage) for m in turn):
+        return None
+
+    # ② 진짜로 돌고 있으면 거짓말이 아니다.
+    if watching:
+        return None
+
+    user_text = ""
+    for m in turn:
+        if isinstance(m, HumanMessage):
+            user_text = _msg_text(m)
+            break
+    response = ""
+    for m in reversed(turn):
+        if isinstance(m, AIMessage):
+            response = _msg_text(m)
+            break
+    if not response.strip() or not user_text.strip():
+        return None
+
+    # ④ 응답이 "해줬다"고 말하지 않으면(질문·거절·설명) 손대지 않는다.
+    if not _WATCH_ASSERT_RE.search(response):
+        return None
+
+    # ③ 중단 요청이 먼저다 — "그만 봐"에는 시작 실패 안내가 아니라 현재 상태를 말해야 한다.
+    if _STOP_REQUEST_RE.search(user_text):
+        return _STOP_LIE_MSG
+    if _is_watch_request(user_text):
+        return _WATCH_LIE_MSG
+    return None
+
+
+def _monitor_is_watching() -> bool:
+    """제품 경로에서 모니터 상태를 읽는다. 실패하면 '돌고 있다'고 본다.
+
+    ⚠️ 실패 시 True인 게 안전하다 — False로 보면 멀쩡히 돌고 있는 감시를
+      "시작하지 못했다"고 **거짓 교정**하게 된다. 모르면 손대지 않는 쪽이 맞다.
+    """
+    try:
+        from core.screen_monitor import get_monitor
+        return bool(get_monitor().status().get("active"))
+    except Exception:
+        return True
+
+
 def extract_response(state: dict) -> str:
     """그래프 실행 결과 state에서 마지막 AIMessage 텍스트를 추출."""
     for m in reversed(state["messages"]):
@@ -536,6 +722,7 @@ def build_pluiz_graph(
     target_exists: Optional[Callable[[dict], bool]] = None,
     visual_check: Optional[Callable[[str, str], str]] = None,
     visual_verify_tools: Optional[set] = None,
+    is_watching: Optional[Callable[[], bool]] = None,
 ):
     """Pluiz StateGraph를 구성해 compiled graph를 반환한다. (동기 노드)
 
@@ -554,12 +741,16 @@ def build_pluiz_graph(
             노드를 아예 만들지 않는다** — 그래프가 이 인자 없이 지금까지와 완전히
             동일하게 동작한다(mock 테스트·설정 OFF 경로).
         visual_verify_tools: 화면으로 확인할 도구 이름 집합. 기본 VISUAL_VERIFY_TOOLS.
+        is_watching() -> bool: 화면 감시가 실제로 돌고 있는지. output_guard가
+            "지켜볼게요"라는 **말**과 대조할 **상태**다(BL-19). 기본은 제품 모니터.
+            주입받는 이유는 llm·visual_check와 같다 — mock으로 전부 검증하기 위해.
     """
     tools = tools or []
     dangerous = dangerous_tools if dangerous_tools is not None else DANGEROUS_TOOLS
     visual_tools = (visual_verify_tools if visual_verify_tools is not None
                     else VISUAL_VERIFY_TOOLS)
     llm_with_tools = llm.bind_tools(tools) if tools else llm
+    is_watching = is_watching or _monitor_is_watching
 
     # ── 노드 ───────────────────────────────────────────────────────
     def input_guard(state: PluizState) -> dict:
@@ -591,10 +782,41 @@ def build_pluiz_graph(
         """LLM ReAct 추론 노드 (동기 invoke — interrupt 호환)."""
         msgs = _prepare_messages(state["messages"])
         response = llm_with_tools.invoke(msgs)
+
+        # BL-19: 감시 요청인데 도구를 안 불렀으면 **한 번만** 다시 묻는다.
+        # 호출률이 회차마다 흔들려서(2026-09-04 실측) 프롬프트만으로는 부족하다.
+        user_text = _last_human_text(state["messages"])
+        if needs_watch_retry(user_text, response, watching=is_watching()):
+            _log.info("[BL-19] 감시 요청인데 도구 미호출 → 1회 재시도 | 입력=%r", user_text)
+            retried = llm_with_tools.invoke(with_watch_directive(msgs))
+            if getattr(retried, "tool_calls", None):
+                response = retried
+            else:
+                _log.warning("[BL-19] 재시도에도 도구 미호출 — 정직하게 보고한다")
+
         return {"messages": [response]}
 
     def output_guard(state: PluizState) -> dict:
-        """OWASP LLM05 + reflection 자리. T04 보정 + 빈응답 복구."""
+        """OWASP LLM05 + reflection 자리. T04 보정 + 빈응답 복구 + 감시 정직성(BL-19)."""
+        # 감시 시작 고지는 **원문 그대로** 전한다. LLM이 요약하면 간격·상한·중단법이
+        # 사라지는데, 그 고지가 감시를 승인 없이 허용한 근거다.
+        notice = watch_notice_to_deliver(state["messages"])
+        if notice is not None:
+            note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
+            return {"messages": [AIMessage(content=note + notice)],
+                    "deletion_cancelled": False}
+
+        # 도구를 안 부르고 "지켜볼게요"·"중단했어요"라고 말한 경우 (BL-19).
+        # ⚠️ 캐시 히트는 제외한다. fast_path는 도구를 **실제로 실행하고도** messages에는
+        #    AIMessage 하나만 남겨서(절대규칙 2) 여기서는 "도구 0개"로 보인다.
+        #    거르지 않으면 멀쩡히 실행된 캐시 응답을 거짓말로 몰아 덮어쓴다.
+        lie = (None if state.get("decision") == "fast_hit"
+               else detect_watch_lie(state["messages"], watching=is_watching()))
+        if lie is not None:
+            note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
+            return {"messages": [AIMessage(content=note + lie)],
+                    "deletion_cancelled": False}
+
         corrected = verify_output(state["messages"])
         note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
         if corrected is not None:
