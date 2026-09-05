@@ -78,7 +78,7 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_voice_thread.py      # 음성·텍스트 대화 공유  11/11
 "$PY" tests/test_ui_locate.py         # UI 요소 좌표 인식      41/41
 "$PY" tests/test_click_ui.py          # 좌표 클릭(승인 필수)   28/28
-"$PY" tests/test_screen_monitor.py    # 화면 변화 모니터링     92/92
+"$PY" tests/test_screen_monitor.py    # 화면 변화 모니터링    126/126
 "$PY" tests/test_trim.py              # 히스토리 trim
 "$PY" tests/test_injection.py         # 프롬프트 인젝션
 "$PY" tests/test_sensitive.py         # 민감정보 보호
@@ -159,6 +159,15 @@ mock 테스트는 `langgraph`·`langchain-core`만 설치해서 돈다. `require
 >
 > 캐시 대시보드도 토큰이 필요하다. **서버 기동 로그에 `?token=`이 붙은 전체 URL이
 > 찍히므로 그걸 그대로 열면 된다.**
+
+> 💾 **캐시를 더럽히고 싶지 않으면 서버에 경로를 준다** (BL-11, 2026-09-05)
+> ```bash
+> PLUIZ_CACHE_FILE=/tmp/pluiz_live.json "$PY" main.py
+> ```
+> 라이브 테스트는 실제로 명령을 실행하므로 캐시가 **학습**한다. 그러면 git 추적 파일인
+> `cache/command_cache.json`이 modified가 되고, 매번 `git checkout` 해야 한다.
+> 위처럼 띄우면 그 일이 없다. **안 줘도 예전과 똑같이 동작한다**(그때는 되돌리면 된다).
+> mock 테스트는 `import _testenv`가 알아서 막으므로 **손댈 것이 없다.**
 
 ### ⚠️ 테스트가 초록인데 사용자가 막히는 경우
 
@@ -309,7 +318,8 @@ feature/byeonsoyun  →  develop  →  main
 
 ### 1. 코드·작업물 정리
 - [ ] 작업 트리를 깨끗하게 만든다 (`git status`가 비어야 한다)
-- [ ] **라이브 테스트 부산물을 되돌린다** — `git checkout cache/command_cache.json` (BL-11)
+- [ ] **라이브 테스트 부산물을 되돌린다** — `git checkout cache/command_cache.json`
+      (서버를 `PLUIZ_CACHE_FILE=...`로 띄웠다면 애초에 안 더러워진다 — BL-11, 2026-09-05)
 - [ ] 테스트로 띄운 **서버·앱을 종료**한다. 임시 파일(확인용 canary 등)을 지운다
 - [ ] 임시 진단 스크립트는 **커밋하지 않는다** (scratchpad에 둔다)
 

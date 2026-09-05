@@ -153,11 +153,27 @@
 - **왜 문제인가**: `"메모장 가동해줘"`는 G-04가 캐시 미스를 만들려고 지어낸 표현이라
   제품 데이터가 아니다. 매 실행마다 `git status`가 더러워져 실제 변경과 섞이고,
   방치하면 테스트 잔여물이 커밋에 딸려 들어간다.
-- **해결 방향** (택1):
-  1. 라이브 스위트가 캐시 경로를 임시 파일로 바꿔 실행 (`PLUIZ_CACHE_PATH` 류 주입)
-  2. 테스트가 자기가 학습시킨 항목을 끝에 `/cache` API로 삭제 (cleanup)
-  3. 캐시 파일을 git 추적에서 빼고 시드만 별도 파일로 관리
-  — 2번이 가장 작지만, 근본은 1번(테스트가 제품 상태를 안 건드리는 것)이다.
+- **해결 (2026-09-05) — 위 1번으로 갔다.** `PLUIZ_CACHE_FILE` 환경변수
+  (`core/command_cache.py:34`) + [`tests/_testenv.py`](../tests/_testenv.py)가 임시 경로로 돌린다.
+  `PLUIZ_LOG_DIR`과 **완전히 같은 패턴**이라 새로 배울 것이 없다.
+  - **mock 쪽은 끝났다.** `import _testenv` 한 줄이면 되므로 **새 테스트는 아무것도
+    안 해도 안전하다.** 이미 각자 `CACHE_FILE`을 갈아끼우던 3개
+    (`test_cache_learn`·`test_cache_api`·`test_cache_synonym`)도 그대로 동작한다.
+  - **라이브 쪽은 서버가 쓰므로 여기서 못 막는다.** 서버 기동 시 주면 된다:
+    `PLUIZ_CACHE_FILE=/tmp/pluiz_live.json python main.py`
+    → [WORKFLOW § 라이브 테스트](WORKFLOW.md)에 적어 뒀다. **안 주면 예전과 같으므로
+    `git checkout cache/command_cache.json` 안내는 남겨 둔다**(줄어든 게 아니라 선택지가 생긴 것).
+- **고치다가 드러난 것 — 방향이 반대인 더 나쁜 문제**: `tests/test_bl15_truncation.py`가
+  `get_cache()`로 **사용자의 실제 캐시를 읽고** 있었다. 오염을 걱정했는데 실은
+  **테스트가 사용자 상태에 의존**하고 있었던 것이다 — 어떤 명령이 학습돼 있느냐에 따라
+  같은 테스트가 통과했다 실패했다 할 수 있다. 43건짜리 스위트다.
+  이제 시드만 든 새 캐시를 받으므로 **결정적이다.**
+- **검증**: 캐시 관련 8스위트 + 그래프 2스위트 회귀 0
+  (`cache_learn 15/15` · `cache_api 12/12` · `cache_synonym 15/15` · `bl15_truncation 43/43` ·
+  `cache_wire 8/8` · `bl02_bl03 40/40` · `fast_path 11/11` · `graph_agent 6/6` ·
+  `hitl_graph 59/59` · `graph_context 15/15`).
+  **전체 mock 28파일 712개 통과**, 실행 후 `git status cache/` 깨끗.
+- **상태**: ✅ **mock 해결 · 라이브는 옵트인** (2026-09-05)
 - **성격**: 테스트 위생. (2026-09-02 라이브 검증 중 발견)
 
 ### BL-12 — `type_text`가 입력 성공을 **확인하지 않고** 성공을 보고한다
