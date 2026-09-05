@@ -17,10 +17,33 @@
 
 ⚠️ `setdefault`이므로 **밖에서 지정한 값이 우선한다.** 로그를 직접 보고 싶으면
    `PLUIZ_LOG_DIR=./logs python tests/test_x.py` 로 덮어쓸 수 있다.
+
+## 왜 있나 ② — 커맨드 캐시 오염 (BL-11)
+
+`cache/command_cache.json`은 **git 추적 대상**인데 캐시를 만지는 테스트가 여기에
+학습 결과를 썼다. 그래서 테스트를 돌릴 때마다 작업 트리가 더러워졌고, 매번
+`git checkout cache/command_cache.json` 을 해야 했다.
+
+더 나쁜 건 **반대 방향**이다 — 테스트가 사용자의 실제 학습 내용을 **읽었다.**
+`test_bl15_truncation.py`는 `get_cache()`로 실제 파일을 열었으므로, 어떤 명령이
+학습돼 있느냐에 따라 같은 테스트가 통과했다 실패했다 할 수 있었다.
+**테스트는 사용자 상태에 의존하면 안 된다.**
+
+일부 테스트(`test_cache_learn`·`test_cache_api`·`test_cache_synonym`)는 모듈 네임스페이스의
+`CACHE_FILE`을 직접 갈아끼우는 방식으로 각자 막고 있었다. 여기서 한 번에 막으므로
+그 방식도 계속 동작하고(임시 경로 → 임시 경로), 새 테스트는 아무것도 안 해도 안전하다.
+
+⚠️ **라이브 테스트는 서버가 캐시를 쓰므로 여기서 못 막는다.** 서버 쪽에 준다:
+   `PLUIZ_CACHE_FILE=/tmp/pluiz_live.json python main.py`
 """
 import os
 import tempfile
 
 os.environ.setdefault(
     "PLUIZ_LOG_DIR", os.path.join(tempfile.gettempdir(), "pluiz_test_logs")
+)
+
+os.environ.setdefault(
+    "PLUIZ_CACHE_FILE",
+    os.path.join(tempfile.gettempdir(), "pluiz_test_cache", "command_cache.json"),
 )

@@ -31,7 +31,18 @@ def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CACHE_FILE = os.path.join(_BASE_DIR, "cache", "command_cache.json")
+# ⚠️ 환경변수로 덮어쓸 수 있다 (BL-11). `PLUIZ_LOG_DIR`과 같은 패턴이다.
+#
+# 이 파일은 **git 추적 대상**인데 테스트가 여기에 학습 결과를 써서, 테스트를 돌릴
+# 때마다 작업 트리가 더러워졌다(매번 `git checkout cache/command_cache.json`).
+# 더 나쁜 건 반대 방향이다 — 테스트가 **사용자의 실제 학습 내용을 읽어서**,
+# 어떤 명령이 학습돼 있느냐에 따라 같은 테스트가 통과했다 실패했다 할 수 있었다.
+#
+#   테스트  → tests/_testenv.py 가 임시 경로로 돌린다 (자동, 손댈 것 없음)
+#   라이브  → 서버가 쓰므로 **서버 쪽에** 준다:
+#            PLUIZ_CACHE_FILE=/tmp/pluiz_live.json python main.py
+CACHE_FILE = (os.environ.get("PLUIZ_CACHE_FILE")
+              or os.path.join(_BASE_DIR, "cache", "command_cache.json"))
 SIMILARITY_THRESHOLD = 0.80
 
 
