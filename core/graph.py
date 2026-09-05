@@ -38,6 +38,9 @@ from typing import Callable, Optional, Any
 from datetime import datetime
 
 from core.logger import get_logger
+# 복합 명령 감지는 fast_path에 이미 있다(BL-15 때 만든 것). 여기서 다시 쓰지 않는다 —
+# 두 벌이 되면 한쪽만 고쳐진다. (core.fast_path는 core.logger 외에 아무것도 끌어오지 않는다)
+from core.fast_path import has_negation, is_compound_command
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode
@@ -263,6 +266,14 @@ class PluizState(MessagesState):
     # input_guard가 새 턴 시작 시 끈다 — 플래그가 턴을 넘어 새면, 다음 턴의 type_text가
     # 검증 없이 통과한다(앞선 R-2 사고와 같은 계열).
     visual_verified: bool
+    # 이번 턴에 실행하기로 한 단계들(M3). [] = 계획 없음 = 오늘과 완전히 같은 단일 루프.
+    # plan_cursor >= len(plan) 이면 계획이 끝난 것이다.
+    #
+    # ⚠️ **리듀서(Annotated[..., operator.add])를 붙이지 말 것.** 붙이면 planner의 쓰기가
+    #   '교체'가 아니라 '누적'이 되어 **지난 턴 계획이 이번 턴 뒤에 이어 붙는다.**
+    #   messages 외의 필드는 기존 셋과 같이 마지막 쓰기가 이긴다.
+    plan: list[str]
+    plan_cursor: int
 
 
 # ── 시스템 프롬프트 (날짜 갱신) ───────────────────────────────────
@@ -710,6 +721,150 @@ def last_tool_result(messages: list[AnyMessage]) -> Optional[tuple[str, dict, To
     return None
 
 
+# ── 계획 수립 (Plan-and-Execute, M3) — planner 노드의 순수 로직 ─────
+#
+# **이 층의 값어치는 "여러 단계를 실행한다"가 아니라 "몇 단계를 못 했는지 말할 수 있다"이다.**
+# `"메모장 열고 크롬 닫아줘"`에서 앞의 하나만 하고 성공했다고 답해도 지금까지는 시스템이
+# 그걸 알 방법이 없었다 — 상태에 "무엇을 하기로 했는지"가 없었기 때문이다.
+# BL-12(엉뚱한 창에 입력해 놓고 성공 보고) · BL-15(뒷문장을 삼키고 성공 보고) ·
+# BL-19(도구를 부르지도 않고 "지켜볼게요")와 **같은 계열의 마지막 판본**이다.
+# → docs/design/M3_계획수립노드.md
+#
+# ⚠️ 여기도 visual_verify와 같은 절제를 지킨다 — **판정하지 않고 추출만 한다.**
+#    계획을 다시 세우지도(replan) 않는다. LLM 호출은 턴당 1회다.
+
+_plog = get_logger("Plan")
+
+# 최소 출하본은 2단계까지만 다룬다. 늘리기 전에 라이브 증거가 먼저다(ADR §7-2).
+PLAN_MAX_STEPS = 2
+
+# **JSON이 아니라 번호 목록을 요구한다.** BL-19 조건(모델 능력이 시간대에 따라 흔들린다)
+# 에서 가장 먼저 무너지는 능력이 구조화 출력 스키마 준수다. 목록은 깨져도 추출이 되고,
+# 추출이 안 되면 계획 없음 = **오늘 경로 그대로**다.
+PLAN_DECOMPOSE_PROMPT = f"""당신은 한국어 PC 제어 명령을 실행 순서대로 나누는 도구입니다.
+- 최대 {PLAN_MAX_STEPS}단계까지만 나눕니다.
+- 한 줄에 한 단계씩, '1. ' '2. ' 처럼 번호를 붙인 목록으로만 답합니다.
+- 각 단계는 그 자체로 실행 가능한 하나의 명령이어야 합니다.
+- 설명·인사·코드블록·JSON을 쓰지 않습니다.
+- 나눌 수 없는 단일 명령이면 아무것도 출력하지 않습니다.
+예) 입력: 메모장 열고 크롬 닫아줘
+1. 메모장 열기
+2. 크롬 닫기"""
+
+_PLAN_STEP_RE = re.compile(r'^\s*\d+\s*[.)]\s*(.+?)\s*$')
+_PLAN_NORM_RE = re.compile(r"""[\s.,!?~…·"'`\-]+""")
+
+
+def _plan_norm(text: Any) -> str:
+    """단계 비교용 정규화 — 띄어쓰기·구두점을 지운다."""
+    return _PLAN_NORM_RE.sub("", str(text)).lower()
+
+
+def parse_plan(raw: Any, original: str = "") -> list[str]:
+    """분해기 응답에서 단계 목록을 **추출**한다. `[]` = 계획 없음(= 오늘 경로).
+
+    ⚠️ **판정이 아니라 추출이다.** 좌표를 지어내지 않는 find_ui_element(절대규칙 9)와
+      같은 계열의 절제다 — 확실하지 않으면 만들어 내지 말고 빈손으로 돌아간다.
+      빈손의 착지점은 오류 메시지가 아니라 **오늘의 정상 경로**다(ADR §3-4).
+
+    버리는 경우(전부 `[]`):
+      - 번호 목록이 없다(산문만) · 빈 응답
+      - 단계가 1개뿐이다 (= 나눌 게 없었다)
+      - **단계 하나가 입력 원문 그대로다** (= 분해에 실패하고 되돌려 준 것)
+      - 단계가 중복이다
+      - **PLAN_MAX_STEPS를 넘는다** — 잘라서 2개만 하면 3번째를 *모르는 채로* 끝난다.
+        "못 했다"고 말할 수도 없으니 이 기능의 존재 이유와 정반대다. 통째로 버린다.
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple)):
+        steps = [str(x).strip() for x in raw]
+    else:
+        steps = []
+        for line in str(getattr(raw, "content", raw)).splitlines():
+            m = _PLAN_STEP_RE.match(line)
+            if m:
+                steps.append(m.group(1).strip())
+    steps = [s for s in steps if s]
+
+    if len(steps) < 2 or len(steps) > PLAN_MAX_STEPS:
+        return []
+    norms = [_plan_norm(s) for s in steps]
+    if len(set(norms)) != len(norms):
+        return []
+    if original and _plan_norm(original) in norms:
+        return []
+    return steps
+
+
+def _is_plannable(text: str) -> bool:
+    """이 발화를 단계로 나눠 볼 자리인가. (게이트 — 양방향 오류가 전부 안전하다)
+
+    놓치면 = 오늘 동작. 오탐하면 = 3초 낭비 후 정상 진행.
+
+    - **부정어는 제외한다**: "크롬 말고 메모장 열어줘"는 복합처럼 보이지만 단계가 둘이 아니다.
+    - **감시 요청은 제외한다**: 계획 턴은 도구가 여러 번 돌아 `detect_watch_lie`의 조건 ①
+      ("이번 턴 도구 0개")을 깨뜨린다. BL-19 그물을 약하게 만드느니 **기능을 포기한다**
+      (ADR §5-1).
+    """
+    t = (text or "").strip()
+    if not t or has_negation(t) or _is_watch_request(t):
+        return False
+    return is_compound_command(t)
+
+
+# 단계 지시. **메시지가 아니라 SystemMessage 교체로 준다** — with_watch_directive와 같은
+# 이유다(graph.py 아래). HumanMessage를 넣으면 거기서 턴이 새로 시작되어(절대규칙 6)
+# current_turn_messages가 계획 실행 도중에 턴 경계를 잃는다.
+_PLAN_STEP_DIRECTIVE = """
+
+[계획] 사용자의 명령을 {total}단계로 나눴습니다:
+{listing}
+지금은 **{no}단계: {step}** 만 실행하세요. 이 단계에 필요한 도구를 지금 호출하고, 다음 단계는 아직 하지 마세요. 이 단계가 이미 끝났으면 도구를 부르지 말고 결과만 한 문장으로 말하세요."""
+
+
+def with_step_directive(msgs: list[AnyMessage], plan: list[str], cursor: int) -> list[AnyMessage]:
+    """지금 실행할 단계를 시스템 프롬프트에 덧붙인 메시지 목록. (원본을 바꾸지 않는다)
+
+    ⚠️ 시스템 메시지를 **뒤에 새로 붙이지 않는다.** Gemini는 두 번째 SystemMessage를
+      무시하거나 400을 낸다. 기존 것을 교체한다. (with_watch_directive와 동일)
+    """
+    if not plan or cursor >= len(plan):
+        return list(msgs)
+    listing = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(plan))
+    directive = _PLAN_STEP_DIRECTIVE.format(
+        total=len(plan), listing=listing, no=cursor + 1, step=plan[cursor])
+    out = list(msgs)
+    for i, m in enumerate(out):
+        if isinstance(m, SystemMessage):
+            out[i] = SystemMessage(content=_msg_text(m) + directive)
+            return out
+    return [SystemMessage(content=directive.strip())] + out
+
+
+def remaining_steps(plan: Optional[list], cursor: Any) -> list[str]:
+    """아직 손대지 못한 단계들."""
+    plan = list(plan or [])
+    try:
+        c = int(cursor or 0)
+    except Exception:
+        c = 0
+    return plan[max(c, 0):]
+
+
+def unfinished_notice(plan: Optional[list], cursor: Any) -> str:
+    """못 한 단계를 알리는 **접미** 문구. 없으면 빈 문자열.
+
+    판정하지 않는다 — 상태에 남아 있는 단계를 그대로 읽어 말할 뿐이다.
+    기존 "삭제는 취소했어요. " 는 **접두**라 자리가 겹치지 않는다.
+    조사를 하드코딩하지 않으려고 목록 형태로 붙인다("…는/은" 문제 회피).
+    """
+    rest = remaining_steps(plan, cursor)
+    if not rest:
+        return ""
+    return " 다만 이건 못 했어요: " + ", ".join(f"'{s}'" for s in rest) + "."
+
+
 # ── 그래프 빌더 ────────────────────────────────────────────────────
 def build_pluiz_graph(
     *,
@@ -723,6 +878,7 @@ def build_pluiz_graph(
     visual_check: Optional[Callable[[str, str], str]] = None,
     visual_verify_tools: Optional[set] = None,
     is_watching: Optional[Callable[[], bool]] = None,
+    plan_decompose: Optional[Callable[[str], Any]] = None,
 ):
     """Pluiz StateGraph를 구성해 compiled graph를 반환한다. (동기 노드)
 
@@ -741,6 +897,10 @@ def build_pluiz_graph(
             노드를 아예 만들지 않는다** — 그래프가 이 인자 없이 지금까지와 완전히
             동일하게 동작한다(mock 테스트·설정 OFF 경로).
         visual_verify_tools: 화면으로 확인할 도구 이름 집합. 기본 VISUAL_VERIFY_TOOLS.
+        plan_decompose(text) -> str | list[str] | None: 복합 명령을 단계로 나눈 응답
+            (번호 목록 텍스트, 또는 단계 리스트). **None이면 planner 노드를 아예
+            만들지 않는다** — visual_check와 같은 패턴이고, 그래야 계획이 꺼진 경로가
+            글자 그대로 예전과 같다. → docs/design/M3_계획수립노드.md
         is_watching() -> bool: 화면 감시가 실제로 돌고 있는지. output_guard가
             "지켜볼게요"라는 **말**과 대조할 **상태**다(BL-19). 기본은 제품 모니터.
             주입받는 이유는 llm·visual_check와 같다 — mock으로 전부 검증하기 위해.
@@ -761,26 +921,68 @@ def build_pluiz_graph(
         # (승인 질문 상태로 턴이 끝나면 output_guard를 거치지 않아 값이 살아남는다)
         if blocked:
             return {"messages": [AIMessage(content=reason)], "decision": "blocked",
-                    "deletion_cancelled": False, "visual_verified": False}
-        return {"decision": "", "deletion_cancelled": False, "visual_verified": False}
+                    "deletion_cancelled": False, "visual_verified": False,
+                    "plan": [], "plan_cursor": 0}
+        return {"decision": "", "deletion_cancelled": False, "visual_verified": False,
+                "plan": [], "plan_cursor": 0}
 
     def fast_path(state: PluizState) -> dict:
-        """캐시/라우터 빠른 경로. 히트 시 결과를 messages에 기록(맥락 통합 핵심)."""
-        if fast_resolve is None:
-            return {"decision": "to_agent"}
+        """캐시/라우터 빠른 경로. 히트 시 결과를 messages에 기록(맥락 통합 핵심).
+
+        미스일 때만 **계획을 세워 볼 자리인지**를 더 본다(M3). 캐시가 처리한 명령은
+        planner를 타지 않는다 — 이미 끝난 일에 LLM 왕복 3초를 얹을 이유가 없다.
+        """
         text = _last_human_text(state["messages"])
-        try:
-            result = fast_resolve(text)
-        except Exception as e:
-            print(f"[graph.fast_path] 오류(무시): {type(e).__name__}: {e}")
-            result = None
+        result = None
+        if fast_resolve is not None:
+            try:
+                result = fast_resolve(text)
+            except Exception as e:
+                print(f"[graph.fast_path] 오류(무시): {type(e).__name__}: {e}")
+                result = None
         if result is not None:
             return {"messages": [AIMessage(content=str(result))], "decision": "fast_hit"}
+        if plan_decompose is not None and _is_plannable(text):
+            return {"decision": "to_plan"}
         return {"decision": "to_agent"}
 
+    def planner(state: PluizState) -> dict:
+        """복합 명령을 단계로 나눠 **상태에 적는다**. 실행은 하지 않는다. (M3)
+
+        ⚠️ **이 노드는 턴을 절대 죽이지 않는다.** 분해기 예외 · 산문만 반환 ·
+          단계 부족 · 상한 초과는 전부 `{}` 하나로 수렴해 **오늘과 완전히 동일한**
+          단일 루프로 진행한다. *"계획을 세우지 못했어요"* 라고 말하지 않는다 —
+          오늘도 이 명령들의 상당수는 단일 루프가 처리해 내므로, 실행은 성공하는데
+          실패를 예고하는 꼴이 된다. Vision이 화면을 못 봤을 때 아무것도 붙이지 않는
+          것과 같은 절제다. (ADR §3-4 — 계획 **수립** 실패는 들리지 않고,
+          계획 **실행** 실패는 output_guard가 반드시 말한다)
+        """
+        text = _last_human_text(state["messages"])
+        try:
+            raw = plan_decompose(text)
+        except Exception as e:
+            _plog.warning("분해 실패(무시): %s: %s | 입력=%r", type(e).__name__, e, text)
+            return {}
+        steps = parse_plan(raw, text)
+        if not steps:
+            _plog.info("계획 없음 → 오늘 경로 그대로 | 입력=%r", text)
+            return {}
+        _plog.info("계획 %d단계 | %s", len(steps), " / ".join(steps))
+        return {"plan": steps, "plan_cursor": 0}
+
     def agent(state: PluizState) -> dict:
-        """LLM ReAct 추론 노드 (동기 invoke — interrupt 호환)."""
+        """LLM ReAct 추론 노드 (동기 invoke — interrupt 호환).
+
+        계획이 있으면 **지금 실행할 단계만** 시스템 프롬프트로 지시한다(M3).
+        실행기를 새로 만들지 않는다 — 기존 agent ⇄ tools 루프가 한 단계씩 처리하고
+        라우터가 되돌린다.
+        """
         msgs = _prepare_messages(state["messages"])
+        plan = list(state.get("plan") or [])
+        cursor = int(state.get("plan_cursor") or 0)
+        in_plan = bool(plan) and cursor < len(plan)
+        if in_plan:
+            msgs = with_step_directive(msgs, plan, cursor)
         response = llm_with_tools.invoke(msgs)
 
         # BL-19: 감시 요청인데 도구를 안 불렀으면 **한 번만** 다시 묻는다.
@@ -794,16 +996,28 @@ def build_pluiz_graph(
             else:
                 _log.warning("[BL-19] 재시도에도 도구 미호출 — 정직하게 보고한다")
 
-        return {"messages": [response]}
+        out: dict = {"messages": [response]}
+        # 도구를 안 불렀다 = 이 단계에서 더 할 일이 없다 → 다음 단계로 넘어간다.
+        # ⚠️ 커서가 **반드시** 전진하므로 agent 자기루프는 최대 len(plan)회에서 끝난다.
+        #   (전진 없이 되돌리면 무한루프다 — HITL 무한루프 사고와 같은 계열)
+        if in_plan and not getattr(response, "tool_calls", None):
+            out["plan_cursor"] = cursor + 1
+            _plog.info("%d/%d 단계 완료 | %r", cursor + 1, len(plan), plan[cursor])
+        return out
 
     def output_guard(state: PluizState) -> dict:
         """OWASP LLM05 + reflection 자리. T04 보정 + 빈응답 복구 + 감시 정직성(BL-19)."""
         # 감시 시작 고지는 **원문 그대로** 전한다. LLM이 요약하면 간격·상한·중단법이
         # 사라지는데, 그 고지가 감시를 승인 없이 허용한 근거다.
+        # 계획을 세웠는데 다 못 했으면 **접미**로 알린다(M3). 판정하지 않는다 —
+        # 상태에 남아 있는 단계를 그대로 읽어 말할 뿐이다. 기존 "삭제는 취소했어요. "는
+        # 접두라 자리가 겹치지 않는다.
+        tail = unfinished_notice(state.get("plan"), state.get("plan_cursor"))
+
         notice = watch_notice_to_deliver(state["messages"])
         if notice is not None:
             note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
-            return {"messages": [AIMessage(content=note + notice)],
+            return {"messages": [AIMessage(content=note + notice + tail)],
                     "deletion_cancelled": False}
 
         # 도구를 안 부르고 "지켜볼게요"·"중단했어요"라고 말한 경우 (BL-19).
@@ -814,20 +1028,20 @@ def build_pluiz_graph(
                else detect_watch_lie(state["messages"], watching=is_watching()))
         if lie is not None:
             note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
-            return {"messages": [AIMessage(content=note + lie)],
+            return {"messages": [AIMessage(content=note + lie + tail)],
                     "deletion_cancelled": False}
 
         corrected = verify_output(state["messages"])
         note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
         if corrected is not None:
-            return {"messages": [AIMessage(content=note + corrected)],
+            return {"messages": [AIMessage(content=note + corrected + tail)],
                     "deletion_cancelled": False}
-        if note:
+        if note or tail:
             # 새 명령의 답변 앞에 취소 사실을 붙인다. 안 붙이면 사용자는 삭제가
             # 어떻게 됐는지 모른 채 새 명령의 결과만 보게 된다.
             last = state["messages"][-1]
             if isinstance(last, AIMessage):
-                return {"messages": [AIMessage(content=note + _msg_text(last))],
+                return {"messages": [AIMessage(content=note + _msg_text(last) + tail)],
                         "deletion_cancelled": False}
         return {}
 
@@ -938,8 +1152,12 @@ def build_pluiz_graph(
         if verdict == "other_command":
             msgs = _close_calls("사용자가 다른 명령을 내려 삭제를 취소했습니다.")
             msgs.append(HumanMessage(content=str(answer)))
+            # ⚠️ **계획도 반드시 지운다**(M3). Command(resume)는 input_guard를 거치지
+            #   않으므로, 안 지우면 새 명령을 처리할 agent가 "지금은 2단계: test.txt
+            #   삭제" 지시를 받는다. 취소 플래그가 턴을 넘어 새어 실제로 삭제해 놓고
+            #   "삭제는 취소했어요"라고 답한 사고와 **완전히 같은 모양**이다.
             return {"messages": msgs, "decision": "other_command",
-                    "deletion_cancelled": True}
+                    "deletion_cancelled": True, "plan": [], "plan_cursor": 0}
 
         # 거부/애매: 취소 응답
         cancel = _close_calls("사용자가 삭제를 취소했습니다.")
@@ -954,7 +1172,12 @@ def build_pluiz_graph(
         return "output_guard" if state.get("decision") == "blocked" else "fast_path"
 
     def route_after_fast(state: PluizState) -> str:
-        return "output_guard" if state.get("decision") == "fast_hit" else "agent"
+        d = state.get("decision")
+        if d == "fast_hit":
+            return "output_guard"
+        if d == "to_plan":
+            return "planner"   # plan_decompose가 없으면 이 값 자체가 만들어지지 않는다
+        return "agent"
 
     def route_after_agent(state: PluizState) -> str:
         last = state["messages"][-1]
@@ -963,6 +1186,11 @@ def build_pluiz_graph(
             if any(c.get("name") in dangerous for c in calls):
                 return "hitl"      # 위험 도구 → 승인 절차
             return "tools"
+        # 도구를 안 불렀는데 계획에 남은 단계가 있으면 그 단계로 되돌린다(M3).
+        # agent가 커서를 이미 전진시킨 뒤라 유한하다.
+        plan = state.get("plan") or []
+        if plan and int(state.get("plan_cursor") or 0) < len(plan):
+            return "agent"
         return "output_guard"
 
     def route_after_hitl(state: PluizState) -> str:
@@ -1005,13 +1233,22 @@ def build_pluiz_graph(
     g.add_conditional_edges("input_guard", route_after_guard,
                             {"fast_path": "fast_path", "output_guard": "output_guard"})
 
+    # 계획 수립(M3)은 설정이 아니라 **주입 여부**로 켜진다. plan_decompose가 없으면
+    # planner 노드도 엣지도 만들지 않는다 — visual_check(아래)와 완전히 같은 패턴이고,
+    # 그래야 꺼진 경로가 글자 그대로 예전과 같다.
+    fast_dests = {"agent": "agent", "output_guard": "output_guard"}
+    agent_dests = {"tools": "tools", "hitl": "hitl", "output_guard": "output_guard"}
+    if plan_decompose is not None:
+        g.add_node("planner", planner)
+        g.add_edge("planner", "agent")
+        fast_dests["planner"] = "planner"
+        agent_dests["agent"] = "agent"      # 남은 단계로 되돌아가는 자기루프
+
     if tools:
         g.add_node("tools", ToolNode(tools))
         g.add_node("hitl", hitl)
-        g.add_conditional_edges("fast_path", route_after_fast,
-                                {"agent": "agent", "output_guard": "output_guard"})
-        g.add_conditional_edges("agent", route_after_agent,
-                                {"tools": "tools", "hitl": "hitl", "output_guard": "output_guard"})
+        g.add_conditional_edges("fast_path", route_after_fast, fast_dests)
+        g.add_conditional_edges("agent", route_after_agent, agent_dests)
         # "agent"가 목적지에 있는 이유: 승인 대기 중 **다른 명령**이 들어왔거나
         # 삭제 **대상이 없을 때** LLM이 이어서 처리해야 한다.
         g.add_conditional_edges("hitl", route_after_hitl,
@@ -1028,8 +1265,8 @@ def build_pluiz_graph(
         else:
             g.add_edge("tools", "agent")
     else:
-        g.add_conditional_edges("fast_path", route_after_fast,
-                                {"agent": "agent", "output_guard": "output_guard"})
+        # 도구가 없으면 계획을 실행할 수단 자체가 없다 — 자기루프도 두지 않는다.
+        g.add_conditional_edges("fast_path", route_after_fast, fast_dests)
         g.add_edge("agent", "output_guard")
 
     g.add_edge("output_guard", END)

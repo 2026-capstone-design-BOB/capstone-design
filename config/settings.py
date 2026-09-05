@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     #    넓은 전송이다. 끄려면 .env 에 VISION_VERIFY_ENABLED=false 한 줄.
     vision_verify_enabled: bool = True
 
+    # 계획 수립 노드 (M3 · Plan-and-Execute)
+    # 복합 명령을 최대 2단계로 나눠 순서대로 실행하고, **못 한 단계를 정직하게 말한다.**
+    # 값어치는 "여러 단계를 실행한다"가 아니라 "몇 단계를 못 했는지 말할 수 있다"에 있다.
+    # ⚠️ **기본 꺼짐** — vision_verify_enabled(True)와 다르다. "코드가 들어갔다"와
+    #    "동작한다"는 다르다는 2026-09-04의 교훈(BL-19)대로, 라이브 증거가 생기기
+    #    전엔 켜지 않는다. 켜면 복합 명령마다 LLM 왕복 1회(~3초)가 얹히고
+    #    recursion_limit이 10 → 24가 된다. → docs/design/M3_계획수립노드.md
+    plan_enabled: bool = False
+
     # 화면 변화 모니터링 (Phase 2) — "오류 뜨면 알려줘"
     # ⚠️ OWASP LLM02 — 지금까지 중 화면 전송량이 가장 큰 기능이다. 방어는 두 겹:
     #    ① 5초마다 찍는 건 전부 로컬(픽셀 비교)이고, 변화가 있을 때만 Vision을 부른다.

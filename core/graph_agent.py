@@ -73,6 +73,25 @@ def _prod_visual_check(window: str, question: str) -> str:
     from tools.vision import describe_screen
     return describe_screen.invoke({"window": window, "question": question})
 
+def _prod_plan_decompose(llm):
+    """복합 명령을 단계로 나눈다 (M3). **도구를 붙이지 않은** llm으로 턴당 1회.
+
+    replan은 없다 — 계획은 한 번만 세운다(ADR §3-1). 프롬프트를 여기서 새로 쓰지 않고
+    `core.graph.PLAN_DECOMPOSE_PROMPT`를 그대로 쓴다. 두 벌이 되면 한쪽만 고쳐진다.
+    실패(예외·산문)의 착지점은 오류가 아니라 **오늘의 정상 경로**다 — planner 노드가
+    전부 삼키고 단일 루프로 진행한다.
+    """
+    from langchain_core.messages import SystemMessage
+    from core.graph import PLAN_DECOMPOSE_PROMPT, _msg_text
+
+    def _decompose(text: str) -> str:
+        resp = llm.invoke([SystemMessage(content=PLAN_DECOMPOSE_PROMPT),
+                           HumanMessage(content=text)])
+        return _msg_text(resp)
+
+    return _decompose
+
+
 def _prod_tools():
     from core.tool_registry import get_all_tools
     return get_all_tools()
@@ -116,6 +135,7 @@ class PluizGraphAgent:
         settings: Any = None,
         target_exists: Optional[Callable[[dict], bool]] = None,
         visual_check: Optional[Callable[[str, str], str]] = None,
+        plan_decompose: Optional[Callable[[str], Any]] = None,
     ):
         self.settings = settings if settings is not None else _prod_settings()
         self.llm = llm if llm is not None else _prod_llm(self.settings)
@@ -141,9 +161,20 @@ class PluizGraphAgent:
         else:
             self.visual_check = None
 
+        # 계획 수립 (M3). None이면 graph.py가 planner 노드 자체를 만들지 않아
+        # 예전과 완전히 동일한 fast_path → agent 경로로 돈다.
+        # ⚠️ 기본 꺼짐이다(settings.plan_enabled=False) — 라이브 증거 전엔 켜지 않는다.
+        if plan_decompose is not None:
+            self.plan_decompose = plan_decompose
+        elif getattr(self.settings, "plan_enabled", False):
+            self.plan_decompose = _prod_plan_decompose(self.llm)
+        else:
+            self.plan_decompose = None
+
         self.graph = self._build()
         print(f"[PluizGraphAgent] 초기화 완료 | tools={len(self.tools)}개 | "
-              f"화면검증={'on' if self.visual_check else 'off'}")
+              f"화면검증={'on' if self.visual_check else 'off'} | "
+              f"계획={'on' if self.plan_decompose else 'off'}")
 
     def _build(self):
         return build_pluiz_graph(
@@ -153,6 +184,7 @@ class PluizGraphAgent:
             checkpointer=self.checkpointer,
             target_exists=self.target_exists,
             visual_check=self.visual_check,
+            plan_decompose=self.plan_decompose,
         )
 
     def _default_fast_resolve(self, text: str) -> Optional[str]:
@@ -202,7 +234,14 @@ class PluizGraphAgent:
         interrupt가 sync 경로에서만 안정 동작하기 때문. 이벤트 루프는 블로킹하지 않음.
         승인 대기(interrupt) 중이면 이번 발화를 Command(resume)로 전달(승인/거부).
         """
-        config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 10}
+        # ⚠️ 계획이 켜지면 상한을 반드시 올린다(ADR §1-1). 10은 이미 **순차 도구 3회**
+        #   에서 정확히 소진된다(input_guard·fast_path·agent·tools·agent·output_guard
+        #   = 도구 1회에 6, 이후 도구 1회마다 +2). 2단계 계획에 planner 한 슈퍼스텝과
+        #   hitl·visual_verify가 하나만 끼어도 즉시 GraphRecursionError이고, 그 예외는
+        #   아래 포괄 except가 잡아 **스레드를 지우고** "오류가 발생했어요"로 끝난다.
+        #   반대로 꺼져 있을 땐 올리지 않는다 — 폭주 ReAct 루프가 2.4배 오래 돈다.
+        limit = 24 if self.plan_decompose is not None else 10
+        config = {"configurable": {"thread_id": thread_id}, "recursion_limit": limit}
 
         # 승인 대기 상태면 이번 발화를 재개(resume) 신호로 전달
         if self._pending_interrupt(config):
@@ -264,8 +303,9 @@ class PluizGraphAgent:
             # 도구 결과로 복원하기 때문). 됐다고 하지 않는다.
             _log.warning("빈 응답 — 도구도 실행되지 않았다. 입력=%r", user_input)
             response = _NOTHING_HAPPENED_MSG
-        _log.info("턴 완료 | 입력=%r | 도구=%s | 응답 %d자",
-                  user_input, tool_names or "없음", len(response))
+        _log.info("턴 완료 | 입력=%r | 도구=%s | 응답 %d자%s",
+                  user_input, tool_names or "없음", len(response),
+                  self._plan_note(result))
 
         # LLM02/05: 출력 최종 마스킹(주민번호·카드번호·API키) — 사용자/TTS/기록 전에 적용
         try:
@@ -283,6 +323,22 @@ class PluizGraphAgent:
             print(f"[PluizGraphAgent] session_memory 저장 실패(무시): {e}")
 
         return response
+
+    @staticmethod
+    def _plan_note(result: Any) -> str:
+        """계획을 세운 턴이면 " | 계획 1/2"처럼 남긴다. (로그용 — 실패해도 무시)
+
+        **몇 단계를 못 했는지 사후에 알 수 있어야 한다**는 게 이 기능의 존재 이유다.
+        사용자에게 말하는 건 output_guard가 하고, 여기는 로그 쪽 절반이다.
+        """
+        try:
+            plan = (result or {}).get("plan") or []
+            if not plan:
+                return ""
+            done = min(int((result or {}).get("plan_cursor") or 0), len(plan))
+            return f" | 계획 {done}/{len(plan)}"
+        except Exception:
+            return ""
 
     @staticmethod
     def _turn_tool_names(result: Any) -> list[str]:
