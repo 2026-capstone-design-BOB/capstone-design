@@ -98,6 +98,13 @@ FastAPI 서버(:8765) + Electron 오버레이 UI + LangGraph `StateGraph` 에이
    여기를 조이면 공격자가 아니라 **UI 자신이 막힙니다.** 실질적 방어는 토큰입니다.
    → [ARCHITECTURE.md § 보안 0층](docs/ARCHITECTURE.md#보안--5층-방어)
 
+11. **계획 상태(`plan`/`plan_cursor`)를 턴 너머로 새게 하지 말 것** — ① 이 두 필드에
+   **리듀서를 붙이면** 지난 턴 계획이 이번 턴 뒤에 이어 붙는다. ② `hitl`의
+   `other_command` 분기에서 **계획을 지우는 줄을 지우면**, 승인 대기 중 들어온 새 명령이
+   *"지금은 2단계: test.txt 삭제"* 지시를 받는다(`Command(resume)`은 `input_guard`를
+   거치지 않는다). 취소 플래그가 새어 **삭제해 놓고 "취소했어요"라고 답한 사고와 같은
+   모양**이다. → [design/M3_계획수립노드.md § 3-3](docs/design/M3_계획수립노드.md)
+
 ---
 
 ## 실행 · 테스트
