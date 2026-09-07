@@ -149,9 +149,13 @@ print("\n[1] 픽셀 차이 프리필터 — 변화가 없으면 화면이 밖으
 
 same = frame(100)
 check("같은 화면은 변화가 아니다", not signature_changed(same, frame(100)))
-check("1셀 변화는 무시 (시계 초침·커서)", not signature_changed(same, frame(100, 1)))
-check("20셀(≈2%)은 아직 문턱 아래", not signature_changed(same, frame(100, 20)))
-check("30셀(≈3%)은 변화", signature_changed(same, frame(100, 30)))
+check("1셀 변화는 무시 (시계 초침)", not signature_changed(same, frame(100, 1)))
+# 아래 셀 수는 전부 1000x700 창에 실제로 그려 재본 값이다(2026-09-07).
+check("2셀(커서 깜빡임)은 무시", not signature_changed(same, frame(100, 2)))
+check("10셀(0.98%)은 아직 문턱 아래", not signature_changed(same, frame(100, 10)))
+check("13셀(글자 한 줄)은 변화 — 2%였을 땐 이걸 놓쳤다",
+      signature_changed(same, frame(100, 13)))
+check("21셀(글자 두 줄)은 변화", signature_changed(same, frame(100, 21)))
 check("대화상자급(100셀)은 확실히 변화", signature_changed(same, frame(100, 100)))
 check("밝기 차이가 작으면(5) 셀이 많아도 무시",
       not signature_changed(same, frame(100, 500, delta=5)))
