@@ -388,23 +388,32 @@ def get_current_time() -> str:
 @tool
 def get_running_apps() -> str:
     """현재 실행 중인 주요 앱 목록을 반환합니다."""
-    known = {
-        "chrome.exe": "Google Chrome",
-        "msedge.exe": "Microsoft Edge",
-        "firefox.exe": "Firefox",
-        "notepad.exe": "메모장",
-        "code.exe": "VS Code",
-        "kakaotalk.exe": "카카오톡",
-        "winword.exe": "Microsoft Word",
-        "excel.exe": "Microsoft Excel",
-        "powerpnt.exe": "PowerPoint",
-        "explorer.exe": "파일 탐색기",
-        "wt.exe": "Windows Terminal",
-    }
+    # ⚠️ **여기서 앱 목록을 따로 갖지 않는다.** 예전에는 이 함수가 자기만의
+    #   12개짜리 화이트리스트를 들고 있었고 거기에 **계산기가 없었다.** 그래서
+    #   2026-09-07 실기에서 계산기를 열어 둔 채 물었더니
+    #   *"계산기는 지금 실행 중인 앱 목록에 없네요"* 라고 답했다.
+    #   `wt.exe`도 실제 프로세스명이 `WindowsTerminal.exe`라 못 잡고 있었다.
+    #   `open_app`이 **열 수 있는** 앱을 `get_running_apps`가 **모르는** 상태였다 —
+    #   같은 사실이 두 곳에 있어 한쪽만 갱신된, 이 프로젝트가 반복해서 데인 모양이다.
+    #   그래서 단일 출처인 `APP_PROCESS_MAP` 하나만 본다.
+    from tools.app_control import APP_PROCESS_MAP, APP_DISPLAY_NAMES
 
-    running_names = {p.name().lower() for p in psutil.process_iter(["name"])}
-    found = [label for exe, label in known.items() if exe in running_names]
+    running: set[str] = set()
+    for proc in psutil.process_iter(["name"]):
+        name = (proc.info or {}).get("name")
+        if name:                  # 죽는 중인 프로세스는 이름이 없을 수 있다
+            running.add(name.lower())
 
+    found = [APP_DISPLAY_NAMES.get(key, key)
+             for key, exes in APP_PROCESS_MAP.items()
+             if any(exe.lower() in running for exe in exes)]
+
+    # ⚠️ 마지막 줄(tail)을 빼지 말 것 — 이 목록은 **Pluiz가 아는 앱만** 본다.
+    #   없으면 모델이 *"…만 실행 중이에요"* 라고 단정한다(실기에서 실제로 그랬다).
+    #   확인하지 않은 것을 확인한 것처럼 말하지 않는다.
+    tail = ("\n(이 목록에 없는 앱도 켜져 있을 수 있어요 — "
+            "Pluiz가 아는 앱만 확인합니다.)")
     if found:
-        return "✓ 현재 실행 중인 앱:\n" + "\n".join(f"  • {app}" for app in found)
-    return "✓ 현재 실행 중인 주요 앱이 없습니다."
+        return ("✓ 실행 중인 앱:\n"
+                + "\n".join(f"  • {app}" for app in found) + tail)
+    return "✓ Pluiz가 아는 앱 중에는 실행 중인 것이 없습니다." + tail

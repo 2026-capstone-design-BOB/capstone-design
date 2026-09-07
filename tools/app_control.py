@@ -105,7 +105,10 @@ APP_PROCESS_MAP: dict[str, list[str]] = {
     "powerpoint": ["powerpnt.exe"],
     "vscode":     ["code.exe"],
     "kakaotalk":  ["kakaotalk.exe"],
-    "terminal":   ["wt.exe", "cmd.exe", "powershell.exe"],
+    # ⚠️ `wt.exe`는 실행 스텁이고, **실제로 떠 있는 창의 프로세스는**
+    #   `WindowsTerminal.exe`다. 2026-09-07 실기에서 확인했다 — 이게 없으면
+    #   get_running_apps가 못 보고 close_app("터미널")도 못 찾는다.
+    "terminal":   ["wt.exe", "windowsterminal.exe", "cmd.exe", "powershell.exe"],
 }
 
 APP_FALLBACK_PATHS: dict[str, list[str]] = {
