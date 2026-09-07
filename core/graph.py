@@ -912,6 +912,27 @@ def build_pluiz_graph(
     llm_with_tools = llm.bind_tools(tools) if tools else llm
     is_watching = is_watching or _monitor_is_watching
 
+    # BL-19 원인 ② — **재시도 패스에서만** 도구 호출을 강제한다.
+    # 설득(프롬프트)은 확률을 올릴 뿐이다. 2026-09-04 나쁜 구간에서는 첫 패스도
+    # 재시도도 함께 실패했다(0/10). `tool_choice`는 그 구간에서도 함수 호출을
+    # 강제하므로, 확률을 올리던 겹 하나를 **구조로** 바꾼다.
+    # ⚠️ 첫 패스는 절대 건드리지 않는다 — 평범한 대화까지 도구를 부르게 된다.
+    # ⚠️ 지원하지 않는 provider·mock이면 None이고, 그러면 **오늘과 똑같이** 동작한다.
+    _forced_bind: dict[str, Any] = {}
+
+    def _forced_llm(name: str):
+        """`name` 도구를 반드시 부르게 묶은 LLM. 못 묶으면 None(=오늘 경로)."""
+        if name not in _forced_bind:
+            bound = None
+            if tools:
+                try:
+                    bound = llm.bind_tools(tools, tool_choice=name)
+                except Exception as e:
+                    _log.info("[BL-19] tool_choice 미지원(%s) → 설득 재시도로 폴백",
+                              type(e).__name__)
+            _forced_bind[name] = bound
+        return _forced_bind[name]
+
     # ── 노드 ───────────────────────────────────────────────────────
     def input_guard(state: PluizState) -> dict:
         """OWASP LLM01/02 자리. 현재는 코드 레벨 보안 검사."""
@@ -989,8 +1010,22 @@ def build_pluiz_graph(
         # 호출률이 회차마다 흔들려서(2026-09-04 실측) 프롬프트만으로는 부족하다.
         user_text = _last_human_text(state["messages"])
         if needs_watch_retry(user_text, response, watching=is_watching()):
-            _log.info("[BL-19] 감시 요청인데 도구 미호출 → 1회 재시도 | 입력=%r", user_text)
-            retried = llm_with_tools.invoke(with_watch_directive(msgs))
+            want = ("stop_watching" if _STOP_REQUEST_RE.search(user_text)
+                    else "watch_screen")
+            _log.info("[BL-19] 감시 요청인데 도구 미호출 → 1회 재시도(강제=%s) | 입력=%r",
+                      want, user_text)
+            retried = None
+            forced = _forced_llm(want)
+            if forced is not None:
+                try:
+                    retried = forced.invoke(with_watch_directive(msgs))
+                except Exception as e:
+                    # 강제가 거부돼도 **턴을 죽이지 않는다** — 설득 재시도로 내려간다.
+                    _log.warning("[BL-19] 강제 호출 실패(%s: %s) → 설득 재시도로 폴백",
+                                 type(e).__name__, e)
+                    retried = None
+            if retried is None:
+                retried = llm_with_tools.invoke(with_watch_directive(msgs))
             if getattr(retried, "tool_calls", None):
                 response = retried
             else:

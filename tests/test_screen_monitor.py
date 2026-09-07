@@ -671,6 +671,140 @@ check("첫 응답(말뿐인 답)은 채택되지 않는다",
               for m in _res["messages"] if isinstance(m, AIMessage)))
 
 
+
+# ── 13. 재시도 패스의 도구 호출 강제 (BL-19 원인 ②) ────────────────
+print("")
+print("[13] BL-19 원인 ② — 재시도는 설득이 아니라 tool_choice로 강제한다")
+
+# 왜: 2026-09-04 나쁜 구간에서는 첫 패스도 재시도(설득)도 함께 실패했다(0/10).
+# 설득은 확률을 올릴 뿐이고, 강제는 구조다. 여기서 보는 것은 세 가지다 —
+#   ① 강제가 걸리는가(그리고 **재시도 패스에만** 걸리는가)
+#   ② 무엇을 강제하는가(중단 요청이면 stop_watching이어야 한다)
+#   ③ 강제를 못 쓰는 LLM에서 **오늘과 똑같이** 동작하는가 (미지원 · 예외 둘 다)
+from langchain_core.tools import tool as mktool
+
+_watching = {"on": False}
+
+
+@mktool
+def watch_screen(what: str = "변화") -> str:
+    """화면을 지켜본다(가짜)."""
+    _watching["on"] = True
+    return "지켜볼게요"
+
+
+@mktool
+def stop_watching() -> str:
+    """감시를 멈춘다(가짜)."""
+    _watching["on"] = False
+    return "그만 봤어요"
+
+
+_FAKE_TOOLS = [watch_screen, stop_watching]
+
+
+class _ForcedLLM:
+    """`tool_choice`를 받아 주는 LLM — **강제당했을 때만** 도구를 부른다.
+
+    설득이 안 통하는 나쁜 구간을 그대로 흉내 낸다. 강제 바인딩은 새 인스턴스로
+    돌려주되 기록은 부모에 모은다(제품 코드가 바인딩을 캐시하기 때문).
+    """
+
+    def __init__(self, parent=None, forced=None, raise_on_invoke=False):
+        self.parent = parent or self
+        self.forced = forced
+        self.raise_on_invoke = raise_on_invoke
+        self.forced_names = []   # 무엇을 강제하려 했나
+        self.invoked = []        # 실제로 무엇으로 불렸나 (None = 설득)
+
+    def bind_tools(self, tools, tool_choice=None):
+        if tool_choice is None:
+            return self
+        self.parent.forced_names.append(tool_choice)
+        return _ForcedLLM(parent=self.parent, forced=tool_choice,
+                          raise_on_invoke=self.parent.raise_on_invoke)
+
+    def invoke(self, msgs):
+        self.parent.invoked.append(self.forced)
+        if self.forced is None:
+            return AIMessage(content="네, 계속 지켜볼게요!")   # 말로만 — 나쁜 구간
+        if self.raise_on_invoke:
+            raise RuntimeError("tool_choice 거부(가짜)")
+        return AIMessage(content="", tool_calls=[
+            {"name": self.forced, "args": {}, "id": "f1"}])
+
+
+def _run13(llm, text, *, watching_start, thread):
+    _watching["on"] = watching_start
+    g = build_pluiz_graph(llm=llm, tools=_FAKE_TOOLS,
+                          security_check=lambda t: (False, ""),
+                          is_watching=lambda: _watching["on"])
+    return g.invoke({"messages": [HumanMessage(content=text)]},
+                    {"configurable": {"thread_id": thread}})
+
+
+# ① 감시 요청 — watch_screen을 강제하고, 도구가 실제로 돈다
+_m13 = _ForcedLLM()
+_r13 = _run13(_m13, "메모장 지켜보다가 오류 뜨면 알려줘",
+              watching_start=False, thread="bl19_forced_watch")
+check("재시도에서 watch_screen 호출을 강제한다",
+      _m13.forced_names == ["watch_screen"], f"강제={_m13.forced_names}")
+check("첫 패스는 강제하지 않는다(평범한 대화를 망치지 않는다)",
+      _m13.invoked and _m13.invoked[0] is None, f"호출={_m13.invoked}")
+check("강제된 도구가 실제로 실행된다",
+      any(isinstance(m, ToolMessage) and m.name == "watch_screen"
+          for m in _r13["messages"]))
+check("감시가 켜지면 재시도가 멈춘다(무한 재시도 방지)",
+      _m13.invoked.count("watch_screen") == 1, f"호출={_m13.invoked}")
+
+# ② 중단 요청 — stop_watching을 강제해야 한다(엉뚱한 도구를 강제하면 더 나쁘다)
+_m13b = _ForcedLLM()
+_r13b = _run13(_m13b, "그만 봐", watching_start=True, thread="bl19_forced_stop")
+check("중단 요청이면 stop_watching을 강제한다",
+      _m13b.forced_names == ["stop_watching"], f"강제={_m13b.forced_names}")
+check("중단 도구가 실제로 실행된다",
+      any(isinstance(m, ToolMessage) and m.name == "stop_watching"
+          for m in _r13b["messages"]))
+
+
+# ③-a tool_choice를 모르는 LLM — 오늘의 설득 재시도로 폴백한다
+class _NoChoiceLLM:
+    """`bind_tools(tools)`만 받는 옛 인터페이스(=모든 기존 mock·미지원 provider)."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def bind_tools(self, tools):
+        return self
+
+    def invoke(self, msgs):
+        self.calls += 1
+        if self.calls == 2:      # 설득 재시도에서만 도구를 부른다
+            return AIMessage(content="", tool_calls=[
+                {"name": "watch_screen", "args": {}, "id": "n1"}])
+        return AIMessage(content="지켜볼게요!")
+
+
+_m13c = _NoChoiceLLM()
+_r13c = _run13(_m13c, "메모장 지켜보다가 오류 뜨면 알려줘",
+                watching_start=False, thread="bl19_nochoice")
+# 3회 = 첫 패스(말뿐) + 설득 재시도(도구) + 도구 실행 뒤 마무리
+check("tool_choice 미지원이면 설득 재시도로 폴백한다(=오늘 경로)",
+      _m13c.calls == 3, f"invoke {_m13c.calls}회")
+check("폴백 경로에서도 도구가 실행된다",
+      any(isinstance(m, ToolMessage) and m.name == "watch_screen"
+          for m in _r13c["messages"]))
+
+# ③-b 강제가 예외를 던져도 **턴을 죽이지 않는다** — 설득 재시도로 내려간다
+_m13d = _ForcedLLM()
+_m13d.raise_on_invoke = True
+_r13d = _run13(_m13d, "메모장 지켜보다가 오류 뜨면 알려줘",
+                watching_start=False, thread="bl19_forced_boom")
+check("강제 호출이 실패해도 턴이 죽지 않는다",
+      isinstance(_r13d.get("messages", [])[-1], AIMessage))
+check("강제 실패 뒤 설득 재시도가 실제로 돈다",
+      _m13d.invoked.count(None) == 2, f"호출={_m13d.invoked}")
+
 # ── 결과 ──────────────────────────────────────────────────────────
 print(f"\n{'=' * 60}")
 print(f"결과: {passed}/{total} 통과")
