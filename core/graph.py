@@ -842,24 +842,53 @@ def with_step_directive(msgs: list[AnyMessage], plan: list[str], cursor: int) ->
     return [SystemMessage(content=directive.strip())] + out
 
 
-def remaining_steps(plan: Optional[list], cursor: Any) -> list[str]:
-    """아직 손대지 못한 단계들."""
-    plan = list(plan or [])
+def _as_int(v: Any) -> int:
     try:
-        c = int(cursor or 0)
+        return max(int(v or 0), 0)
     except Exception:
-        c = 0
-    return plan[max(c, 0):]
+        return 0
 
 
-def unfinished_notice(plan: Optional[list], cursor: Any) -> str:
+def turn_tool_call_count(messages: list[AnyMessage]) -> int:
+    """이번 턴에 나온 도구 호출 수. **거부돼 실행되지 않은 것도 센다.**
+
+    세는 게 아니라 **안 세는 것**이 중요하다 — 승인 거부 턴에서는 호출이 나와 있고
+    실행만 안 됐는데, 그걸 빼려고 ToolMessage 내용을 들여다보면 문구 판정이 된다.
+    여기서는 **낙관적인 상한**만 주고, 비관적인 쪽은 커서가 맡는다(steps_covered).
+    """
+    return sum(len(getattr(m, "tool_calls", None) or [])
+               for m in current_turn_messages(messages))
+
+
+def steps_covered(cursor: Any, tool_calls: Any) -> int:
+    """단계가 여기까지는 진행됐다고 볼 근거 — **덜 낙관적인 쪽**을 믿는다. (M3-1)
+
+    두 신호는 서로 독립이고 각각 진행의 **상한**이라, 겹치는 데까지만 인정한다.
+
+        A 둘 다 실행됨   커서 2 · 호출 2 → 2  조용하다
+        B 단계를 건너뜀  커서 2 · 호출 1 → 1  "'계산기 열기'는 못 했어요"
+        C 승인 거부      커서 1 · 호출 2 → 1  "'test.txt 삭제'는 못 했어요"
+
+    ⚠️ **한 쪽만 보면 반드시 깨진다.** 커서만 보면 B가(커서는 무조건 전진한다),
+      호출 수만 보면 C가 깨진다. 라이브에서 A와 B가 같은 날 둘 다 나왔다.
+      → docs/design/M3-1_단계완료판정.md
+    """
+    return min(_as_int(cursor), _as_int(tool_calls))
+
+
+def remaining_steps(plan: Optional[list], covered: Any) -> list[str]:
+    """아직 했다는 근거가 없는 단계들. (`covered`는 `steps_covered`의 결과다)"""
+    return list(plan or [])[_as_int(covered):]
+
+
+def unfinished_notice(plan: Optional[list], covered: Any) -> str:
     """못 한 단계를 알리는 **접미** 문구. 없으면 빈 문자열.
 
     판정하지 않는다 — 상태에 남아 있는 단계를 그대로 읽어 말할 뿐이다.
     기존 "삭제는 취소했어요. " 는 **접두**라 자리가 겹치지 않는다.
     조사를 하드코딩하지 않으려고 목록 형태로 붙인다("…는/은" 문제 회피).
     """
-    rest = remaining_steps(plan, cursor)
+    rest = remaining_steps(plan, covered)
     if not rest:
         return ""
     return " 다만 이건 못 했어요: " + ", ".join(f"'{s}'" for s in rest) + "."
@@ -1037,7 +1066,9 @@ def build_pluiz_graph(
         #   (전진 없이 되돌리면 무한루프다 — HITL 무한루프 사고와 같은 계열)
         if in_plan and not getattr(response, "tool_calls", None):
             out["plan_cursor"] = cursor + 1
-            _plog.info("%d/%d 단계 완료 | %r", cursor + 1, len(plan), plan[cursor])
+            # '완료'가 아니라 **커서 전진**이다 — 실제로 했는지는 output_guard가
+            # 도구 호출 수와 대조해 판정한다(M3-1).
+            _plog.info("%d/%d 단계 넘어감 | %r", cursor + 1, len(plan), plan[cursor])
         return out
 
     def output_guard(state: PluizState) -> dict:
@@ -1047,7 +1078,13 @@ def build_pluiz_graph(
         # 계획을 세웠는데 다 못 했으면 **접미**로 알린다(M3). 판정하지 않는다 —
         # 상태에 남아 있는 단계를 그대로 읽어 말할 뿐이다. 기존 "삭제는 취소했어요. "는
         # 접두라 자리가 겹치지 않는다.
-        tail = unfinished_notice(state.get("plan"), state.get("plan_cursor"))
+        # ⚠️ **커서를 그대로 믿지 않는다** (M3-1 / BL-21 ①). 커서는 진행률이 아니라
+        #   agent 자기루프를 끝내려고 **무조건 전진하는 루프 제어 값**이다. 그걸 그대로
+        #   읽던 탓에 라이브에서 단계를 건너뛰고도 문구가 붙지 않았다.
+        tail = unfinished_notice(
+            state.get("plan"),
+            steps_covered(state.get("plan_cursor"),
+                          turn_tool_call_count(state["messages"])))
 
         notice = watch_notice_to_deliver(state["messages"])
         if notice is not None:

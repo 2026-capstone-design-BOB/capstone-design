@@ -288,5 +288,77 @@ check("OFF에서 복합 명령은 to_plan이 아니라 오늘 경로로 간다",
       r5.get("decision") == "to_agent" and bool(order), f"→ {r5.get('decision')} {order}")
 
 
+# ══════════════════════════════════════════════════════════════════
+print("")
+print("[9] M3-1 — 커서를 그대로 믿지 않는다 (BL-21 ①)")
+
+# 라이브 2026-09-07에서 A와 B가 **같은 날 둘 다** 나왔다. 한 신호만 보면 반드시
+# 하나가 깨진다 — 커서만 보면 B가(커서는 무조건 전진한다), 도구 수만 보면 C가.
+#   A 둘 다 실행됨   커서 2 · 호출 2 → 조용해야 한다 (거짓 실패를 만들지 않는다)
+#   B 단계를 건너뜀  커서 2 · 호출 1 → 말해야 한다
+#   C 승인 거부      커서 1 · 호출 2 → 말해야 한다  ← 위 [7]이 본다
+# → docs/design/M3-1_단계완료판정.md
+
+check("A: 근거가 겹치는 데까지만 인정한다", G.steps_covered(2, 2) == 2)
+check("B: 커서가 앞서가면 도구 수를 믿는다", G.steps_covered(2, 1) == 1)
+check("C: 도구 수가 앞서가면 커서를 믿는다", G.steps_covered(1, 2) == 1)
+check("망가진 값은 0으로 떨어진다(턴을 죽이지 않는다)",
+      G.steps_covered(None, "x") == 0 and G.steps_covered(-5, 3) == 0)
+
+
+class SkippingLLM:
+    """1단계는 하고 2단계는 말로만 때운다 — 라이브에서 나온 그 모습."""
+
+    def bind_tools(self, tools): return self
+
+    def invoke(self, messages):
+        m = _DIRECTIVE_RE.search(str(getattr(messages[0], "content", "")))
+        turn = G.current_turn_messages(messages)
+        last_is_tool = bool(turn) and isinstance(turn[-1], ToolMessage)
+        if m and m.group(1) == "1" and not last_is_tool:
+            return AIMessage(content="", tool_calls=[{
+                "name": "open_app", "args": {"app": "메모장"},
+                "id": "skip1", "type": "tool_call"}])
+        return AIMessage(content="네, 둘 다 처리했어요!")   # 2단계는 그냥 잡담
+
+
+class BatchLLM:
+    """1단계 지시에 두 단계를 **한 배치로** 처리한다 — 이것도 라이브에서 나왔다."""
+
+    def bind_tools(self, tools): return self
+
+    def invoke(self, messages):
+        turn = G.current_turn_messages(messages)
+        if any(isinstance(x, ToolMessage) for x in turn):
+            return AIMessage(content="둘 다 열었어요.")
+        return AIMessage(content="", tool_calls=[
+            {"name": "open_app", "args": {"app": "메모장"},
+             "id": "b1", "type": "tool_call"},
+            {"name": "open_app", "args": {"app": "계산기"},
+             "id": "b2", "type": "tool_call"}])
+
+
+order.clear()
+_two_steps = "1. 메모장 열기\n2. 계산기 열기"
+gB = build(Decomposer(_two_steps), llm=SkippingLLM())
+rB = gB.invoke({"messages": [HumanMessage("메모장이랑 계산기 열어줘")]},
+               {"configurable": {"thread_id": "skip"}})
+respB = last_ai(rB)
+check("B: 건너뛴 단계를 말한다 — 라이브에서 조용히 넘어가던 그 문장",
+      "못 했어요" in respB and "계산기 열기" in respB, f"→ {respB!r}")
+check("B: 커서는 그래도 끝까지 전진한다(무한루프 방지는 그대로)",
+      int(rB.get("plan_cursor") or 0) == 2, f"→ 커서 {rB.get('plan_cursor')}")
+check("B: 실제로 계산기는 안 열렸다", "open:계산기" not in order, f"→ {order}")
+
+order.clear()
+gA = build(Decomposer(_two_steps), llm=BatchLLM())
+rA = gA.invoke({"messages": [HumanMessage("메모장 열고 계산기도 열어줘")]},
+               {"configurable": {"thread_id": "batch"}})
+respA = last_ai(rA)
+check("A: 한 배치로 다 했으면 **거짓 실패를 만들지 않는다**",
+      "못 했어요" not in respA, f"→ {respA!r}")
+check("A: 두 앱이 실제로 열렸다",
+      "open:메모장" in order and "open:계산기" in order, f"→ {order}")
+
 print(f"\n결과: {passed}/{total} 통과")
 sys.exit(0 if passed == total else 1)
