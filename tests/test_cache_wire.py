@@ -158,6 +158,50 @@ async def run():
     check("실패한 턴1은 학습 안 됨", "없는앱 열어줘" not in c.learned)
     check("성공한 턴2는 학습됨", "메모장 띄워봐" in c.learned)
 
+    print("=== 7. BL-21 — 복합 명령은 학습하지 않는다 ===")
+    # 2026-09-07 라이브에서 실제로 이렇게 굳었다:
+    #     "메모장이랑 계산기 열어줘" → [open_app(메모장)]   ← 계산기가 빠진 채로
+    # 계획 2단계 중 하나를 건너뛰었는데 완료로 기록됐고(계획 2/2), 도구가 1개뿐이라
+    # _is_learnable을 통과해 캐시에 박혔다. 그다음부터는 캐시 히트라 LLM을 거치지도
+    # 않으므로 **틀린 답이 고쳐질 기회가 없다.**
+    #
+    # 통째로 막아도 잃는 게 없다 — 계획이 제대로 실행되면 도구가 2개 이상이라
+    # 어차피 학습 대상이 아니다. 즉 여기 도달하는 복합 턴은 실패한 턴뿐이다.
+    stub = types.SimpleNamespace(cache=MockCache())
+
+    def learn_attempt(text, tool_calls, plan=None):
+        """_maybe_learn만 떼어 부른다 — self.cache 말고는 쓰지 않는다."""
+        stub.cache = MockCache()
+        calls = [dict(c, id=f"c{i}", type="tool_call") for i, c in enumerate(tool_calls)]
+        msgs = [HumanMessage(content=text),
+                AIMessage(content="", tool_calls=calls),
+                ToolMessage(content="✓ 실행했습니다.", tool_call_id="c0")]
+        result = {"messages": msgs, "plan": plan or [], "plan_cursor": len(plan or [])}
+        GA.PluizGraphAgent._maybe_learn(stub, text, result)
+        return stub.cache.learned
+
+    one = [{"name": "open_app", "args": {"app": "메모장"}}]
+
+    check("단일 명령은 그대로 학습된다(회귀)",
+          "메모장 띄워봐" in learn_attempt("메모장 띄워봐", one))
+
+    check("계획이 선 턴은 학습하지 않는다 — 실기에서 굳었던 그 문장",
+          "메모장이랑 계산기 열어줘" not in learn_attempt(
+              "메모장이랑 계산기 열어줘", one, plan=["메모장 열기", "계산기 열기"]))
+
+    check("삭제가 빠진 채 굳던 문장도 막힌다",
+          "메모장 열고 testing.txt 지워달라고" not in learn_attempt(
+              "메모장 열고 testing.txt 지워달라고", one,
+              plan=["메모장 열기", "testing.txt 지우기"]))
+
+    # 계획이 꺼져 있어도(plan 없음) 같은 일이 난다 — 발화로도 본다.
+    check("계획이 꺼져 있어도 복합 발화는 학습하지 않는다",
+          "메모장 열고 계산기도 열어줘" not in learn_attempt("메모장 열고 계산기도 열어줘", one))
+
+    # 부정어 학습 거부는 덤이다(BL-02가 바라던 것).
+    check("부정어가 든 발화도 학습하지 않는다",
+          "크롬 말고 메모장 열어줘" not in learn_attempt("크롬 말고 메모장 열어줘", one))
+
     print(f"\n결과: {passed}/{total} 통과")
     return passed == total
 

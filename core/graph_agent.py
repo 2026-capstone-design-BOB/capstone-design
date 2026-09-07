@@ -34,7 +34,7 @@ from core.logger import get_logger
 # **로그로 답할 수 없었다** — 그래프가 턴 단위로 아무것도 남기지 않았기 때문이다.
 # 도구가 돌았는지/응답이 비었는지만 알아도 원인이 갈린다.
 _log = get_logger("Agent")
-from core.fast_path import resolve_fast_path
+from core.fast_path import resolve_fast_path, is_compound_command
 
 
 # ── 프로덕션 기본값 (lazy) ─────────────────────────────────────────
@@ -365,6 +365,31 @@ class PluizGraphAgent:
         cache = getattr(self, "cache", None)
         if cache is None or not isinstance(result, dict):
             return
+
+        # ── BL-21: **복합 명령은 학습하지 않는다.** ───────────────────
+        # 2026-09-07 라이브에서 이렇게 굳었다:
+        #     "메모장이랑 계산기 열어줘"           → [open_app(메모장)]   ← 계산기가 없다
+        #     "메모장 열고 testing.txt 지워달라고"  → [open_app(메모장)]   ← 삭제가 없다
+        # 계획이 2단계인데 **한 단계를 건너뛰어** 도구가 1개만 돌았고, 완료 판정이
+        # 그걸 성공으로 읽어(계획 2/2) 여기까지 왔다. 다음부터는 캐시 히트라
+        # **LLM을 거치지도 않으므로 틀린 답이 고쳐질 기회가 없다.**
+        #
+        # ⚠️ 통째로 막아도 **잃는 게 없다**: `_is_learnable`이 `len(tool_calls) != 1`을
+        #   이미 거절하므로, 계획이 제대로 실행된 턴(도구 2개 이상)은 애초에 학습되지
+        #   않는다. 즉 **여기 도달하는 복합 턴은 실패한 턴뿐**이다.
+        #
+        # 계획이 꺼져 있어도(`PLAN_ENABLED=false`) 같은 일이 나므로 발화로도 본다.
+        # 읽는 쪽에서 *"잔여 명령이 있으면 캐시를 포기한다"* 고 정한 BL-15의 쓰기 쪽 짝이다.
+        # (`is_compound_command`는 부정어까지 넓게 잡는데, 여기서는 넓은 게 안전하다 —
+        #  학습을 덜 할 뿐이고, 부정어 학습 거부는 BL-02가 바라던 것이다.)
+        try:
+            planned = len(result.get("plan") or [])
+            if planned or is_compound_command(user_input):
+                _log.info("[BL-21] 복합 명령은 학습하지 않는다 | 입력=%r | 계획 %d단계",
+                          user_input, planned)
+                return
+        except Exception as e:                    # 학습은 부가 기능이다 — 턴을 죽이지 않는다
+            print(f"[PluizGraphAgent] 복합 판정 실패(학습 계속): {e}")
         try:
             from langchain_core.messages import ToolMessage
             msgs = current_turn_messages(result.get("messages", []))
