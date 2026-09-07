@@ -152,9 +152,11 @@ mock은 전부 통과, 라이브는 **V-05만 BL-19 때문에 구간에 따라 F
 - [x] ✅ **화면 감시 잔여 2건** (2026-09-07) — **Phase 2가 닫혔다.**
       최소화 → `사유=capture_failed` + *"창이 안 보여서 멈췄어요"*,
       상한 → `사유=timeout` + *"못 봤어요 (화면 확인 0회)"*. **조용한 종료 없음**
-- [ ] 🔵 **BL-13 — 웨이크워드 설정 UI** ← **다음은 여기**
-      API(`POST /api/wakeword`)는 이미 열려 있다. `electron-ui/renderer`에 입력란만
-      붙이면 된다 → [BACKLOG BL-13](BACKLOG.md)
+- [x] ✅ **BL-13 — 웨이크워드 설정 UI** (2026-09-07). ⚙️ 설정에 호출어 입력란 + 토글.
+      **API 키 저장과 분리**했고 반영에 10초 걸린다고 말한다. `test_wakeword_ui.py` **25건**
+- [ ] 🔵 **웨이크워드 녹음** ← **다음은 여기** (⚠️ 사용자만 할 수 있다 · 2분 30초)
+      9월에 남은 **마지막 항목**이다. 절차는 아래 ③에 그대로 있다.
+      녹음만 있으면 학습 → 런타임 교체까지 이어서 할 수 있다
 - [ ] **`plan_enabled` 기본값** — BL-21을 고치고 ①을 다시 통과한 뒤에 정한다.
       **그때까지 기본 꺼짐이다.**
 
@@ -271,7 +273,7 @@ git checkout cache/command_cache.json   # BL-11 — 서버에 PLUIZ_CACHE_FILE�
       base 모델(tiny보다 5배 빠름) · hotwords 끔 · 변형 거리 2. **감지 69%가 천장** (2026-09-02)
 - [x] **전용 모델 학습 파이프라인** — `scripts/wakeword_data.py` · `scripts/train_wakeword.py`.
       openWakeWord 임베딩 + scikit-learn MLP, torch 불필요 (2026-09-02)
-- [ ] **UI에 웨이크워드 설정 화면** — API는 열려 있고 `electron-ui/renderer`에 입력란만 붙이면 된다
+- [x] **UI에 웨이크워드 설정 화면** — ⚙️ 설정에 입력란 + 토글 (2026-09-07)
 
 ### Phase 2 본체
 - [x] **실행 결과 시각적 검증** — `visual_verify` 노드 (2026-09-03).
@@ -456,4 +458,4 @@ git checkout cache/command_cache.json   # BL-11 — 서버에 PLUIZ_CACHE_FILE�
 
 ---
 
-_최종 업데이트: 2026-09-07 (**Phase 2 종료** · 계획 수립 기본 ON · mock 30파일 783개)_
+_최종 업데이트: 2026-09-07 (**Phase 2 종료** · BL-13 완료 · mock 31파일 808개)_
