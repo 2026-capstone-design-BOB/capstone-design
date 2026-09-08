@@ -44,7 +44,8 @@ C:\pluiz_v2\
 │
 ├── main.py                 # FastAPI 서버 진입점
 ├── clear_cache.py          # 캐시 초기화 유틸
-├── requirements.txt
+├── requirements.txt        # 하한 + «왜 이 패키지가 필요한가» (사람이 읽는 문서)
+├── requirements.lock.txt   # 정확한 버전 — 재현용. CI도 여기서 버전을 가져온다
 ├── .env / .env.example     # API 키 (.env는 gitignore)
 ├── setup.bat               # 환경 구축 (conda + pip)
 ├── launch.bat              # 서버 + Electron 동시 실행 ← 실제 사용
@@ -70,7 +71,7 @@ C:\pluiz_v2\
 │   ├── DEVLOG.md
 │   ├── BACKLOG.md
 │   ├── design/             # ADR (설계 결정 기록)
-│   ├── testing/            # 수동 테스트 케이스
+│   ├── testing/            # 수동 테스트 — MANUAL_TESTS.md 하나뿐 (2026-09-08 통합)
 │   ├── assets/             # README가 참조하는 이미지 (저장소에 올라간다)
 │   ├── planning/           # 🔒 제품 방향·열린 결정      ─┐
 │   ├── meetings/           # 🔒 미팅 브리프 (날짜별 동결)  ├ .gitignore — 저장소에 없다

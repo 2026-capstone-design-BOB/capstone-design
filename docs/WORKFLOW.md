@@ -89,7 +89,7 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_dependencies.py     # ★ requirements.txt 선언 = 실제 설치인지
 ```
 
-전체 mock 스위트는 **31파일 808개**([README 상태표](README.md)가 출처). 이 중 `test_dependencies.py`(32개)는 로컬 전용이라
+전체 mock 스위트는 **31파일 810개**([README 상태표](README.md)가 출처). 이 중 `test_dependencies.py`(34개)는 로컬 전용이라
 CI는 30파일 776개를 돌린다. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
 
 ### 테스트는 제품 로그를 건드리지 않는다
@@ -110,6 +110,30 @@ CI는 30파일 776개를 돌린다. **코드를 바꿨으면 관련 스위트 + 
 가장 위험한 건 `send2trash` 다. 없으면 `_to_trash()` 가 `os.remove` 로 폴백해
 **휴지통을 거치지 않고 영구 삭제**한다.
 
+### 의존성 버전 — 파일 두 개의 역할이 다르다
+
+| 파일 | 역할 |
+|---|---|
+| `requirements.txt` | **하한**과 *«왜 이 패키지가 필요한가»*. 사람이 읽는 문서 |
+| `requirements.lock.txt` | **정확한 버전.** 이 조합에서 mock이 통과했다. 기계가 읽는 재현 |
+
+```bash
+pip install -r requirements.lock.txt      # 재현 가능한 설치
+pip freeze > requirements.lock.txt        # 갱신 (pluiz 환경에서 · 갱신 후 테스트!)
+```
+
+> **왜 잠금이 필요했나** — 하한만 있으면 설치할 때마다 최신이 들어와
+> **코드를 하나도 안 고쳐도 어느 날 깨진다.** 실제로 `requirements.txt`는
+> `langgraph>=0.2.0`이라고 적고 있었는데 도는 것은 **1.x**였다. 메이저가 두 번
+> 올라가는 동안 아무도 몰랐고, CI는 매 실행마다 최신을 새로 설치하고 있었다.
+>
+> `tests/test_dependencies.py`가 **직접 의존성이 lock과 어긋나면 FAIL**한다.
+> 전이 의존성은 목록만 보여주고 통과시킨다 — 매번 빨간불이 뜨면 사람이 테스트를
+> 안 믿게 되고, 그게 더 나쁘다.
+>
+> ⚠️ **버전 숫자를 다른 곳에 또 적지 말 것.** CI(`tests.yml`)도 lock에서 `grep`으로
+> 뽑아 쓴다. 두 곳에 적으면 한쪽만 갱신돼 어긋난다.
+
 ```bash
 python tests/test_dependencies.py     # 선언 ↔ 실제 대조. 환경 세팅 후 꼭 한 번
 ```
@@ -125,12 +149,14 @@ python tests/test_dependencies.py     # 선언 ↔ 실제 대조. 환경 세팅 
 
 | 잡 | 하는 일 |
 |---|---|
-| `mock-suite` | 문법 검사 + mock 테스트 15개 (Ubuntu). 서버 필요한 3개는 제외 |
+| `mock-suite` | 문법 검사 + mock 테스트 **30파일** (Ubuntu). 서버 필요한 3개와 로컬 전용 `test_dependencies`는 제외. 개수 출처는 [README 상태표](README.md) |
 | `link-check` | 모든 `.md`의 상대링크·이미지 참조가 실제 존재하는지 |
 | `secret-guard` | `.env` 추적 여부 · 실제 API 키 패턴 · 커밋된 `.pyc` |
 
 mock 테스트는 `langgraph`·`langchain-core`만 설치해서 돈다. `requirements.txt` 전체
 (playwright·faster-whisper·pyautogui)는 헤드리스에서 깨지고 불필요하다.
+**두 패키지의 버전은 `requirements.lock.txt`에서 `grep`으로 가져온다** — 워크플로에
+숫자를 직접 적으면 lock과 두 곳이 되어 한쪽만 갱신된다.
 
 > **테스트용 더미 키에는 `FAKE`/`DUMMY`/`EXAMPLE`을 넣을 것.**
 > `secret-guard`가 실제 키 형식을 잡되 이 단어가 든 건 통과시킨다.

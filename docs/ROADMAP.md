@@ -80,7 +80,7 @@ PyInstaller/.exe 패키징 기초
 | 로깅 시스템 (loguru) | ⚠️ **최소 도입** (2026-09-02) | `core/logger.py` — 표준 `logging` 기반. 기존 `print` 71개는 그대로, Vision부터 적용 |
 | 에러 핸들링 표준화 | ❌ 미착수 | 도구마다 예외 처리 제각각 |
 | 테스트 25 → 60개+ | ✅ **목표 대폭 초과** | 현재 개수는 [README 상태표](README.md) 참조 |
-| requirements 버전 고정 | ⚠️ 부분 | `>=` 하한만 있고 고정(`==`)은 아님 |
+| requirements 버전 고정 | ✅ **완료** (2026-09-08) | `requirements.lock.txt` 신설. `requirements.txt`는 하한·설명을 담는 문서로 남기고, 재현은 lock이 담당한다. CI도 lock에서 버전을 가져온다 → [WORKFLOW § 의존성 버전](WORKFLOW.md) |
 
 ### 방학 7-8월 · Phase 1 완성 + Vision 기초
 

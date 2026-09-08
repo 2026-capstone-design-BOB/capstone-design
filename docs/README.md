@@ -36,7 +36,7 @@
 | **계획 수립** | `planner` 노드 — 복합 명령을 **최대 2단계**로 나눠 순서대로 실행하고, **못 한 단계를 정직하게 말한다**(2026-09-05). replan 없음(LLM 왕복 턴당 1회). **기본 켜짐**(2026-09-07 라이브 확인 후) — 끄려면 `.env` `PLAN_ENABLED=false`. mock 37건 + 라이브 3경우(조용·보고·승인 완주) 확인 → [M3](design/M3_계획수립노드.md) · [M3-1](design/M3-1_단계완료판정.md) |
 | **도구 정직성** | `type_text`가 **입력 전에** 대상 창을 확인하고, 못 잡으면 입력하지 않는다(BL-12 해결). 캐시는 **해석 못 한 잔여 명령이 있으면 포기**한다(BL-15 해결) |
 | **보안** | **5층 방어** — 0 로컬 API 접근 제어(토큰) · 1 규칙 · 2 하이브리드 LLM 판정 · 3 HITL · 4 출력 마스킹 → [ARCHITECTURE](ARCHITECTURE.md#보안--5층-방어) |
-| **테스트** | mock **31파일 808개** + 라이브 3스위트. CI는 그중 30파일 776개 자동 실행 (`test_dependencies` 32개는 로컬 전용) — **이 숫자의 출처는 이 표 하나다** |
+| **테스트** | mock **31파일 810개** + 라이브 3스위트. CI는 그중 30파일 776개 자동 실행 (`test_dependencies` **34개**는 로컬 전용 — 2026-09-08에 lock 대조 2건 추가) — **이 숫자의 출처는 이 표 하나다** |
 | **라이브 실측** | `regression`에 **Vision 라이브 V-01~V-05 추가**(2026-09-04). **V-01~V-04 통과** — 실제 캡처 → Gemini 왕복 → 좌표 환산이 처음으로 자동 검증됐다. **V-05는 BL-19 때문에 구간에 따라 FAIL한다**(회귀 아님 — 실패해도 거짓말은 안 한다).<br>2026-09-03 기준 `commands` 40P/0F/15MANUAL · `sprint1_2` 55/55 → [DEVLOG](DEVLOG.md).<br>**2026-09-07 — Phase 2 다섯 기능 전부 실기 확인(종료).** 좌표 클릭·화면 감시 포함.<br>⚠️ **미검증**: 마이크(웨이크워드) · **BL-13 설정 화면**(눌러 본 적 없다) → [TASKS.md](TASKS.md) ① |
 | **CI** | GitHub Actions 3잡 — mock · 문서링크 · 비밀정보 가드 |
 | **브랜치** | `main` = `develop` = 최신. 작업은 `feature/byeonsoyun` |
@@ -115,10 +115,11 @@
 
 자동 검증이 불가능한 UI·음성·시각 확인 항목. 자동 테스트는 [`../tests/`](../tests/) 참조.
 
-- [TEST_CASES.md](testing/TEST_CASES.md) · [MANUAL_TEST_CASES.md](testing/MANUAL_TEST_CASES.md) · [MANUAL_TESTS.md](testing/MANUAL_TESTS.md)
+- [MANUAL_TESTS.md](testing/MANUAL_TESTS.md) — **44건.** 사람 눈·귀·손이 필요한 것만
 
-> ⚠️ 세 문서가 자동/수동 경계를 서로 다르게 잡고 있어 부분적으로 낡았다.
-> 통합은 [BACKLOG BL-10](BACKLOG.md) 참조.
+> 2026-09-08에 세 문서(`TEST_CASES` 88건 · `MANUAL_TEST_CASES` 56건 · `MANUAL_TESTS`)를
+> **하나로 합쳤다**(BL-10). 자동 검증되는 항목과 **제거된 구 엔진을 가리키던 회귀 12건**을
+> 걷어냈다. Vision·승인·계획의 확인 절차는 [TASKS.md](TASKS.md) ①에 있고 **옮겨 적지 않는다.**
 
 ### 🔒 저장소에 없는 문서 — 로컬 전용
 
