@@ -45,6 +45,38 @@ from core.logger import get_logger
 
 log = get_logger("Vision")
 
+
+def _log_response(kind: str, text: str) -> None:
+    """Vision 응답을 로그에 남긴다 — 기본은 **길이만**. (2026-09-08)
+
+    ⚠️ 미리보기는 **옵트인**이다(`.env` 에 `VISION_LOG_RESPONSE=true`).
+      화면에 떠 있던 내용이 로그 파일에 그대로 남기 때문이다. 로그는
+      `mask_sensitive_output()`을 거치지 않는다 — 그건 사용자에게 나가는 응답에만
+      걸린다. 그래서 켜는 것은 **사람이 의도적으로** 하는 일이어야 한다.
+
+    왜 옵션이라도 두는가 — 지금은 `Vision 응답 349자`처럼 길이만 남아서,
+    2026-09-03에 *"Vision이 뭐라고 답했길래 저 결과가 나왔나"* 를 사후에 확인할
+    방법이 없어 진단이 한 번 막혔다.
+
+    설정을 못 읽으면 **안 남기는 쪽**으로 간다 — 안전 기본값이 조용히 뒤집히면 안 된다.
+    """
+    on, n = False, 0
+    try:
+        from config.settings import get_settings
+        _s = get_settings()
+        on, n = bool(_s.vision_log_response), int(_s.vision_log_preview_chars)
+    except Exception:
+        pass
+
+    if not on or n <= 0:
+        log.info("%s %d자", kind, len(text))
+        return
+
+    preview = text[:n].replace("\n", " ")
+    log.info("%s %d자 | %s%s", kind, len(text), preview,
+             "…" if len(text) > n else "")
+
+
 # 긴 변 기준 축소 목표(px). UI 텍스트 판독과 비용의 절충값.
 _MAX_EDGE = 1600
 
@@ -269,7 +301,7 @@ def describe_screen(window: str = "", question: str = "") -> str:
             log.warning("Vision 응답이 비어 있음")
             return "✗ 화면을 분석했지만 설명을 받지 못했습니다. 다시 시도해주세요."
 
-        log.info("Vision 응답 %d자", len(text))
+        _log_response("Vision 응답", text)
         return text
 
     except ImportError as e:
@@ -554,7 +586,7 @@ def vision_watch_check(window: str, what: str) -> dict:
             {"type": "image_url", "image_url": f"data:image/png;base64,{b64}"},
         ])])
         text = (getattr(res, "content", "") or "").strip()
-        log.info("감시 판독 응답 %d자", len(text))
+        _log_response("감시 판독 응답", text)
         return parse_watch_result(text)
     except Exception as e:
         log.exception("감시 판독 실패")
@@ -566,13 +598,22 @@ def _watch_notice(cfg: dict, what: str, window: str) -> str:
     """감시 시작 **고지문**. 사용자가 승인 대신 받는 것이 이것이다.
 
     승인 질문을 붙이지 않기로 한 이상(감시는 멈추면 끝나므로 되돌릴 수 있다),
-    **무엇을 얼마나 어떻게 보는지**는 반드시 말해야 한다. 네 가지를 다 담는다:
-    ① 무엇을 보는지 ② 얼마나 자주 ③ 언제 자동으로 멈추는지 ④ 어떻게 멈추는지.
+    **무엇을 얼마나 어떻게 보는지**는 반드시 말해야 한다. 다섯 가지를 다 담는다:
+    ① 무엇을 보는지 ② 얼마나 자주 ③ **무엇을 놓칠 수 있는지** ④ 언제 자동으로
+    멈추는지 ⑤ 어떻게 멈추는지.
+
+    ⚠️ **③은 2026-09-08에 추가됐다 (BL-22 잔여).** 프리필터가 글자 한두 자(0.29%)를
+      커서 깜빡임(0.20%)과 구분하지 못해 못 잡는데, 고지는 *"글자 생기면 알려드릴게요"*
+      라고 받고 있었다. **못 하는 것을 할 수 있다고 말한 것**이고, 사용자는 그 말을
+      믿고 자리를 뜬다 — 이 프로젝트가 반복해서 데인 «거짓 성공»과 같은 모양이다.
+      임계를 더 내리는 대신 **할 수 있는 것만 말하기로** 했다. 임계를 내리면 커서
+      깜빡임마다 화면이 외부로 나간다.
     """
     where = f"'{window}' 창" if window else "화면 전체"
     return (
         f"✓ {where}를 지켜볼게요. '{what}'이(가) 보이면 바로 알려드릴게요.\n"
         f"{cfg['interval']}초마다 화면을 확인하고, 변화가 있을 때만 화면을 읽어요.\n"
+        "다만 글자 한두 자처럼 아주 작은 변화는 놓칠 수 있어요.\n"
         f"최대 {cfg['max_minutes']}분(화면 읽기 {cfg['max_vision_calls']}회)까지만 보고 "
         "자동으로 멈춰요.\n"
         '그만두려면 "그만 봐"라고 말씀해 주세요.'

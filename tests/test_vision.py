@@ -153,6 +153,64 @@ check("화면 내용 외부 전송 경고 명시", "외부 LLM" in src and "전�
 check("도구 설명에 '물어볼 때만' 제한", "물어볼 때만" in V.describe_screen.description)
 
 
+# ── Vision 응답 로그 — 미리보기는 옵트인이다 (2026-09-08) ──────────
+#
+# 화면에 떠 있던 내용이 로그 파일에 남는 일이라, **기본이 조용히 뒤집히면 안 된다.**
+# 그래서 «기본은 길이만»을 테스트로 못박는다. 로그는 mask_sensitive_output()을
+# 거치지 않는다 — 그건 사용자에게 나가는 응답에만 걸린다.
+print("\n=== Vision 응답 로그 (미리보기는 옵트인) ===")
+
+
+class _CapturingLog:
+    def __init__(self): self.lines = []
+    def info(self, fmt, *a): self.lines.append(fmt % a)
+    def __getattr__(self, _): return lambda *a, **k: None
+
+
+def _log_with(monkey_settings):
+    """설정을 갈아끼우고 _log_response를 호출해 남은 로그 한 줄을 돌려준다."""
+    cap = _CapturingLog()
+    orig_log = V.log
+    V.log = cap
+    try:
+        import config.settings as _cs
+        orig_get = _cs.get_settings
+        _cs.get_settings = monkey_settings
+        try:
+            V._log_response("Vision 응답", "비밀번호는 hunter2 입니다\n두 번째 줄")
+        finally:
+            _cs.get_settings = orig_get
+    finally:
+        V.log = orig_log
+    return cap.lines[-1] if cap.lines else ""
+
+
+class _S:
+    def __init__(self, on, n=200):
+        self.vision_log_response = on
+        self.vision_log_preview_chars = n
+
+
+_off = _log_with(lambda: _S(False))
+check("기본(꺼짐)은 길이만 남긴다", "자" in _off and "hunter2" not in _off, _off)
+
+_on = _log_with(lambda: _S(True))
+check("켜면 미리보기가 남는다", "hunter2" in _on, _on)
+check("미리보기는 줄바꿈을 펴서 한 줄로 남긴다", "\n" not in _on, repr(_on))
+
+
+def _boom():
+    raise RuntimeError("설정을 못 읽는 상황")
+
+
+_broken = _log_with(_boom)
+check("설정을 못 읽으면 **안 남기는 쪽**으로 간다 (안전 기본값)",
+      "hunter2" not in _broken, _broken)
+
+_zero = _log_with(lambda: _S(True, 0))
+check("미리보기 길이가 0이면 남기지 않는다", "hunter2" not in _zero, _zero)
+
+
 tail = f"  ({len(skipped)}건 SKIP: {'; '.join(skipped)})" if skipped else ""
 print(f"\n결과: {passed}/{total} 통과{tail}")
 sys.exit(0 if passed == total else 1)

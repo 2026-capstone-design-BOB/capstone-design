@@ -69,3 +69,11 @@ cache/.auth_token
 docs/meetings/
 docs/planning/
 docs/presentation/
+
+# 학교에서 받은 서류(평가표·계획서 양식 등). 내가 쓴 문서가 아니고 public 저장소에
+# 올릴 것도 아니다. 확장자로 막는다 — 파일이 하나씩 늘 때마다 여기 적는 걸 잊으면
+# 그때 한 번 올라가고, 히스토리에서는 지워지지 않는다.
+docs/*.docx
+docs/*.hwp
+docs/*.hwpx
+docs/*.pdf

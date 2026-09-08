@@ -46,6 +46,18 @@ class Settings(BaseSettings):
     #    넓은 전송이다. 끄려면 .env 에 VISION_VERIFY_ENABLED=false 한 줄.
     vision_verify_enabled: bool = True
 
+    # Vision 응답을 로그에 남길까 (2026-09-08 결정 — 기본 꺼짐, 진단할 때만 켠다)
+    # 지금은 `Vision 응답 349자`처럼 **길이만** 남는다. 그래서 2026-09-03에
+    # "Vision이 뭐라고 답했길래 저런 결과가 나왔나"를 사후에 확인할 수 없어 진단이
+    # 한 번 막혔다. 켜면 앞 vision_log_preview_chars 자를 함께 남긴다.
+    # ⚠️ **화면에 떠 있던 내용이 로그 파일에 기록된다.** 비밀번호·계좌가 보였다면
+    #    그것도 남는다. 그래서 기본은 꺼짐이고, 켜는 것은 **사람이 의도적으로**
+    #    하는 일이어야 한다(.env 에 VISION_LOG_RESPONSE=true 한 줄).
+    #    로그는 마스킹을 거치지 않는다 — mask_sensitive_output()은 사용자에게 나가는
+    #    응답에만 걸린다.
+    vision_log_response: bool = False
+    vision_log_preview_chars: int = 200
+
     # 계획 수립 노드 (M3 · Plan-and-Execute)
     # 복합 명령을 최대 2단계로 나눠 순서대로 실행하고, **못 한 단계를 정직하게 말한다.**
     # 값어치는 "여러 단계를 실행한다"가 아니라 "몇 단계를 못 했는지 말할 수 있다"에 있다.

@@ -448,6 +448,13 @@ check("③ 언제 자동으로 멈추는지 밝힌다", "10분" in notice and "2
 check("④ 어떻게 멈추는지 알려준다", "그만 봐" in notice, notice)
 check("변화가 있을 때만 화면을 읽는다는 걸 밝힌다", "변화가 있을 때만" in notice, notice)
 
+# ③ 무엇을 **놓칠 수 있는지** (BL-22 잔여, 2026-09-08)
+#    프리필터는 글자 한두 자를 커서 깜빡임과 구분하지 못한다. 그런데 고지는
+#    "글자 생기면 알려드릴게요"라고 받는다 — 못 하는 것을 할 수 있다고 말한 것이다.
+#    이 줄이 사라지면 그 거짓 약속이 되돌아온다.
+check("③ 놓칠 수 있는 것을 미리 말한다 (BL-22)",
+      "놓칠 수 있" in notice, notice)
+
 notice_full = _vision._watch_notice(
     {"interval": 5, "max_minutes": 10, "max_vision_calls": 20}, "오류", "")
 check("창을 지정하지 않으면 '화면 전체'라고 정확히 말한다",
