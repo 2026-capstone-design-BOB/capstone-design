@@ -2,8 +2,8 @@
 웨이크워드 모델 학습
 ====================
 실행:
-    python scripts/train_wakeword.py                      # 합성음만
-    python scripts/train_wakeword.py --user-audio a.npy   # 실제 녹음 추가 (권장)
+    python scripts/train_wakeword.py                      # 합성음만 (기본 · 이걸로 충분하다)
+    python scripts/train_wakeword.py --user-audio a.npy   # 실제 녹음 추가 (선택)
 
 ## 구조
     오디오 → melspec → Google 음성 임베딩(96차원 × 16프레임) → 우리가 학습한 분류기
@@ -32,7 +32,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.wakeword_data import (           # noqa: E402
-    SR, POSITIVE_PHRASES, NEGATIVE_PHRASES,
+    SR, POSITIVE_PHRASES, NEGATIVE_PHRASES, COVERED_WAKE_WORDS,
     synthesize_set, augment, to_window, _load,
 )
 
@@ -54,15 +54,17 @@ def extract_features(windows, af, batch_label=""):
     return np.array(feats, dtype=np.float32)
 
 
-def build_dataset(user_audio_path=None, aug_per_clip=8, seed=0):
+def build_dataset(user_audio_path=None, aug_per_clip=3, seed=0):
     from openwakeword.utils import AudioFeatures
 
     rng = np.random.default_rng(seed)
     print("① 음성 합성 (이미 있으면 재사용)")
+    # 목소리가 14개라 전 조합은 양성 1400 · 음성 12950이다. 표본을 뽑아 쓴다 —
+    # `limit_combos`는 **무작위 균등 추출**이라 목소리가 골고루 섞인다(앞에서 자르지 않는다).
     pos_paths = asyncio.run(synthesize_set(
-        POSITIVE_PHRASES, os.path.join(CACHE_DIR, "pos"), "pos"))
+        POSITIVE_PHRASES, os.path.join(CACHE_DIR, "pos"), "pos", limit_combos=700))
     neg_paths = asyncio.run(synthesize_set(
-        NEGATIVE_PHRASES, os.path.join(CACHE_DIR, "neg"), "neg", limit_combos=600))
+        NEGATIVE_PHRASES, os.path.join(CACHE_DIR, "neg"), "neg", limit_combos=900))
     print(f"  양성 클립 {len(pos_paths)} · 음성 클립 {len(neg_paths)}")
 
     print("② 증강 + 창 배치")
@@ -98,7 +100,8 @@ def build_dataset(user_audio_path=None, aug_per_clip=8, seed=0):
             for v in augment(seg, rng, n=aug_per_clip * 2):
                 pos_wins.append(to_window(v, rng, WIN_SEC))
     else:
-        print("③ 실제 녹음 없음 — ⚠️ 합성음에 과적합될 수 있다 (--user-audio 권장)")
+        print("③ 실제 녹음 없음 — 목소리 14개로 학습한다 "
+              "(2026-09-08 측정: 미학습 화자 98.1%. 녹음은 선택이다)")
 
     print(f"④ 임베딩 추출 (양성 {len(pos_wins)} · 음성 {len(neg_wins)})")
     af = AudioFeatures()
@@ -159,6 +162,9 @@ def save(clf, path):
         **{f"b{i}": b.astype(np.float32) for i, b in enumerate(clf.intercepts_)},
         n_layers=np.array(len(clf.coefs_)),
         wake_word=np.array("플루이즈"),
+        # 런타임이 «설정된 호출어를 이 모델이 감당하나»를 판단하는 근거.
+        # 이게 없으면 호출어를 바꿨을 때 모델이 **조용히 옛 말에만** 반응한다.
+        wake_phrases=np.array(COVERED_WAKE_WORDS),
         win_sec=np.array(WIN_SEC),
         sample_rate=np.array(SR),
     )
@@ -169,7 +175,8 @@ def save(clf, path):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--user-audio", default="", help="실제 녹음 .npy (16kHz float32)")
-    ap.add_argument("--aug", type=int, default=8, help="클립당 증강 개수")
+    ap.add_argument("--aug", type=int, default=3,
+                    help="클립당 증강 개수 (목소리 14개로 늘면서 8 → 3. 창 수는 비슷하다)")
     args = ap.parse_args()
 
     X, y = build_dataset(args.user_audio or None, aug_per_clip=args.aug)
