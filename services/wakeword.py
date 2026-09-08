@@ -189,6 +189,38 @@ def _load_wake_words() -> list:
     return sorted(expanded)
 
 
+def _configured_raw_wake_words() -> list:
+    """사용자가 **적은 그대로**의 호출어. (`_expand` 변형을 붙이기 전)
+
+    KWS 모델이 어떤 말로 학습됐는지와 대조하는 데 쓴다. 확장된 목록으로 대조하면
+    오인식 변형(`플로이드` 등)까지 섞여 들어와 판단이 어긋난다.
+    """
+    try:
+        from config.settings import get_settings
+        get_settings.cache_clear()
+        s = get_settings()
+        if not s.wake_word_enabled:
+            return []
+        return list(s.wake_word_list) or list(DEFAULT_WAKE_WORDS)
+    except Exception:
+        return list(DEFAULT_WAKE_WORDS)
+
+
+def model_covers(configured: list, phrases) -> bool:
+    """설정된 호출어를 이 모델이 감당할 수 있나. (순수 함수 — 테스트 가능)
+
+    전용 KWS 모델은 **학습된 말 하나만** 안다. BL-13에서 사용자가 호출어를 바꿀 수
+    있게 해 놨으므로, 감당 못 하는 말이 설정돼 있으면 **모델을 쓰면 안 된다** —
+    쓰면 바꾼 호출어가 조용히 무시되고, 설정 화면에서 저장까지 한 사용자는
+    아무 반응이 없는 이유를 알 수 없다. 그럴 땐 임의의 단어를 다루는 Whisper로 간다.
+
+    빈 설정(감지 끔)은 여기서 판단하지 않는다 — 부르는 쪽이 이미 걸러낸다.
+    """
+    if not configured:
+        return True
+    return set(configured) <= set(phrases)
+
+
 WAKE_WORDS = _load_wake_words()
 
 # hotwords 사용 여부 (기본 꺼짐 — 위 _transcribe 주석 참조)
@@ -259,6 +291,123 @@ def _reload_loop():
             print(f"[wakeword] 설정 재로드 실패(무시): {e}", file=sys.stderr, flush=True)
 
 
+# ── 전용 KWS 모델 백엔드 (2026-09-08) ─────────────────────────────
+# Whisper는 **문장을 받아적는** 모델이라 "플루이즈" 같은 조어에서 감지율 69%가
+# 천장이었다(ADR §2). 여기서는 **음향에서 키워드만 찾는다** — openWakeWord의
+# 사전학습 임베딩 위에 우리가 학습시킨 작은 MLP 하나다.
+#
+# ⚠️ **sklearn을 런타임 의존성으로 만들지 않는다.** 학습은 sklearn으로 하고
+#   추론은 여기서 numpy 행렬곱으로 직접 한다(`relu(x@W+b)` 반복 + 시그모이드).
+#   npz에는 가중치만 들어 있다. → scripts/train_wakeword.py의 `save()`
+#
+# 되돌리기: 모델 파일이 없거나 로드가 실패하면 **Whisper 경로로 자동 복귀**한다.
+# `.env`에 `WAKEWORD_BACKEND=whisper`로 강제할 수도 있다. (ADR §6)
+MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wakeword_model.npz")
+
+
+class KwsModel:
+    """임베딩 → MLP → 확률. 창 하나를 받아 «웨이크워드인가»를 0~1로 답한다."""
+
+    def __init__(self, path: str):
+        z = np.load(path, allow_pickle=False)
+        n = int(z["n_layers"])
+        self.W = [z[f"W{i}"] for i in range(n)]
+        self.b = [z[f"b{i}"] for i in range(n)]
+        self.win_sec = float(z["win_sec"])
+        self.sample_rate = int(z["sample_rate"])
+        self.wake_word = str(z["wake_word"])       # 이 모델이 아는 말 — 딱 하나다
+        # 이 모델이 커버하는 «사용자 표기» 목록. 옛 모델 파일에는 없을 수 있어 폴백을 둔다.
+        try:
+            self.wake_phrases = {str(x) for x in z["wake_phrases"]}
+        except KeyError:
+            self.wake_phrases = {self.wake_word}
+        # 임베딩 추출기는 학습 때와 **같은 것**이어야 한다 (openWakeWord 사전학습 ONNX)
+        from openwakeword.utils import AudioFeatures
+        self._af = AudioFeatures()
+
+    def probability(self, audio: "np.ndarray") -> float:
+        pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
+        x = self._af._get_embeddings(pcm).flatten()[None, :].astype(np.float32)
+        for W, b in zip(self.W[:-1], self.b[:-1]):
+            x = np.maximum(0.0, x @ W + b)              # relu
+        z = float((x @ self.W[-1] + self.b[-1]).ravel()[0])
+        return 1.0 / (1.0 + np.exp(-z))                 # 시그모이드
+
+
+def load_kws_model():
+    """모델 백엔드를 준비한다. **실패는 예외가 아니라 None이다** — Whisper로 돌아간다.
+
+    웨이크워드가 안 뜨는 것보다 나쁜 건 **웨이크워드 프로세스가 죽는 것**이다.
+    그러면 Electron이 창을 못 띄우고 사용자는 이유를 알 수 없다.
+    """
+    backend = "auto"
+    try:
+        from config.settings import get_settings
+        get_settings.cache_clear()
+        backend = (get_settings().wakeword_backend or "auto").lower()
+    except Exception:
+        pass
+    if backend == "whisper":
+        print("[wakeword] backend=whisper (설정으로 강제)", file=sys.stderr, flush=True)
+        return None
+    if not os.path.exists(MODEL_PATH):
+        if backend == "model":
+            print(f"[wakeword] ⚠️ backend=model인데 {MODEL_PATH} 가 없다 → Whisper로 진행",
+                  file=sys.stderr, flush=True)
+        return None
+    try:
+        m = KwsModel(MODEL_PATH)
+
+        # ⚠️ **모델은 학습된 말 하나만 안다.** BL-13에서 사용자가 호출어를 바꿀 수 있게
+        #   해 놨으므로, 설정이 «플루이즈»가 아닌데 모델을 쓰면 **바꾼 호출어가 조용히
+        #   무시된다** — 설정 화면에서 저장까지 했는데 아무 반응이 없는 최악의 모양이다.
+        #   그런 경우엔 임의의 단어를 다루는 Whisper 경로로 간다.
+        configured = _configured_raw_wake_words()
+        if not model_covers(configured, m.wake_phrases):
+            print(f"[wakeword] 호출어가 학습된 말({m.wake_word})과 다릅니다 "
+                  f"{configured} → Whisper 경로로 갑니다 (전용 모델은 {m.wake_word} 전용)",
+                  file=sys.stderr, flush=True)
+            log.info("호출어 불일치 → whisper | 학습=%s | 설정=%s", m.wake_word, configured)
+            return None
+
+        m.probability(np.zeros(int(m.sample_rate * m.win_sec), dtype=np.float32))  # 예열
+        return m
+    except Exception as e:
+        print(f"[wakeword] ⚠️ KWS 모델 로드 실패 → Whisper로 폴백: {e}",
+              file=sys.stderr, flush=True)
+        log.exception("KWS 모델 로드 실패")
+        return None
+
+
+def kws_energy_floor(default: float) -> float:
+    """모델 백엔드용 에너지 관문. Whisper용보다 **훨씬 낮다.**
+
+    관문의 존재 이유는 «비싼 추론을 아무 소리에나 돌리지 않는 것»이었다.
+    Whisper는 창 하나에 700ms였으니 타당했다. 전용 모델은 **28.7ms**다 —
+    0.6초마다 한 번 도니 점유율이 5%도 안 된다. **막을 이유가 사라졌다.**
+
+    ⚠️ 관문을 Whisper 값(0.008) 그대로 두면 조용한 마이크에서 **발화가 모델에
+      도달조차 못 한다.** 2026-09-08 실기에서 정확히 그랬다: 620번 «무음 스킵»이
+      찍히는 동안 통과한 2번은 **둘 다 prob 1.000 · 0.893으로 성공**했다.
+      모델이 못 알아들은 게 아니라 **들어볼 기회가 없었다.**
+    """
+    try:
+        from config.settings import get_settings
+        get_settings.cache_clear()
+        return float(get_settings().wakeword_energy_model)
+    except Exception:
+        return min(default, 0.0015)
+
+
+def kws_threshold() -> float:
+    try:
+        from config.settings import get_settings
+        get_settings.cache_clear()
+        return float(get_settings().wakeword_threshold)
+    except Exception:
+        return 0.8
+
+
 def rms(audio: "np.ndarray") -> float:
     return float(np.sqrt(np.mean(audio ** 2)))
 
@@ -279,9 +428,22 @@ def _tune():
 
 def main():
     model_size, energy_threshold = _tune()
-    print(f"[wakeword] Loading model ({model_size})...", file=sys.stderr, flush=True)
 
-    model = WhisperModel(model_size, device="cpu", compute_type="int8")
+    # 전용 KWS 모델이 있으면 그걸 쓴다. 없거나 실패하면 Whisper로 간다 (ADR §6).
+    # ⚠️ Whisper는 **필요할 때만** 로드한다 — 둘 다 올리면 메모리와 시작 시간이 두 배다.
+    kws = load_kws_model()
+    if kws is not None:
+        model = None
+        energy_threshold = kws_energy_floor(energy_threshold)   # ← 관문을 백엔드에 맞춘다
+        print(f"[wakeword] backend=model (KWS 전용 · 임계 {kws_threshold():.2f} · "
+              f"에너지 {energy_threshold:.4f})", file=sys.stderr, flush=True)
+        log.info("backend=model | 임계=%.2f | 에너지=%.4f | win=%.1fs",
+                 kws_threshold(), energy_threshold, kws.win_sec)
+    else:
+        print(f"[wakeword] backend=whisper — Loading model ({model_size})...",
+              file=sys.stderr, flush=True)
+        model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        log.info("backend=whisper | model=%s", model_size)
 
     # 설정 변경을 재시작 없이 반영
     threading.Thread(target=_reload_loop, daemon=True).start()
@@ -295,8 +457,9 @@ def main():
               file=sys.stderr, flush=True)
         log.info("감지 대상 %d개: %s", len(WAKE_WORDS), ", ".join(WAKE_WORDS))
 
-    log.info("설정: model=%s energy=%.4f window=%.1fs hop=%.1fs",
-             model_size, energy_threshold, WINDOW_SECONDS, HOP_SECONDS)
+    log.info("설정: backend=%s energy=%.4f window=%.1fs hop=%.1fs",
+             "model" if kws is not None else f"whisper({model_size})",
+             energy_threshold, WINDOW_SECONDS, HOP_SECONDS)
     print("[wakeword] 준비 완료. 감지 중...", file=sys.stderr, flush=True)
 
     last_wake = 0.0
@@ -305,8 +468,46 @@ def main():
     quiet_log_at = 0.0
     busy = threading.Lock()        # 인식은 한 번에 하나만 (창이 겹치므로 쌓이면 밀린다)
 
+    def _fire(ts, why):
+        """깨운다. 두 백엔드가 같은 출구를 쓰게 해서 동작이 갈리지 않게 한다."""
+        nonlocal last_wake
+        last_wake = ts
+        print("WAKE", flush=True)
+        print(f"[wakeword] *** WAKE WORD DETECTED *** ({why})",
+              file=sys.stderr, flush=True)
+
+    def _detect_model(chunk, ts):
+        """전용 KWS 모델 경로. 창 하나 → 확률 하나.
+
+        Whisper 경로와 달리 **텍스트가 없다.** 그래서 매칭 실패를 진단할 때 볼 것은
+        `heard=...`가 아니라 **확률**이다 — 임계에 못 미친 값도 로그에 남긴다.
+        안 그러면 "안 깨어났다"만 남고 아까웠는지 한참 멀었는지를 알 수 없다.
+        """
+        nonlocal last_wake
+        try:
+            if not WAKE_WORDS:          # 감시 끔(WAKE_WORD_ENABLED=false) — 재시작 불필요
+                return
+            pr = kws.probability(chunk)
+            th = kws_threshold()
+            if pr >= th:
+                log.info("prob=%.3f ≥ %.2f → WAKE", pr, th)
+                _fire(ts, f"prob={pr:.3f}")
+            elif pr >= th * 0.5:          # 아깝게 놓친 것 — 임계만 낮추면 되는 경우다
+                log.info("prob=%.3f < %.2f (놓침)", pr, th)
+            else:
+                # ⚠️ 낮은 확률도 **파일에는 남긴다.** 2026-09-08에 이걸 안 남겨서
+                #   "왜 안 깨어나나"를 확률로 답할 수 없었다(다행히 «무음 스킵»이
+                #   범인을 알려줬다). 콘솔은 INFO라 조용하고 파일만 DEBUG로 받는다.
+                log.debug("prob=%.3f < %.2f", pr, th)
+        except Exception as e:
+            print(f"[wakeword] kws error: {e}", file=sys.stderr, flush=True)
+            log.exception("KWS 추론 실패")
+        finally:
+            if busy.locked():
+                busy.release()
+
     def _transcribe(chunk, ts):
-        """창 하나를 인식해 웨이크워드가 있는지 본다."""
+        """창 하나를 인식해 웨이크워드가 있는지 본다. (Whisper 경로 — 폴백)"""
         nonlocal last_wake
         try:
             segments, _ = model.transcribe(
@@ -337,9 +538,7 @@ def main():
                 log.info("heard=%r match=%s", text, matched)
 
             if matched:
-                last_wake = ts
-                print("WAKE", flush=True)
-                print("[wakeword] *** WAKE WORD DETECTED ***", file=sys.stderr, flush=True)
+                _fire(ts, f"heard={text[:30]!r}")
 
         except Exception as e:
             print(f"[wakeword] transcribe error: {e}", file=sys.stderr, flush=True)
@@ -388,7 +587,8 @@ def main():
             return
 
         threading.Thread(
-            target=_transcribe, args=(window.copy(), now), daemon=True,
+            target=(_detect_model if kws is not None else _transcribe),
+            args=(window.copy(), now), daemon=True,
         ).start()
 
     try:
