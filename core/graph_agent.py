@@ -19,6 +19,7 @@ M1-P5에서 구 엔진을 제거해 **유일한 엔진**이 되었다.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import AsyncGenerator, Any, Optional, Callable
 
 from langchain_core.messages import HumanMessage
@@ -240,6 +241,12 @@ class PluizGraphAgent:
         #   hitl·visual_verify가 하나만 끼어도 즉시 GraphRecursionError이고, 그 예외는
         #   아래 포괄 except가 잡아 **스레드를 지우고** "오류가 발생했어요"로 끝난다.
         #   반대로 꺼져 있을 땐 올리지 않는다 — 폭주 ReAct 루프가 2.4배 오래 돈다.
+        # 계측(2026-09-08): 이 턴이 몇 초 걸렸는지. 11월 「SW 검증·성능 측정」의 전제라
+        # 지금부터 쌓아 둔다 — 그날 넣으면 과거 데이터가 0이다. 화면 감시(`elapsed`)와
+        # 같은 방식(perf_counter)이다. ⚠️ 하이브리드 가드의 LLM 왕복도 포함된다 —
+        # 사용자가 체감하는 시간이 그것까지 합한 값이기 때문이다.
+        started = time.perf_counter()
+
         limit = 24 if self.plan_decompose is not None else 10
         config = {"configurable": {"thread_id": thread_id}, "recursion_limit": limit}
 
@@ -294,6 +301,10 @@ class PluizGraphAgent:
                 question = itr[0].value.get("question", "정말 진행할까요?")
             except Exception:
                 question = "정말 진행할까요?"
+            # 승인 질문으로 끝난 턴은 "턴 완료"를 찍지 않는다. 여기서 안 남기면
+            # **HITL 턴만 지연 통계에서 통째로 빠져** 평균이 낙관적으로 기운다.
+            _log.info("승인 대기 | 입력=%r%s", user_input,
+                      self._metrics_note(result, time.perf_counter() - started))
             return question
 
         response = extract_response(result)
@@ -303,9 +314,10 @@ class PluizGraphAgent:
             # 도구 결과로 복원하기 때문). 됐다고 하지 않는다.
             _log.warning("빈 응답 — 도구도 실행되지 않았다. 입력=%r", user_input)
             response = _NOTHING_HAPPENED_MSG
-        _log.info("턴 완료 | 입력=%r | 도구=%s | 응답 %d자%s",
+        _log.info("턴 완료 | 입력=%r | 도구=%s | 응답 %d자%s%s",
                   user_input, tool_names or "없음", len(response),
-                  self._plan_note(result))
+                  self._plan_note(result),
+                  self._metrics_note(result, time.perf_counter() - started))
 
         # LLM02/05: 출력 최종 마스킹(주민번호·카드번호·API키) — 사용자/TTS/기록 전에 적용
         try:
@@ -338,6 +350,70 @@ class PluizGraphAgent:
             done = min(int((result or {}).get("plan_cursor") or 0), len(plan))
             return f" | 계획 {done}/{len(plan)}"
         except Exception:
+            return ""
+
+    @staticmethod
+    def _turn_usage(result: Any) -> tuple[int, int, int]:
+        """이번 턴 LLM 응답의 (usage가 실린 응답 수, 입력토큰, 출력토큰).
+
+        `AIMessage.usage_metadata`는 langchain-core의 **표준 필드**이고
+        langchain-google-genai 4.x가 응답마다 채운다(`chat_models.py`의 `lc_usage`).
+        2026-09-08에 설치본에서 직접 확인했다 — 안 실려 온다면 아래 «미상»으로 떨어질 뿐
+        턴은 멀쩡히 끝난다.
+
+        ⚠️ **이번 턴만 본다**(`current_turn_messages`). `result["messages"]`는 thread
+          전체라, 그냥 훑으면 지난 턴 토큰이 이번 턴에 계속 더해져 **누적값이 턴 비용으로
+          기록된다**(절대규칙 6이 말하는 오염의 토큰판).
+
+        usage가 실린 메시지만 세므로 output_guard가 덧붙인 AIMessage나 mock 응답은
+        자연히 빠진다. 그래서 이 수는 "LLM을 몇 번 불렀나"가 아니라
+        **"몇 번의 왕복을 실제로 계측했나"** 이고, 0이면 «미상»이라고 말한다.
+
+        토큰은 왕복마다 히스토리를 다시 보내므로 입력이 중복 계상되는데,
+        그게 **실제로 청구되는 값**이라 그대로 더한다.
+        """
+        calls = tin = tout = 0
+        try:
+            for m in current_turn_messages((result or {}).get("messages", [])):
+                u = getattr(m, "usage_metadata", None) or {}
+                if not u:
+                    continue
+                calls += 1
+                tin += int(u.get("input_tokens") or 0)
+                tout += int(u.get("output_tokens") or 0)
+        except Exception:
+            return calls, tin, tout
+        return calls, tin, tout
+
+    @classmethod
+    def _metrics_note(cls, result: Any, elapsed: float) -> str:
+        """" | 소요 1.83s | LLM 2회 | 토큰 in=1234 out=56" 형태의 계측 꼬리표.
+
+        **형식을 함부로 바꾸지 말 것** — 11월에 이 줄을 grep해서 추이를 낸다.
+        (`도구=[...]`를 세어 도구 사용률을 내기로 한 것과 같은 방식이다.)
+
+        세 가지 경우를 구분해서 말한다:
+          - 계측됨      → `LLM 2회 | 토큰 in=1234 out=56`
+          - 캐시 히트   → `LLM 0회(캐시) | 토큰 0`  ← **차별점의 근거 데이터다**
+          - 계측 실패   → `LLM ?회 | 토큰 미상`     ← 불렀는데 usage가 없었다
+
+        마지막 경우를 «0회»라고 쓰지 않는 게 핵심이다. 안 부른 것과 못 잰 것을
+        같은 숫자로 적으면, 11월에 캐시 효과가 실제보다 커 보인다.
+        """
+        try:
+            calls, tin, tout = cls._turn_usage(result)
+            cached = isinstance(result, dict) and result.get("decision") == "fast_hit"
+            if calls:
+                tail = f"LLM {calls}회 | 토큰 in={tin} out={tout}"
+            elif cached:
+                # 캐시 히트는 그래프 안에서 LLM을 한 번도 부르지 않는다(fast_path가
+                # 도구를 직접 돌린다). ⚠️ 다만 하이브리드 가드가 의심 입력에 한해
+                # 그래프 **밖에서** 한 번 부를 수 있다 — 그 왕복은 여기 안 잡힌다.
+                tail = "LLM 0회(캐시) | 토큰 0"
+            else:
+                tail = "LLM ?회 | 토큰 미상"
+            return f" | 소요 {elapsed:.2f}s | {tail}"
+        except Exception:                       # 계측이 턴을 죽이지 않는다
             return ""
 
     @staticmethod

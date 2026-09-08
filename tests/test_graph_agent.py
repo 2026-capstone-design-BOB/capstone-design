@@ -64,6 +64,37 @@ class PlanLLM(FakeLLM):
             return AIMessage(content="1. 메모장 열기\n2. 계산기 열기")
         return AIMessage(content="네, 처리했어요.")
 
+class UsageLLM(FakeLLM):
+    """usage_metadata를 실어 보내는 LLM — langchain-google-genai 4.x가 하는 그대로.
+
+    (2026-09-08에 설치본 `chat_models.py`에서 이 필드가 실제로 채워지는 걸 확인하고
+     그 모양을 여기 고정했다. 라이브에서 형식이 바뀌면 여기부터 깨진다.)
+    """
+    def invoke(self, messages):
+        msg = super().invoke(messages)
+        msg.usage_metadata = {"input_tokens": 100, "output_tokens": 7, "total_tokens": 107}
+        return msg
+
+
+class LogSpy:
+    """`[Agent]` info 로그를 포맷된 문자열로 모은다 (계측 줄을 검사하려고)."""
+    def __enter__(self):
+        self.lines = []
+        self._orig = GA._log.info
+        def cap(fmt, *a):
+            try: self.lines.append(fmt % a)
+            except Exception: self.lines.append(str(fmt))
+            return self._orig(fmt, *a)
+        GA._log.info = cap
+        return self
+    def __exit__(self, *e):
+        GA._log.info = self._orig
+    def last(self, needle="턴 완료"):
+        for ln in reversed(self.lines):
+            if needle in ln: return ln
+        return ""
+
+
 def fake_security(text):
     if "rm -rf" in text: return True, "⚠️ 보안 차단: 위험 명령"
     return False, ""
@@ -156,6 +187,42 @@ async def run():
     # 도구가 없는 에이전트라 1단계에서 더 나아가지 못한다 → **그 사실을 말해야 한다.**
     check("못 한 단계를 응답 끝에 정직하게 붙인다",
           "못 했어요" in r7 and "계산기 열기" in r7)
+
+    print("=== F. 계측 — latency · token (11월 측정의 전제) ===")
+    # 지금 안 심으면 11월에 과거 데이터가 0이다. 로그 **형식**을 여기서 고정한다 —
+    # 그때 이 줄을 grep해서 추이를 낸다.
+    agentF, _ = make_agent(UsageLLM())
+    with LogSpy() as spy:
+        await agentF.run_async("오늘 날씨 어때", "f1")
+    line = spy.last()
+    check("턴 완료에 소요 시간이 실린다", "| 소요 " in line and "s |" in line)
+    check("usage가 실리면 LLM 횟수·토큰을 남긴다",
+          "LLM 1회 | 토큰 in=100 out=7" in line)
+
+    # ⚠️ 가장 중요한 케이스: thread 전체를 훑으면 지난 턴 토큰이 계속 더해져
+    #   **누적값이 이번 턴 비용으로 기록된다**(절대규칙 6의 토큰판).
+    with LogSpy() as spy2:
+        await agentF.run_async("그럼 내일은", "f1")
+    check("2턴째도 이번 턴 토큰만 (누적 아님)",
+          "토큰 in=100 out=7" in spy2.last())
+
+    # 캐시 히트는 LLM을 한 번도 안 부른다 — 이게 차별점의 근거 데이터다.
+    agentG, _ = make_agent(UsageLLM())
+    with LogSpy() as spy3:
+        await agentG.run_async("메모장 켜줘", "f2")
+    check("캐시 히트는 LLM 0회(캐시) | 토큰 0", "LLM 0회(캐시) | 토큰 0" in spy3.last())
+
+    # 못 잰 것을 «0회»라고 쓰면 11월에 캐시 효과가 실제보다 커 보인다.
+    agentH, _ = make_agent(FakeLLM())        # usage를 안 싣는 LLM
+    with LogSpy() as spy4:
+        await agentH.run_async("오늘 날씨 어때", "f3")
+    lh = spy4.last()
+    check("usage가 없으면 «미상» — 0회라고 적지 않는다",
+          "LLM ?회 | 토큰 미상" in lh and "0회" not in lh)
+
+    # 승인 질문으로 끝난 턴도 지연을 남긴다 (안 남기면 HITL이 평균에서 통째로 빠진다)
+    check("승인 대기 줄에도 계측 꼬리표가 붙는 형식이다",
+          " | 소요 " in GA.PluizGraphAgent._metrics_note({"messages": []}, 1.5))
 
     print(f"\n결과: {passed}/{total} 통과")
     return passed == total
