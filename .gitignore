@@ -61,3 +61,11 @@ models/
 # 로컬 API 접근 토큰 (BL-14) — 서버가 기동할 때마다 새로 발급한다.
 # cache/ 는 command_cache.json 을 추적하므로 폴더 통째로 무시할 수 없다.
 cache/.auth_token
+
+# 개인 작성용 문서 — 저장소가 public이라 올리지 않는다 (2026-09-08 결정).
+# 로컬에는 그대로 남아 있고, 다른 docs/ 문서에서 링크가 아니라 **경로 문자열로만**
+# 언급한다. 링크로 걸면 CI 링크 검사(체크아웃에는 이 폴더가 없다)와 GitHub 양쪽에서
+# 깨진다 — 그래서 참조를 전부 `docs/…` 형태의 코드 표기로 바꿔 뒀다.
+docs/meetings/
+docs/planning/
+docs/presentation/

@@ -34,7 +34,7 @@
 ## 아키텍처
 
 <div align="center">
-  <img src="docs/presentation/pluiz_architecture_white.png" alt="Pluiz 아키텍처" width="760">
+  <img src="docs/assets/pluiz_architecture_white.png" alt="Pluiz 아키텍처" width="760">
 </div>
 
 에이전트는 LangGraph **명시적 StateGraph**로 구성됩니다.
@@ -162,5 +162,3 @@ python tests/test_guardrail_hybrid.py # 하이브리드 가드레일
 목표는 **"Windows 위에서 동작하는 이식 가능한 개인 적응형 에이전트"** 입니다 —
 화면을 보고 상황을 이해하고, 쓸수록 사용자를 알아가며, 오프라인에서도 동작하는
 설치형 소프트웨어. 학기 계획과 진행 상황은 [docs/ROADMAP.md](docs/ROADMAP.md)에 있습니다.
-
-발표 자료와 V0 → V1 → V2 발전사는 [docs/presentation/](docs/presentation/)에 있습니다.

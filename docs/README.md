@@ -70,14 +70,14 @@
 | **보안·가드레일 수정** | [ARCHITECTURE.md § 보안](ARCHITECTURE.md#보안--5층-방어) |
 | **캐시 매칭·학습 수정** | [ARCHITECTURE.md § 캐시](ARCHITECTURE.md#커맨드-캐시) → [design/M1_P4_캐시정책.md](design/M1_P4_캐시정책.md) |
 | **구조를 바꾸는 큰 결정** | [design/](design/)에 ADR 먼저 작성 → [WORKFLOW.md § 설계 결정](WORKFLOW.md#설계-결정-adr) |
-| **«이걸 왜 만드나»가 흔들릴 때** | [planning/제품_방향.md](planning/제품_방향.md) — 제품 판단과 열린 결정 |
-| **미팅·보고 자료 준비** | [meetings/](meetings/) — 날짜별 동결 스냅샷. 가장 최근 것을 골라 새로 쓴다 |
+| **«이걸 왜 만드나»가 흔들릴 때** | `docs/planning/제품_방향.md` — 제품 판단과 열린 결정 (🔒 로컬 전용) |
+| **미팅·보고 자료 준비** | `docs/meetings/` — 날짜별 동결 스냅샷. 가장 최근 것을 골라 새로 쓴다 (🔒 로컬 전용) |
 | **테스트 작성·실행** | [WORKFLOW.md § 테스트](WORKFLOW.md#테스트) · 수동 항목은 [testing/](testing/) |
 | **환경이 이상할 때 (도구가 조용히 안 됨)** | `python tests/test_dependencies.py` → [WORKFLOW.md § 의존성](WORKFLOW.md#️-의존성이-없으면-도구가-조용히-죽는다) |
 | **커밋·브랜치·PR** | [WORKFLOW.md § 커밋 컨벤션](WORKFLOW.md#커밋-컨벤션) · [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **지금 뭘 하는 중인지 / 다음 작업 고르기** | [TASKS.md](TASKS.md) |
 | **학기 목표·최종 시스템 방향 확인** | [ROADMAP.md](ROADMAP.md) |
-| **발표·제출 자료 준비** | [presentation/](presentation/) |
+| **발표·제출 자료 준비** | `docs/presentation/` (🔒 로컬 전용) |
 
 ---
 
@@ -95,8 +95,9 @@
 | [ROADMAP.md](ROADMAP.md) | **어디로 가는가.** 최종 시스템 목표·학기 계획·계획 대비 실제 | 학기 단위 |
 | [BACKLOG.md](BACKLOG.md) | 미해결 항목. [즉시/위험] vs [TODO/품질] | 발견·해결 시 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 팀 협업 규칙 (브랜치 구조·작업 루틴·충돌 해결) | 거의 없음 |
-| [planning/제품_방향.md](planning/제품_방향.md) | **무엇을 만들고 싶은가**와 **아직 안 정한 것**(⏸️ 열린 결정). computer use와의 비교, 10월 이전 3주 제안 | 결정이 날 때마다 |
-| [meetings/](meetings/) | **미팅 브리프.** 날짜별로 **동결된 스냅샷**이라 나중에 갱신하지 않는다 | 미팅 때마다 새 파일 |
+
+> 🔒 **저장소에 없는 문서 3개**(`docs/planning/` · `docs/meetings/` · `docs/presentation/`)는
+> 아래 「저장소에 없는 문서」 절에 있다. 로컬에는 있고 git에만 안 올라간다.
 
 ### 설계 문서 (ADR) — [design/](design/)
 
@@ -119,17 +120,24 @@
 > ⚠️ 세 문서가 자동/수동 경계를 서로 다르게 잡고 있어 부분적으로 낡았다.
 > 통합은 [BACKLOG BL-10](BACKLOG.md) 참조.
 
-### 발표 자료 — [presentation/](presentation/)
+### 🔒 저장소에 없는 문서 — 로컬 전용
 
-2026.06.15 데모 시점 산출물. 개발 코드와 생명주기가 달라 분리 보관.
+아래 세 폴더는 **개인 작성용이라 `.gitignore`에 있다**(2026-09-08 결정).
+저장소가 public이기 때문이다. **로컬 작업 트리에는 그대로 있으므로 열어서 읽으면 되고,**
+여기서는 **링크가 아니라 경로로만** 적는다 — 링크로 걸면 CI 링크 검사와 GitHub 양쪽에서
+깨진다(체크아웃에는 이 폴더들이 없다).
 
-> ⚠️ **여기는 과거 스냅샷이다.** 슬라이드에 방학·2학기 로드맵이 들어 있었으나,
-> 계획은 [ROADMAP.md](ROADMAP.md)가 담당한다. 슬라이드는 갱신하지 않는다.
+| 경로 | 내용 |
+|---|---|
+| `docs/planning/제품_방향.md` | **무엇을 만들고 싶은가**와 **아직 안 정한 것**(⏸️ 열린 결정). computer use와의 비교, 10월 이전 3주 제안 |
+| `docs/meetings/` | **미팅 브리프.** 날짜별로 **동결된 스냅샷**이라 나중에 갱신하지 않는다 |
+| `docs/presentation/` | 2026.06.15 데모 시점 산출물 — `STUDY_GUIDE.md`(발표용 기술 가이드) · `pluiz_QnA.md`(예상 질문 답변서) · `pluiz_evolution.md`(V0 → V1 → V2) · `pluiz_presentation.html`(reveal.js 슬라이드 + 다이어그램 8개) |
 
-- [STUDY_GUIDE.md](presentation/STUDY_GUIDE.md) — 발표용 기술 가이드 (948줄, 심사 Q&A 대비)
-- [pluiz_QnA.md](presentation/pluiz_QnA.md) — 예상 질문 답변서 (정당성·차별성·기여도)
-- [pluiz_evolution.md](presentation/pluiz_evolution.md) — V0 → V1 → V2 발전사
-- `pluiz_presentation.html` — reveal.js 슬라이드 · 다이어그램 SVG/PNG 8개
+> ⚠️ `docs/presentation/`은 **과거 스냅샷이다.** 슬라이드에 방학·2학기 로드맵이 들어
+> 있었으나 계획은 [ROADMAP.md](ROADMAP.md)가 담당한다. 슬라이드는 갱신하지 않는다.
+>
+> ⚠️ **이 폴더들은 2026-09-08 이전 커밋 히스토리에는 남아 있다.**
+> `docs/presentation/`은 그 시점에 **이미 원격에 올라가 있었다.**
 
 ### 아카이브 — [../archive/](../archive/)
 
