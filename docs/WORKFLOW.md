@@ -78,8 +78,9 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_voice_thread.py      # 음성·텍스트 대화 공유  11/11
 "$PY" tests/test_ui_locate.py         # UI 요소 좌표 인식      41/41
 "$PY" tests/test_click_ui.py          # 좌표 클릭(승인 필수)   28/28
-"$PY" tests/test_screen_monitor.py    # 화면 변화 모니터링    138/138
+"$PY" tests/test_screen_monitor.py    # 화면 변화 모니터링    139/139
 "$PY" tests/test_plan_node.py         # 계획 수립 노드(M3)     37/37
+"$PY" tests/test_vision.py            # Vision 계약 + 응답 로그 옵트인 17/17
 "$PY" tests/test_running_apps.py      # 실행 중인 앱 목록      12/12
 "$PY" tests/test_wakeword_ui.py       # 웨이크워드 설정 UI 배선 25/25
 "$PY" tests/test_trim.py              # 히스토리 trim
@@ -89,8 +90,8 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_dependencies.py     # ★ requirements.txt 선언 = 실제 설치인지
 ```
 
-전체 mock 스위트는 **31파일 810개**([README 상태표](README.md)가 출처). 이 중 `test_dependencies.py`(34개)는 로컬 전용이라
-CI는 30파일 776개를 돌린다. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
+전체 mock 스위트는 **31파일 816개**([README 상태표](README.md)가 출처). 이 중 `test_dependencies.py`(34개)는 로컬 전용이라
+CI는 30파일 782개를 돌린다. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
 
 ### 테스트는 제품 로그를 건드리지 않는다
 
