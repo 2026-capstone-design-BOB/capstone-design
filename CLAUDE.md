@@ -119,7 +119,7 @@ export PYTHONIOENCODING=utf-8
 launch.bat                  # 서버 + Electron UI
 python main.py              # 서버만
 
-python tests/test_graph_agent.py  # 6/6
+python tests/test_graph_agent.py  # 17/17
 python tests/test_cache_learn.py  # 15/15
 python tests/test_hitl_agent.py   # 8/8
 ```

@@ -151,6 +151,7 @@ V1 → V2로 어떻게 발전했는지를 보여주는 게 이 프로젝트의 �
 |---|---|
 | `wakeword_data.py` | 웨이크워드 학습 데이터 생성 (edge-tts 합성 · 증강) |
 | `train_wakeword.py` | 웨이크워드 모델 학습 → `services/wakeword_model.npz` |
+| `check_deps_drift.py` | `requirements.lock.txt` 고정 버전 vs PyPI 최신 대조 → [`docs/research/`](research/) ② 항목을 채운다. **stdlib만 쓴다** |
 
 **규칙 두 가지**
 
