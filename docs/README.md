@@ -71,6 +71,7 @@
 | **캐시 매칭·학습 수정** | [ARCHITECTURE.md § 캐시](ARCHITECTURE.md#커맨드-캐시) → [design/M1_P4_캐시정책.md](design/M1_P4_캐시정책.md) |
 | **구조를 바꾸는 큰 결정** | [design/](design/)에 ADR 먼저 작성 → [WORKFLOW.md § 설계 결정](WORKFLOW.md#설계-결정-adr) |
 | **«이걸 왜 만드나»가 흔들릴 때** | [planning/제품_방향.md](planning/제품_방향.md) — 제품 판단과 열린 결정 |
+| **미팅·보고 자료 준비** | [meetings/](meetings/) — 날짜별 동결 스냅샷. 가장 최근 것을 골라 새로 쓴다 |
 | **테스트 작성·실행** | [WORKFLOW.md § 테스트](WORKFLOW.md#테스트) · 수동 항목은 [testing/](testing/) |
 | **환경이 이상할 때 (도구가 조용히 안 됨)** | `python tests/test_dependencies.py` → [WORKFLOW.md § 의존성](WORKFLOW.md#️-의존성이-없으면-도구가-조용히-죽는다) |
 | **커밋·브랜치·PR** | [WORKFLOW.md § 커밋 컨벤션](WORKFLOW.md#커밋-컨벤션) · [CONTRIBUTING.md](CONTRIBUTING.md) |
@@ -95,6 +96,7 @@
 | [BACKLOG.md](BACKLOG.md) | 미해결 항목. [즉시/위험] vs [TODO/품질] | 발견·해결 시 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 팀 협업 규칙 (브랜치 구조·작업 루틴·충돌 해결) | 거의 없음 |
 | [planning/제품_방향.md](planning/제품_방향.md) | **무엇을 만들고 싶은가**와 **아직 안 정한 것**(⏸️ 열린 결정). computer use와의 비교, 10월 이전 3주 제안 | 결정이 날 때마다 |
+| [meetings/](meetings/) | **미팅 브리프.** 날짜별로 **동결된 스냅샷**이라 나중에 갱신하지 않는다 | 미팅 때마다 새 파일 |
 
 ### 설계 문서 (ADR) — [design/](design/)
 
