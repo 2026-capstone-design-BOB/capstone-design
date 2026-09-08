@@ -95,6 +95,58 @@ if missing:
     print(f"\n  설치 명령: pip install {' '.join(missing)}")
 
 
+# ── 잠금 파일이 지금 환경을 실제로 설명하는가 ──────────────────────
+# requirements.txt 는 **하한만** 적는다. 그래서 설치할 때마다 최신이 들어오고,
+# **코드를 하나도 안 고쳐도 어느 날 깨진다.** 실제로 `langgraph>=0.2.0` 이라고
+# 적힌 채 1.x 가 돌고 있었고, 메이저가 두 번 올라가는 동안 아무도 몰랐다.
+# requirements.lock.txt 가 «mock 776개가 통과한 그 조합»이다.
+#
+# ⚠️ 전이 의존성까지 FAIL 로 잡지는 않는다. 다른 설치 과정에서 조용히 올라가는 일이
+#   흔한데 그때마다 빨간불이 뜨면 사람이 테스트를 안 믿게 된다 — 그게 더 나쁘다.
+#   대신 목록은 보여준다. **직접 의존성이 어긋난 것은 FAIL 이다** — lock 이
+#   거짓말을 하고 있다는 뜻이고, 그 상태로는 재현이 안 된다.
+print("\n=== requirements.lock.txt 가 지금 환경과 맞는가 ===")
+try:
+    from importlib.metadata import version as _ver, PackageNotFoundError
+
+    def _norm(n):
+        """PEP 503 정규화 — Pillow/pillow, langchain_core/langchain-core 를 같게 본다."""
+        return re.sub(r"[-_.]+", "-", n).lower()
+
+    _lock_path = os.path.join(_ROOT, "requirements.lock.txt")
+    check("requirements.lock.txt 존재", os.path.exists(_lock_path), _lock_path)
+
+    _locked = {}
+    if os.path.exists(_lock_path):
+        with open(_lock_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.split("#")[0].strip()
+                if "==" in line:
+                    _n, _v = line.split("==", 1)
+                    _locked[_norm(_n)] = _v.strip()
+
+    _direct = {_norm(p) for p in _declared_packages()}
+    _drift_direct, _drift_other = [], []
+    for _name, _want in _locked.items():
+        try:
+            _have = _ver(_name)
+        except PackageNotFoundError:
+            _have = None
+        if _have != _want:
+            (_drift_direct if _name in _direct else _drift_other).append(
+                f"{_name}: lock {_want} / 설치 {_have or '없음'}")
+
+    check(f"직접 의존성 {len(_direct)}개가 lock 과 일치",
+          not _drift_direct, "; ".join(_drift_direct))
+
+    if _drift_other:
+        print(f"  · 전이 의존성 {len(_drift_other)}개가 lock 과 다르다 (FAIL 아님) — "
+              f"예: {_drift_other[0]}")
+        print("    갱신: pip freeze > requirements.lock.txt  →  테스트를 다시 돌릴 것")
+except Exception as e:
+    check("lock 대조", False, str(e))
+
+
 # ── 삭제 안전성: 폴백이 아니라 실제 휴지통을 쓰는가 ────────────────
 print("\n=== 삭제가 휴지통을 거치는가 (복구 가능성) ===")
 try:

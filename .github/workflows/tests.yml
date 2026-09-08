@@ -23,10 +23,17 @@ jobs:
       # mock 테스트는 llm·tools·security_check를 전부 주입받으므로
       # Windows API나 LLM 키 없이 동작한다. requirements.txt 전체(playwright·
       # faster-whisper·pyautogui 등)는 불필요하고 헤드리스에서 깨지므로 설치하지 않는다.
-      - name: 의존성 설치
+      # ⚠️ 버전 숫자를 여기에 적지 말 것. 적는 순간 requirements.lock.txt와 두 곳이 되고,
+      #   한쪽만 갱신돼 어긋난다(이 저장소가 이미 겪은 사고다). lock에서 뽑아 쓴다.
+      #   하한(">=")으로 두면 매번 최신이 들어와 **코드를 안 고쳐도 어느 날 깨진다** —
+      #   실제로 requirements.txt는 langgraph>=0.2.0인데 도는 것은 1.x다.
+      - name: 의존성 설치 (버전은 requirements.lock.txt에서)
         run: |
           python -m pip install --upgrade pip
-          pip install "langgraph>=0.2.0" "langchain-core>=0.3.0"
+          pins=$(grep -E '^(langgraph|langchain-core)==' requirements.lock.txt | tr -d '\r')
+          test -n "$pins" || { echo "::error::lock에서 langgraph/langchain-core를 못 찾았다"; exit 1; }
+          echo "$pins"
+          pip install $pins
 
       - name: 문법 검사
         run: |
