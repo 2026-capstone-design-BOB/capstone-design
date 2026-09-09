@@ -76,10 +76,10 @@ START → input_guard ─(차단)────→ output_guard → END
 |---|---|
 | `input_guard` | 코드 레벨 보안 검사 (OWASP LLM01/02) |
 | `fast_path` | 캐시 + 결정론적 라우터. **히트해도 결과를 `state.messages`에 기록** |
-| `planner` | 복합 명령을 **최대 2단계로 나눠 상태에 적는다**(M3). 실행은 하지 않는다. **기본 꺼짐** |
+| `planner` | 복합 명령을 **최대 2단계로 나눠 상태에 적는다**(M3). 실행은 하지 않는다. **기본 켜짐**(2026-09-07 라이브 확인 후 — `.env` `PLAN_ENABLED=false`로 끔) |
 | `agent` | LLM ReAct 추론 (동기 invoke). 계획이 있으면 **지금 실행할 단계만** 지시받는다 |
 | `tools` | LangGraph `ToolNode` |
-| `hitl` | 위험 도구 실행 전 `interrupt()` 사람 승인 |
+| `hitl` | 위험 도구 실행 전 `interrupt()` 사람 승인. **거부해도 같은 배치의 안전한 호출은 새 id로 재발행해 살린다**(BL-20, 2026-09-09) → [ADR](design/BL-20_거부후_안전호출.md) |
 | `visual_verify` | 도구 실행 결과를 **화면으로** 확인해 증거를 도구 결과에 붙임 (Phase 2) |
 | `output_guard` | 빈 응답 복구 + 도구 오류인데 성공처럼 답한 경우 보정 (LLM05, reflection). **아무 일도 안 일어난 턴은 "실행했다"고 하지 않는다** |
 
