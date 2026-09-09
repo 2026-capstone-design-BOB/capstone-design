@@ -359,6 +359,42 @@ def _open_new_view(app_key: str, name: str) -> str:
 
 # ── 도구 정의 ─────────────────────────────────────────────────────
 
+def _await_window(app_key: str, timeout: float = 5.0, poll: float = 0.25) -> int:
+    """창이 **실제로 뜰 때까지** 기다린다. 뜨면 hwnd, 아니면 0.
+
+    🚨 **2026-09-09 — 이 함수가 없어서 거짓말을 했다.**
+      `open_app("설정")`이 셸 명령(`ms-settings:`)을 쏘고 `time.sleep(0.5)` 뒤에
+      **«✓ 설정 창을 앞으로 가져왔습니다»** 라고 답했다. 창이 떴는지 보지 않았고,
+      실제로 설정 창은 뜨지 않았다. 사용자 평: *"설정창 띄워주지도 않고 거짓말도 하네."*
+
+    ⚠️ UWP 앱(설정 등)은 **0.5초로는 안 뜬다.** 그리고 `_is_running`이 True여도
+      창이 없을 수 있다 — Windows가 `SystemSettings.exe`를 창 없이 **살려 둔다.**
+      «프로세스가 있다»와 «창이 보인다»는 다른 사실이고, 사용자가 원한 건 뒤쪽이다.
+    """
+    import time as _t
+    deadline = _t.monotonic() + max(0.0, timeout)
+    while True:
+        hwnd = find_hwnd_for_app(app_key)
+        if hwnd:
+            return hwnd
+        if _t.monotonic() >= deadline:
+            return 0
+        _t.sleep(poll)
+
+
+def _launched_or_honest(app_key: str, name: str, eul_reul: str,
+                        timeout: float = 5.0) -> str:
+    """실행을 시도한 **뒤** 창을 확인하고, 본 대로 답한다.
+
+    창이 안 뜨면 «열었다»고 하지 않는다 — 이 저장소가 반복해서 고쳐 온 결함이
+    **«안 한 걸 했다고 말하는 것»** 이다(BL-12·BL-19·BL-21).
+    """
+    if _await_window(app_key, timeout):
+        return f"✓ {name}{eul_reul} 열었습니다."
+    return (f"⚠️ {name} 실행을 시도했지만 창이 나타나지 않았습니다. "
+            f"잠시 뒤 다시 시도하거나 직접 열어 주세요.")
+
+
 @tool
 def open_app(app: str, new: bool = False) -> str:
     """
@@ -402,8 +438,10 @@ def open_app(app: str, new: bool = False) -> str:
         if app_key in _UWP_SHELL_COMMANDS:
             try:
                 subprocess.Popen(_UWP_SHELL_COMMANDS[app_key], shell=True)
-                time.sleep(0.5)
-                return f"✓ {name} 창을 앞으로 가져왔습니다."
+                # ⚠️ **«앞으로 가져왔습니다»라고 하지 않는다.** 포커스는 이미 실패했고
+                #   여기서 하는 일은 **새로 띄우는 것**이다. 그리고 떴는지 확인한다 —
+                #   확인 없이 성공을 보고하던 게 2026-09-09의 그 거짓말이다.
+                return _launched_or_honest(app_key, name, eul_reul)
             except Exception:
                 pass
         # 프로세스는 살아있지만 visible 창이 없음 (트레이 앱 등)
@@ -412,8 +450,7 @@ def open_app(app: str, new: bool = False) -> str:
         if path:
             try:
                 subprocess.Popen([path])
-                time.sleep(0.8)
-                return f"✓ {name} 창을 열었습니다."
+                return _launched_or_honest(app_key, name, eul_reul)
             except Exception:
                 pass
         return f"⚠️ {name}은(는) 실행 중인데 창을 앞으로 못 가져왔어요. 작업표시줄/트레이에서 직접 클릭해 주세요."
@@ -422,8 +459,9 @@ def open_app(app: str, new: bool = False) -> str:
     if app_key in _UWP_SHELL_COMMANDS:
         try:
             subprocess.Popen(_UWP_SHELL_COMMANDS[app_key], shell=True)
-            time.sleep(0.5)
-            return f"✓ {name}{eul_reul} 실행했습니다."
+            # UWP는 뜨는 데 몇 초 걸린다. 0.5초 자고 «실행했습니다»라고 하면
+            # 사용자가 보기엔 아무 일도 안 일어난 채 성공 메시지만 뜬다.
+            return _launched_or_honest(app_key, name, eul_reul)
         except Exception as e:
             return f"✗ {name} 실행 실패: {e}"
 

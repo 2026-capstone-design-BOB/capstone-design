@@ -45,6 +45,11 @@ CACHE_FILE = (os.environ.get("PLUIZ_CACHE_FILE")
               or os.path.join(_BASE_DIR, "cache", "command_cache.json"))
 SIMILARITY_THRESHOLD = 0.80
 
+# Stage 1(intent) 히트에서 **커버되지 않은 실질 어절**의 허용 상한.
+# 이보다 많으면 «명령어를 스쳐 지나가는 긴 문장»으로 보고 캐시를 쓰지 않는다.
+# 2026-09-09 실측으로 정했다 — 캐시 패턴 44개는 전부 0~1개, 실기 사고 문장은 5·9개.
+_MAX_UNCOVERED_TOKENS = 3
+
 
 # ── 한국어 조사 선택 헬퍼 ─────────────────────────────────────────
 
@@ -414,6 +419,27 @@ class CommandCache:
                 j += 1
             if j < len(tokens):
                 covered.add(j)
+
+        # 🚨 **문장의 대부분이 명령과 무관하면 명령이 아니다.** (2026-09-09)
+        #
+        # 실기 사고: *"아니 설정 창은 애초에 실행 중이지 않았는데 뭘 가져와 너 왜
+        # 나한테 뻥카 치냐"* 가 `설정 열어줘`에 매칭돼 **불평이 명령으로 실행됐다.**
+        # 「설정」+「실행」이 문장 어디에든 있으면 intent가 잡히는데, 아래 어미 검사는
+        # 그걸 못 걸렀다(명령형으로 끝나는 어절이 없었다).
+        #
+        # 어미 목록을 늘리는 땜질은 하지 않는다(위 docstring의 원칙). 대신
+        # **커버율**을 본다 — 캐시는 «짧고 곧은 명령»을 위한 것이고, 명령어를
+        # 스쳐 지나갈 뿐인 긴 문장은 LLM이 문장 전체를 읽어야 한다.
+        #
+        # 임계 3은 실측으로 정했다: **캐시 패턴 44개 중 막히는 것 0개**,
+        # 위 두 사고 문장은 각각 5개·9개가 남는다. 여유가 크다.
+        # ⚠️ 오판의 방향도 안전하다 — True로 잘못 봐도 **LLM이 해석**하므로
+        #   느려질 뿐 틀리지 않는다.
+        leftover = sum(1 for i, tok in enumerate(tokens)
+                       if i not in covered and len(tok) >= 2
+                       and tok not in _FILLER_TOKENS)
+        if leftover >= _MAX_UNCOVERED_TOKENS:
+            return True
 
         for i, tok in enumerate(tokens):
             if i in covered:
