@@ -75,7 +75,8 @@ def run():
     sent = []
     P.set_notifier(lambda p: sent.append(p))
     check("처음엔 표시 없음", P.is_visible() is False)
-    check("표시 없을 때 wait는 즉시 통과", P.wait_until_clear(timeout=0.05) is True)
+    check("표시가 없으면 캡처는 아무것도 안 한다",
+          P.clear_for_capture("t") is False)
 
     P.show(pl)
     check("show → 표시 중", P.is_visible() is True)
@@ -95,15 +96,23 @@ def run():
     P.reset()
     P.show({**pl, "seconds": 0.15})
     check("띄운 직후엔 보인다", P.is_visible() is True)
-    check("만료를 기다리면 사라진다", P.wait_until_clear(timeout=2.0) is True)
+    import time as _t
+    _t.sleep(0.3)
     check("만료 후 is_visible False", P.is_visible() is False)
 
-    print("=== ② 안 사라지면 캡처는 «기다렸다 그냥 찍는다» ===")
+    # 🚨 2026-09-09 정정 — 캡처는 «기다리지» 않고 «치운다».
+    #    기다리던 시절, 한 턴에 포인팅+화면설명이 같이 오면 8초가 통째로 지연에
+    #    얹혀 턴이 28초가 됐다(실측). 아래가 그 회귀를 막는다.
+    print("=== ② 캡처는 표시를 «기다리지» 않고 «치운다» (지연 회귀 방지) ===")
     P.reset()
-    P.show({**pl, "seconds": 30})     # 캡처 대기보다 훨씬 길게
-    check("시간 안에 안 사라지면 False를 돌려준다(그래도 찍는다)",
-          P.wait_until_clear(timeout=0.2) is False)
-    check("캡처를 포기하지는 않는다 — 표시는 그대로", P.is_visible() is True)
+    P.show({**pl, "seconds": 30})     # 오래 남는 표시
+    t0 = _t.monotonic()
+    cleared = P.clear_for_capture("테스트")
+    elapsed = _t.monotonic() - t0
+    check("표시가 있으면 치웠다고 답한다", cleared is True)
+    check("치운 뒤에는 표시가 없다", P.is_visible() is False)
+    check("기다리지 않는다 (0.5초 미만)", elapsed < 0.5)
+    check("치울 때 point_clear가 나간다", sent[-1]["type"] == "point_clear")
     P.reset()
 
     print("=== ② remaining은 주입한 시계로 계산된다 ===")

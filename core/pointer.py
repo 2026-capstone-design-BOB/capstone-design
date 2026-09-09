@@ -11,7 +11,7 @@
   - **캡처 도구**(`take_screenshot` → `describe_screen`·`locate_ui_element`)
     캡처에 우리 고리가 들어가 Gemini가 그걸 화면의 일부로 읽는다.
     최악은 **자기가 그린 표시를 UI 요소로 되짚는** 것이다.
-    → `wait_until_clear()`로 **표시가 끝나기를 기다렸다** 찍는다.
+    → `clear_for_capture()`로 **먼저 치우고** 찍는다.
 
   - **화면 감시**(`core/screen_monitor`)
     프리필터가 로컬 픽셀 비교라 **오버레이가 뜨고 지는 것 자체가 «변화»** 다.
@@ -19,8 +19,10 @@
     전송량 방어가 헛돈다.
     → 그 구간의 프레임을 **비교에서 제외하고 기준 프레임을 유지**한다.
 
-⚠️ 「지우고 찍는다」가 아니라 **「끝나기를 기다린다」**이다. 지웠다 다시 띄우면
-   사용자 화면이 깜빡이고, 그 깜빡임이 또 변화로 잡힌다.
+🚨 **2026-09-09 정정.** 원래 설계는 「끝나기를 기다린다」였는데, 실기에서 한 턴에
+   포인팅+화면설명이 같이 오자(계획 2단계) 8초가 통째로 지연에 얹혀 **턴이 28초**가
+   됐다. 다시 띄우지 않으므로 «깜빡임이 변화로 잡힌다»는 걱정도 성립하지 않는다.
+   자세한 근거는 `clear_for_capture()` 안에 있다.
 
 ## 이 모듈은 아무것도 그리지 않는다
 
@@ -40,10 +42,6 @@ log = logging.getLogger("pluiz.pointer")
 # always-on-top 전체화면 오버레이가 남으면 PC를 못 쓰게 만든다(ADR §4-2).
 # 「사용자가 끄면 되니까」로 이 값을 없애지 말 것.
 POINTER_SECONDS = 8.0
-
-# 캡처가 표시를 기다리는 최대 시간. POINTER_SECONDS보다 **조금 길게** 둔다 —
-# 같으면 경계에서 아슬아슬하게 못 기다리고 오버레이가 낀 화면을 찍는다.
-CAPTURE_WAIT_MAX = POINTER_SECONDS + 1.0
 
 _lock = threading.Lock()
 _visible_until: float = 0.0          # time.monotonic() 기준. 0이면 표시 없음
@@ -133,22 +131,30 @@ def hide(reason: str = "") -> None:
         _dispatch({"type": "point_clear"})
 
 
-def wait_until_clear(timeout: Optional[float] = None, poll: float = 0.1) -> bool:
-    """표시가 사라질 때까지 기다린다. 안 떠 있으면 **즉시** True.
+def clear_for_capture(reason: str = "캡처") -> bool:
+    """캡처 직전에 표시를 **치운다.** 이미 없으면 아무 일도 하지 않는다.
 
-    반환값은 «깨끗한 화면인가»다. 시간이 다 돼도 안 사라졌으면 False —
-    그때는 **찍긴 찍는다.** 캡처를 아예 포기하면 포인팅 때문에 다른 기능이
-    죽는 것이고, 그건 이 기능이 감당할 대가가 아니다.
-    ⚠️ 대신 로그를 남긴다. 조용히 오염된 화면을 내보내지 않는다.
+    반환값은 «치웠는가»(=표시가 떠 있었는가)다.
+
+    🚨 **2026-09-09 정정 — 원래는 «사라지기를 기다렸다»(ADR §5).**
+      실기에서 그 대가가 측정됐다: 한 턴에 `point_at_element`와 `describe_screen`이
+      같이 들어가면(계획 2단계 — 흔한 조합이다) 캡처가 표시 8초를 **통째로 기다려**
+      턴이 28초가 됐다. 그중 9초가 이 대기였다.
+
+      ADR이 «지우지 말고 기다리라»고 한 근거는 *"지웠다 **다시 띄우면** 화면이
+      깜빡이고 그 깜빡임이 또 감시의 변화로 잡힌다"* 였다. 그런데 **다시 띄우지
+      않는다.** 그리고 감시의 기준 프레임은 표시 이전 화면 그대로다(표시 구간을
+      건너뛰므로) — 지우고 나면 그 기준과 **같은 화면**이라 변화로 잡히지도 않는다.
+      즉 기다릴 이유가 처음부터 없었고, 남는 건 지연뿐이었다.
+
+    ⚠️ 사용자 눈에는 표시가 예정보다 일찍 사라진다. 그건 대가가 맞지만,
+      캡처를 시킨 것 자체가 «지금 화면을 보여 달라»는 뜻이고 **우리 오버레이는
+      그 화면의 일부가 아니다.**
     """
-    timeout = CAPTURE_WAIT_MAX if timeout is None else timeout
-    deadline = time.monotonic() + max(0.0, timeout)
-    while is_visible():
-        if time.monotonic() >= deadline:
-            log.warning("[Point] 표시가 %.1f초 안에 안 사라져 그대로 캡처한다 "
-                        "— 화면에 우리 표시가 찍힐 수 있다", timeout)
-            return False
-        time.sleep(poll)
+    if not is_visible():
+        return False
+    log.info("[Point] 캡처를 위해 표시를 먼저 치운다 | 사유=%s", reason)
+    hide(reason)
     return True
 
 

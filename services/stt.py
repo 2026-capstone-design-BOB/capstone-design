@@ -11,9 +11,12 @@ Google STT 실패(RequestError, UnknownValueError 등) 시 자동으로 Whisper 
 
 import os
 import socket
+import logging
 import tempfile
 import threading
 import time
+
+log = logging.getLogger("pluiz.stt")
 
 from config.settings import get_settings
 
@@ -154,16 +157,33 @@ class STTService:
             f.write(audio_bytes)
             webm_path = f.name
 
+        # 🚨 2026-09-09 — 여기는 `print`만 하고 있어서 **로그 파일에 아무것도 안 남았다.**
+        #   사용자가 *"음성 입력을 이해 못하겠다고 뜬다"* 고 했을 때 `logs/pluiz.log`에
+        #   STT 줄이 한 줄도 없어 **원인을 좁힐 수가 없었다.** 콘솔은 서버를 띄운
+        #   창에만 있고 그 창은 대개 닫혀 있다. 진단은 파일에 남아야 한다.
+        size = len(audio_bytes)
+        log.info("[STT] 인식 시작 | %d bytes | %s", size,
+                 "google" if _is_online() else "whisper(오프라인)")
+        if size < 2000:
+            # 빈 녹음은 STT가 아니라 **마이크·녹음 쪽** 문제다. 갈라서 남긴다.
+            log.warning("[STT] 오디오가 너무 짧다(%d bytes) — 녹음이 안 됐을 수 있다", size)
+
         try:
             if _is_online():
                 result = self._transcribe_google(webm_path)
                 if result is not None:
+                    log.info("[STT] google 성공 | %d자 | %r", len(result), result[:40])
                     return _postprocess(result)
                 print("[STT] Google STT 실패 → Whisper 폴백")
+                log.info("[STT] google 실패 → whisper 폴백")
             else:
                 print("[STT] 오프라인 → Whisper 사용")
 
             result = self._transcribe_whisper(webm_path)
+            if not (result or "").strip():
+                log.warning("[STT] whisper도 빈 결과 — 사용자에게 «인식하지 못했다»가 나간다")
+            else:
+                log.info("[STT] whisper 성공 | %d자 | %r", len(result), result[:40])
             return _postprocess(result)
 
         finally:

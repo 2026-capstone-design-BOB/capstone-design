@@ -264,12 +264,40 @@ function ensurePointerWindow() {
   return pointerWindow;
 }
 
+// 🚨 파이썬이 주는 좌표는 **물리 픽셀**이고 Electron의 창·CSS는 **DIP**다.
+// 2026-09-09 실측: 이 PC는 물리 3072×1920 / DIP 1536×960 — **배율 2.0**.
+// 변환하지 않으면 고리가 정확히 배율만큼 어긋난 자리에 그려진다(실기에서 그랬다).
+//   물리 (974, 778)  →  DIP (487, 389)
+// ⚠️ 「화면이 크니까 대충 맞겠지」로 넘길 수 없다. 배율 100%인 PC에서는 이 버그가
+//    **보이지 않으므로**, 여기를 고치면서 배율 없는 환경만 보고 판단하지 말 것.
+function toDip(x, y) {
+  try {
+    const p = screen.screenToDipPoint({ x: Math.round(x), y: Math.round(y) });
+    if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) return p;
+  } catch (e) { /* 아래 배율 나눗셈으로 폴백 */ }
+  const sf = screen.getPrimaryDisplay().scaleFactor || 1;
+  return { x: x / sf, y: y / sf };
+}
+
 function showPointer(p) {
   const win = ensurePointerWindow();
-  const b = screen.getPrimaryDisplay().bounds;
+  const b = screen.getPrimaryDisplay().bounds;      // DIP
+
+  // 물리 픽셀 → DIP 로 옮긴 뒤에 보낸다. 렌더러는 CSS px(=DIP)로만 계산한다.
+  const conv = { ...p };
+  if (Array.isArray(p.rect) && p.rect.length === 4) {
+    const a = toDip(p.rect[0], p.rect[1]);
+    const c = toDip(p.rect[2], p.rect[3]);
+    conv.rect = [a.x, a.y, c.x, c.y];
+  }
+  if (Array.isArray(p.center) && p.center.length === 2) {
+    const m = toDip(p.center[0], p.center[1]);
+    conv.center = [m.x, m.y];
+  }
+
   const send = () => {
     // 화면 좌표 → 오버레이 창 기준 좌표. 원점이 (0,0)이 아닌 배치가 있어 뺀다.
-    win.webContents.send('point-draw', { ...p, originX: b.x, originY: b.y });
+    win.webContents.send('point-draw', { ...conv, originX: b.x, originY: b.y });
     win.showInactive();        // ★ show()가 아니다 — 포커스를 가져오지 않는다
   };
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
