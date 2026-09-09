@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('pluiz', {
   showWindow:   ()   => ipcRenderer.send('show-window'),
   resizeIdle:   ()   => ipcRenderer.send('resize-idle'),
   resizeActive: ()   => ipcRenderer.send('resize-active'),
+  pointShow:    (p)  => ipcRenderer.send('point-show', p),
+  pointHide:    ()   => ipcRenderer.send('point-hide'),
   onToggleActive:   (cb) => ipcRenderer.on('toggle-active',    () => cb()),
   onWakeDetected:   (cb) => ipcRenderer.on('wake-detected',    () => cb()),
   onWakewordStatus: (cb) => ipcRenderer.on('wakeword-status',  (_e, s) => cb(s)),

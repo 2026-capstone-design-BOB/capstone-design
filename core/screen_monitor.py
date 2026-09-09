@@ -157,10 +157,14 @@ class ScreenMonitor:
         config_provider: Optional[Callable[[], dict]] = None,
         sleep: Optional[Callable[[float], None]] = None,
         now: Callable[[], float] = time.monotonic,
+        pointer_visible: Optional[Callable[[], bool]] = None,
     ):
         self._capture = capture_signature
         self._vision = vision_check
         self._notify = notify
+        # 포인팅 표시(M4)가 화면에 떠 있는지. **None이면 항상 False** —
+        # mock 테스트와 포인팅 없는 환경에서 지금까지와 똑같이 돈다.
+        self._pointer_visible = pointer_visible or (lambda: False)
         self._on_state = on_state
         self._config_provider = config_provider or (lambda: {})
         self._sleep_fn = sleep
@@ -372,6 +376,18 @@ class ScreenMonitor:
                 self._finish(REASON_BUDGET)
                 return
 
+            # ── 포인팅 표시 구간은 **비교에서 제외한다** (M4 ADR §5) ──
+            # 오버레이는 전체화면 always-on-top이라 프리필터의 로컬 픽셀 비교에
+            # **변화로 잡힌다.** 거르지 않으면 우리가 우리를 감시하고,
+            # «변화가 있을 때만 화면을 내보낸다»는 전송량 방어가 헛돈다.
+            # ⚠️ **baseline을 갱신하지 않고 넘긴다.** 오버레이가 낀 프레임을
+            #   기준으로 삼으면 **사라질 때 또 변화로 잡힌다** — 한 번 새는 게
+            #   아니라 뜰 때와 질 때 두 번 샌다.
+            if self._pointer_visible():
+                log.debug("[Monitor] 포인팅 표시 중 — 이 프레임은 건너뛴다")
+                self._sleep(interval)
+                continue
+
             sig = self._safe_capture()
             if sig is None:
                 capture_fails += 1
@@ -511,6 +527,11 @@ def _prod_vision(window: str, what: str) -> dict:
     return vision_watch_check(window, what)
 
 
+def _prod_pointer_visible() -> bool:
+    from core.pointer import is_visible
+    return is_visible()
+
+
 def _prod_config() -> dict:
     """시작할 때마다 `.env`를 다시 읽는다 (`get_settings`는 `@lru_cache`다 — 절대규칙 4)."""
     from config.settings import get_settings
@@ -532,6 +553,7 @@ def get_monitor() -> ScreenMonitor:
     if _instance is None:
         _instance = ScreenMonitor(
             capture_signature=_prod_capture,
+            pointer_visible=_prod_pointer_visible,
             vision_check=_prod_vision,
             notify=_prod_notify,
             on_state=_prod_state,

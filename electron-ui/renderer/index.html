@@ -1667,6 +1667,13 @@
           onWatchNotify(m);
         } else if (m.type === 'watch_state') {
           setWatchBadge(m.active);
+        } else if (m.type === 'point') {
+          // 포인팅 표시(M4). 감시 알림과 같은 이유로 start/chunk/end와 독립이고,
+          // 창을 앞으로 꺼내지 **않는다** — 사용자가 보던 화면을 가리키는 것이라
+          // 우리 창이 앞에 나오면 정작 가리킨 자리를 덮는다.
+          window.pluiz.pointShow(m);
+        } else if (m.type === 'point_clear') {
+          window.pluiz.pointHide();
         }
       };
     }

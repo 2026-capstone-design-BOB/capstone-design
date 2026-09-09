@@ -295,6 +295,18 @@ def take_screenshot(save_path: str = "", window: str = "") -> str:
     import ctypes
     import ctypes.wintypes
 
+    # ⚠️ 포인팅 표시(M4)가 화면에 떠 있으면 **그것까지 찍힌다.** 전체화면
+    #   always-on-top 오버레이라서다. 그대로 찍으면 Gemini가 우리 고리를 화면의
+    #   일부로 읽고, 최악은 **자기가 그린 표시를 UI 요소로 되짚는** 것이다.
+    #   지웠다 찍지 않고 **끝나기를 기다린다** — 지웠다 다시 띄우면 화면이
+    #   깜빡이고 그 깜빡임이 감시의 «변화»로 또 잡힌다.
+    #   → docs/design/M4_포인팅_확대.md §5
+    try:
+        from core.pointer import wait_until_clear
+        wait_until_clear()
+    except Exception:
+        pass          # 포인팅이 없는 환경(테스트·CI)에서도 캡처는 되어야 한다
+
     if not save_path:
         desktop = os.path.join(os.path.expanduser("~"), "Desktop")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

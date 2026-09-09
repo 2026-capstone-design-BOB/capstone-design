@@ -68,8 +68,11 @@ async def lifespan(_app: FastAPI):
     # 밖에 있으므로, 여기서 잡아 둔 루프로 run_coroutine_threadsafe 해서 건너온다.
     global _main_loop
     _main_loop = asyncio.get_running_loop()
-    from core import screen_monitor
+    from core import screen_monitor, pointer
     screen_monitor.set_notifier(_push_from_monitor)
+    # 포인팅 표시(M4)도 **같은 통로**로 나간다. 두 번째 채널을 만들면 토큰·수명
+    # 관리가 두 벌이 된다. → docs/design/M4_포인팅_확대.md §3-2
+    pointer.set_notifier(_push_from_monitor)
 
     try:
         yield
@@ -77,6 +80,10 @@ async def lifespan(_app: FastAPI):
         # 서버가 내려가면 감시도 멈춘다. 안 그러면 알릴 곳도 없이 화면만 계속 나간다.
         screen_monitor.set_notifier(None)
         screen_monitor.reset_monitor()
+        # 서버가 내려가면 표시도 없앤다. 남겨 두면 «표시 중»으로 알고 캡처가
+        # 기다리는 상태가 되고, 정작 지울 UI는 없다.
+        pointer.set_notifier(None)
+        pointer.reset()
         # 내 토큰일 때만 지운다 (위와 같은 이유의 2차 방어)
         auth.clear_token(expected=_AUTH_TOKEN)
 

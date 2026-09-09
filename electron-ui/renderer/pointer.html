@@ -1,0 +1,132 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Pluiz 포인터</title>
+<!--
+  포인팅 오버레이 (M4) — 화면의 한 자리를 가리킨다.
+  설계: docs/design/M4_포인팅_확대.md
+
+  ⚠️ 이 창은 전체 화면을 덮는다. 그리는 것 말고는 **아무것도 하지 않는다** —
+     클릭은 main.js의 setIgnoreMouseEvents가 통과시키고, 포커스는
+     focusable:false가 막는다. 여기에 버튼이나 입력을 넣지 말 것.
+
+  ⚠️ **정밀한 사각형을 그리지 않는다** (ADR §4-3).
+     좌표는 Vision의 **추정**이다. rect에 딱 맞는 테두리는 «가지지 않은 정밀도»를
+     주장하고, 그러면 틀렸을 때 사용자가 자기가 잘못 본 줄 안다.
+     부드러운 고리는 "이 근처"라고 말한다 — 표현이 확신의 정도와 일치해야 한다.
+-->
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: transparent; overflow: hidden;
+    /* 창 자체가 클릭을 통과시키지만, 여기서도 한 번 더 막는다(2차 방어) */
+    pointer-events: none;
+    font-family: "Pretendard", "Malgun Gothic", system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none;
+  }
+  #halo {
+    position: absolute; display: none; box-sizing: border-box;
+    border-radius: 50%;
+    border: 3px solid rgba(74, 87, 201, .95);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, .85),
+                0 0 22px 6px rgba(74, 87, 201, .45);
+    animation: pulse 1.5s ease-out infinite;
+  }
+  @keyframes pulse {
+    0%   { transform: scale(1);    opacity: 1;   }
+    70%  { transform: scale(1.12); opacity: .55; }
+    100% { transform: scale(1);    opacity: 1;   }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #halo { animation: none; }
+  }
+  /* 라벨은 **표시와 같이 움직여야 한다** — 단서가 문장에만 있으면
+     화면을 보는 동안에는 안 보인다 (ADR §4-3). */
+  #label {
+    position: absolute; display: none; white-space: nowrap;
+    background: rgba(23, 26, 33, .92); color: #fff;
+    padding: 7px 12px; border-radius: 8px;
+    font-size: 14px; font-weight: 600; line-height: 1.3;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .35);
+  }
+  #label .hint { display: block; font-size: 11.5px; font-weight: 400;
+                 opacity: .75; margin-top: 2px; }
+  /* 확대본은 **가장자리**에 띄운다. 가리키려는 자리를 덮으면 §4-1과 같은 실패다. */
+  #zoom {
+    position: absolute; display: none; right: 28px; top: 28px;
+    border: 3px solid rgba(74, 87, 201, .95); border-radius: 10px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .4);
+    background: #000; overflow: hidden;
+  }
+  #zoom img { display: block; image-rendering: pixelated; }
+</style>
+
+<div id="halo"></div>
+<div id="label"></div>
+<div id="zoom"><img id="zoomImg" alt=""></div>
+
+<script>
+  const halo  = document.getElementById('halo');
+  const label = document.getElementById('label');
+  const zoom  = document.getElementById('zoom');
+  const zimg  = document.getElementById('zoomImg');
+
+  // 고리의 최소 크기. 작은 요소를 rect 그대로 그리면 점처럼 보여 못 찾는다.
+  const MIN = 64;
+  const PAD = 18;   // rect보다 넉넉하게 — "이 근처"라는 뜻이다
+
+  window.pointer.onDraw((p) => {
+    const ox = p.originX || 0, oy = p.originY || 0;
+
+    // rect가 있으면 그걸, 없으면 center를 쓴다. 둘 다 없으면 그리지 않는다.
+    let cx, cy, w, h;
+    if (Array.isArray(p.rect) && p.rect.length === 4) {
+      const [l, t, r, b] = p.rect;
+      cx = (l + r) / 2; cy = (t + b) / 2;
+      w = Math.abs(r - l); h = Math.abs(b - t);
+    } else if (Array.isArray(p.center) && p.center.length === 2) {
+      cx = p.center[0]; cy = p.center[1]; w = 0; h = 0;
+    } else {
+      return;                       // 좌표가 없으면 아무것도 그리지 않는다
+    }
+
+    const size = Math.max(MIN, Math.max(w, h) + PAD * 2);
+    halo.style.left   = (cx - ox - size / 2) + 'px';
+    halo.style.top    = (cy - oy - size / 2) + 'px';
+    halo.style.width  = size + 'px';
+    halo.style.height = size + 'px';
+    halo.style.display = 'block';
+
+    // 라벨은 고리 아래에 두되, 화면 밖으로 나가면 위로 접는다.
+    const text = (p.label || '').trim();
+    label.innerHTML = '';
+    const strong = document.createElement('div');
+    strong.textContent = text ? `『${text}』 여기예요` : '여기예요';
+    const hint = document.createElement('span');
+    hint.className = 'hint';
+    hint.textContent = '화면을 보고 추정한 위치예요';   // 단서가 그림과 같이 움직인다
+    label.appendChild(strong); label.appendChild(hint);
+    label.style.display = 'block';
+
+    const below = cy - oy + size / 2 + 10;
+    const lw = label.offsetWidth, lh = label.offsetHeight;
+    label.style.left = Math.max(8, Math.min(window.innerWidth - lw - 8,
+                                            cx - ox - lw / 2)) + 'px';
+    label.style.top  = (below + lh > window.innerHeight
+                        ? cy - oy - size / 2 - lh - 10 : below) + 'px';
+
+    if (p.zoom && p.zoomImage) {
+      zimg.src = p.zoomImage;        // data: URI — 외부로 나가지 않는다
+      zoom.style.display = 'block';
+    } else {
+      zoom.style.display = 'none';
+      zimg.removeAttribute('src');
+    }
+  });
+
+  window.pointer.onClear(() => {
+    halo.style.display = 'none';
+    label.style.display = 'none';
+    zoom.style.display = 'none';
+    zimg.removeAttribute('src');
+  });
+</script>

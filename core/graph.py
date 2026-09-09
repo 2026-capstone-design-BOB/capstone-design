@@ -1016,6 +1016,15 @@ def build_pluiz_graph(
     # ── 노드 ───────────────────────────────────────────────────────
     def input_guard(state: PluizState) -> dict:
         """OWASP LLM01/02 자리. 현재는 코드 레벨 보안 검사."""
+        # 포인팅 표시 해제 ② — 새 명령을 내렸으면 이전 표시는 **낡았다**(M4 §4-2).
+        # 8초 자동 해제가 마지막 방어선이고, 이건 «맞는 시점»에 지우는 쪽이다.
+        # ⚠️ 실패해도 턴을 죽이지 않는다 — 표시가 조금 더 떠 있는 것뿐이고,
+        #   그건 자동 해제가 어차피 처리한다.
+        try:
+            from core.pointer import hide as _hide_pointer
+            _hide_pointer("새 턴")
+        except Exception as e:
+            _log.debug("포인팅 해제 생략(%s)", type(e).__name__)
         text = _last_human_text(state["messages"])
         blocked, reason = security_check(text)
         # 지난 턴에 켜진 채 남아 있을 수 있는 플래그를 새 턴 시작 시 끈다.

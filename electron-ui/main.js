@@ -6,6 +6,8 @@ const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 
 let mainWindow = null;
+let pointerWindow = null;   // 포인팅 오버레이 (M4) — 전체화면 · 클릭 통과
+let pointerTimer  = null;
 let wakeProc   = null;
 let wakePython = null;   // 웨이크워드용 python 경로 (탐색 결과 캐시)
 let wakeFails  = 0;      // 연속 즉시 실패 횟수 — 무한 재시도 방지
@@ -227,6 +229,68 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => { mainWindow?.show(); mainWindow?.focus(); });
 }
 
+// ── 포인팅 오버레이 (M4) ──────────────────────────────────────────
+// *"블루투스 어디 있어?"* → 화면의 그 자리에 고리를 그린다.
+// 설계 근거는 docs/design/M4_포인팅_확대.md. 여기서 중요한 것은 두 줄이다:
+//
+//   focusable: false        — 포커스를 절대 뺏지 않는다
+//   setIgnoreMouseEvents    — 클릭을 통과시킨다
+//
+// ⚠️ 둘 중 하나라도 빠지면 **가리키려던 버튼을 우리가 덮어서 못 누르게 된다.**
+//    도우려다 방해하는, 이 기능 최악의 실패다 (ADR §4-1).
+//    자동 테스트가 못 잡는 자리이므로 손대면 반드시 사람이 눌러 봐야 한다.
+//
+// ⚠️ 주 모니터에만 띄운다. Vision이 주 모니터만 보므로(BL-18) 좌표도 주 모니터
+//    것이다. 보조 모니터로 넓히면 **틀린 화면에 그린다.**
+function ensurePointerWindow() {
+  if (pointerWindow && !pointerWindow.isDestroyed()) return pointerWindow;
+
+  const b = screen.getPrimaryDisplay().bounds;
+  pointerWindow = new BrowserWindow({
+    x: b.x, y: b.y, width: b.width, height: b.height,
+    frame: false, transparent: true, hasShadow: false,
+    alwaysOnTop: true, skipTaskbar: true,
+    focusable: false,          // ★ 포커스를 뺏지 않는다
+    resizable: false, movable: false, show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'pointer-preload.js'),
+      contextIsolation: true, nodeIntegration: false,
+    },
+  });
+  pointerWindow.setIgnoreMouseEvents(true, { forward: true });   // ★ 클릭 통과
+  pointerWindow.setAlwaysOnTop(true, 'screen-saver');
+  pointerWindow.loadFile('renderer/pointer.html');
+  pointerWindow.on('closed', () => { pointerWindow = null; });
+  return pointerWindow;
+}
+
+function showPointer(p) {
+  const win = ensurePointerWindow();
+  const b = screen.getPrimaryDisplay().bounds;
+  const send = () => {
+    // 화면 좌표 → 오버레이 창 기준 좌표. 원점이 (0,0)이 아닌 배치가 있어 뺀다.
+    win.webContents.send('point-draw', { ...p, originX: b.x, originY: b.y });
+    win.showInactive();        // ★ show()가 아니다 — 포커스를 가져오지 않는다
+  };
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
+  else send();
+
+  // 해제 ① 자동 — **마지막 방어선이다.** always-on-top 전체화면 오버레이가
+  // 남으면 PC를 못 쓰게 만든다. 이 타이머를 «사용자가 끄면 되니까»로 빼지 말 것.
+  clearTimeout(pointerTimer);
+  const ms = Math.max(1, Number(p.seconds) || 8) * 1000;
+  pointerTimer = setTimeout(hidePointer, ms);
+}
+
+function hidePointer() {
+  clearTimeout(pointerTimer);
+  pointerTimer = null;
+  if (pointerWindow && !pointerWindow.isDestroyed()) pointerWindow.hide();
+}
+
+ipcMain.on('point-show', (_e, p) => { try { showPointer(p); } catch (e) { console.error('[point]', e); } });
+ipcMain.on('point-hide', () => hidePointer());
+
 // 렌더러가 API를 부르기 전에 이걸로 토큰을 받아 간다 (BL-14).
 // 서버가 늦게 뜨면 여기서 기다리므로, 렌더러는 그냥 await 하면 된다.
 ipcMain.handle('get-token', () => waitForToken());
@@ -237,4 +301,4 @@ ipcMain.on('show-window',   () => { mainWindow?.show(); mainWindow?.focus(); });
 
 ipcMain.on('resize-idle',   () => resizeTo('idle'));
 ipcMain.on('resize-active', () => resizeTo('active'));
-ipcMain.on('quit-app',      () => { forceQuit = true; wakeProc?.kill(); app.quit(); });
+ipcMain.on('quit-app',      () => { forceQuit = true; hidePointer(); wakeProc?.kill(); app.quit(); });

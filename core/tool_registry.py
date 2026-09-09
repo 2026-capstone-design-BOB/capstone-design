@@ -61,6 +61,7 @@ def get_all_tools() -> List[BaseTool]:
     from tools.vision import (
         describe_screen,
         find_ui_element,
+        point_at_element,
         watch_screen,
         stop_watching,
     )
@@ -107,6 +108,10 @@ def get_all_tools() -> List[BaseTool]:
         # 화면 이해 (Vision) — 화면 내용을 외부 LLM에 전송한다. tools/vision.py 주의사항 참조
         describe_screen,
         find_ui_element,
+        # 포인팅(M4) — 찾은 자리를 **화면에 표시**한다. 아무것도 바꾸지 않으므로
+        # 승인은 없지만, 화면 한 장이 나가는 비용은 find_ui_element와 **같다**
+        # (같은 locate_ui_element를 쓴다). → docs/design/M4_포인팅_확대.md
+        point_at_element,
         # 화면 감시 — 한 번이 아니라 **지켜보는 동안 반복해서** 화면이 나간다.
         # 승인 대상은 아니지만(멈추면 끝나므로 되돌릴 수 있다) 시작할 때 간격·상한·
         # 중단법을 사용자에게 고지하고, 상한에 닿으면 스스로 멈춘다.

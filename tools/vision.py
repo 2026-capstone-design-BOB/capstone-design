@@ -431,6 +431,44 @@ def find_ui_element(target: str, window: str = "") -> str:
             f"크기 {bw}×{bh}. (화면을 보고 추정한 위치예요)")
 
 
+@tool
+def point_at_element(target: str, window: str = "", zoom: bool = False) -> str:
+    """
+    화면에서 UI 요소를 찾아 **그 자리를 화면에 직접 표시**합니다.
+    사용자가 "그게 어딨지", "블루투스 설정 어디서 켜?"처럼 **직접 찾고 싶어 할 때**
+    쓰세요. 표시는 몇 초 뒤 저절로 사라지고, 화면은 아무것도 바뀌지 않습니다.
+
+    target: 찾을 것 (예: "블루투스", "저장 버튼", "검색창")
+    window: 볼 대상 — 비워두면 전체 화면 / "활성창" / 앱 이름
+    zoom:   True면 그 부분을 크게 확대해서 같이 보여줍니다 (잘 안 보일 때)
+
+    화면에 없으면 **아무것도 표시하지 않고** "찾지 못했다"고 답합니다.
+    (대신 눌러 주려면 click_ui_element를 쓰세요 — 그건 승인이 필요합니다)
+    """
+    from core import pointer
+
+    # ⚠️ **먼저 지운다.** 안 지우면 아래 캡처가 «이전 표시»가 사라지기를 8초
+    #   기다린다(연달아 포인팅할 때). 어차피 새 표시로 덮을 것이다.
+    pointer.hide("새 포인팅")
+
+    loc = locate_ui_element(target, window)
+    payload = pointer.point_payload(loc, zoom=zoom)
+    if payload is None:
+        # 못 찾았으면 **그리지 않는다.** 띄워 놓고 "근처일 거예요"라고 하면
+        # 사용자는 없는 것을 찾게 된다. → ADR §4-3
+        reason = loc.get("reason", "") if isinstance(loc, dict) else ""
+        return f"✗ 화면에서 '{target}'을(를) 찾지 못했습니다. ({reason})"
+
+    pointer.show(payload)
+    where = f" ({window} 창)" if window else ""
+    extra = " 크게 확대해서 같이 보여드렸어요." if zoom else ""
+    # find_ui_element와 **같은 단서**를 단다. 화면의 표시 자체에는 단서가 없으므로
+    # (그림은 정확해 보인다) 문장에서라도 추정임을 말한다. 표시 옆 라벨은
+    # Electron이 그린다. → ADR §4-3
+    return (f"✓ '{payload['label'] or target}'{where}을(를) 화면에 표시했어요.{extra} "
+            f"{int(payload['seconds'])}초 뒤 사라져요. (화면을 보고 추정한 위치예요)")
+
+
 # ── 화면 변화 모니터링 (Phase 2 마지막 항목) ───────────────────────
 #
 # *"오류 뜨면 알려줘"* — 턴이 끝난 뒤에도 지켜보다가 **먼저 말을 건다.**
