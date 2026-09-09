@@ -419,7 +419,7 @@ def box_in_crop_to_image(box, crop_rect):
 
 
 def locate_ui_element(target: str, window: str = "", want_crop: bool = False,
-                      refine: bool = False) -> dict:
+                      refine: bool = False, ensure_visible: bool = False) -> dict:
     """화면에서 요소를 찾아 **화면 좌표**를 돌려준다. 도구가 아니라 내부 함수다.
 
     찾으면 `{"found": True, "center", "rect", "size", "label", "window_rect"}`,
@@ -433,8 +433,29 @@ def locate_ui_element(target: str, window: str = "", want_crop: bool = False,
     않았는지 대조하는 데 쓴다.
     """
     tmp_path = ""
+    prepared = {"action": "", "label": window}
     try:
-        from tools.system import take_screenshot, capture_origin, resolve_window_hwnd, window_screen_rect
+        from tools.system import (take_screenshot, capture_origin, resolve_window_hwnd,
+                                  window_screen_rect)
+
+        # 창을 **볼 수 있는 상태**로 먼저 만든다(2026-09-09). 없으면 열고, 최소화면
+        # 되살려 앞으로 낸다. ⚠️ 기본은 False다 — click_ui_element는 승인 범위를
+        # 넘기지 않아야 하므로 이 경로를 타지 않는다. → tools/system.ensure_window_ready
+        # ⚠️ **여기서 늦게 가져온다.** 위 한 줄에 같이 넣었더니, `tools.system`을
+        #   가짜 모듈로 갈아끼우는 테스트(test_ui_locate)가 통째로 깨졌다 —
+        #   창 준비는 **선택 기능**인데 그것 때문에 기본 경로가 죽으면 안 된다.
+        if ensure_visible and window:
+            try:
+                from tools.system import ensure_window_ready
+            except ImportError:
+                # 창 준비는 **곁들이**다. 없으면 그냥 지금 화면을 본다 —
+                # 선택 기능이 없다고 «필요한 패키지가 없습니다»로 끝나면 안 된다.
+                ensure_window_ready = None
+            if ensure_window_ready is not None:
+                prepared = ensure_window_ready(window)
+                if not prepared["ok"]:
+                    return {"found": False, "reason": prepared["reason"],
+                            "prepared": prepared}
 
         # ── 1) 캡처 원점 먼저 (좌표를 되돌리려면 반드시 필요) ──────
         # 캡처보다 **먼저** 구한다. 캡처는 됐는데 원점을 못 구하면 좌표를 화면
@@ -483,12 +504,13 @@ def locate_ui_element(target: str, window: str = "", want_crop: bool = False,
 
         if not parsed["found"]:
             log.info("UI 요소 못 찾음: %s", parsed["reason"])
-            return {"found": False, "reason": parsed["reason"]}
+            return {"found": False, "reason": parsed["reason"], "prepared": prepared}
 
         loc = box_to_screen(parsed["box"], image_size, origin)
         loc["found"] = True
         loc["label"] = parsed["label"] or target
         loc["window_rect"] = window_rect
+        loc["prepared"] = prepared
 
         # ── 2패스 정밀화 ─────────────────────────────────────────
         # 1차 주변만 잘라 **그 조각만** 다시 묻는다. 조각은 축소되지 않으므로
@@ -568,16 +590,35 @@ def find_ui_element(target: str, window: str = "") -> str:
 
     화면에 없으면 좌표를 만들어내지 않고 "찾지 못했다"고 답합니다.
     """
-    loc = locate_ui_element(target, window)
+    # 「어디 있어?」도 화면을 보는 질문이라, 창이 없거나 최소화면 먼저 살린다.
+    loc = locate_ui_element(target, window, ensure_visible=True)
     if not loc["found"]:
-        return f"✗ 화면에서 '{target}'을(를) 찾지 못했습니다. ({loc['reason']})"
+        return (prepared_note(loc) +
+                f"✗ 화면에서 '{target}'을(를) 찾지 못했습니다. ({loc['reason']})")
 
     cx, cy = loc["center"]
     bw, bh = loc["size"]
     where = f" ({window} 창)" if window else ""
     # 좌표를 냈다고 해서 확인된 건 아니다. Vision의 추정임을 문장에 남긴다.
-    return (f"✓ '{loc['label']}'{where}을(를) 화면 좌표 ({cx}, {cy})에서 찾았습니다. "
+    return (prepared_note(loc) +
+            f"✓ '{loc['label']}'{where}을(를) 화면 좌표 ({cx}, {cy})에서 찾았습니다. "
             f"크기 {bw}×{bh}. (화면을 보고 추정한 위치예요)")
+
+
+def prepared_note(loc) -> str:
+    """창을 어떻게 했는지 **먼저** 말할 접두 문구. 아무 일도 안 했으면 빈 문자열.
+
+    ⚠️ 조용히 앱을 열거나 창을 앞으로 내면 안 된다. 사용자는 «표시해 줘»라고
+      했지 «열어 줘»라고 하지 않았고, 화면이 바뀐 이유를 알 권리가 있다.
+      이 프로젝트가 반복해서 고쳐 온 것이 **«한 일을 말하지 않는 것»** 이다.
+    """
+    p = (loc or {}).get("prepared") or {}
+    label = p.get("label") or ""
+    return {
+        "launched": f"'{label}'이(가) 꺼져 있어서 먼저 열었어요. ",
+        "restored": f"'{label}'이(가) 최소화돼 있어서 다시 띄웠어요. ",
+        "fronted":  f"'{label}'을(를) 앞으로 가져왔어요. ",
+    }.get(p.get("action") or "", "")
 
 
 @tool
@@ -601,16 +642,22 @@ def point_at_element(target: str, window: str = "", zoom: bool = False) -> str:
     pointer.hide("새 포인팅")
 
     # 확대본은 **이 캡처에서** 만들어진다(§6) — 다시 찍으면 우리 오버레이가 들어간다
-    # refine=True — 좌표 정밀도가 요소 크기만큼 흔들려서(실측) 2패스를 쓴다.
-    # 대가는 Vision 왕복 1회(약 4~5초)다. 포인팅은 «사람이 눈으로 찾는» 것이라
-    # 정확도가 속도보다 중요하다 — click_ui_element와는 판단이 다르다.
-    loc = locate_ui_element(target, window, want_crop=bool(zoom), refine=True)
+    # 🚨 **refine=False** — 2패스 정밀화를 껐다(2026-09-09 실측).
+    #   넣어 봤더니 **좋아지지 않고 나빠졌다.** 조각 안에서 Gemini가 메뉴가 아니라
+    #   글자 일부 같은 것을 잡아, 요소 크기가 75×22 → 13~26px로 무너졌다.
+    #   그리고 턴이 9초 → 13~17초가 됐다. **비용은 확실하고 효과는 음수다.**
+    #   코드는 남겨 둔다 — 조각 프롬프트를 다듬으면 살아날 수 있고,
+    #   무엇보다 «해 봤고 이랬다»가 지워지면 또 같은 걸 시도한다.
+    #   → docs/design/M4_포인팅_확대.md §6-A
+    loc = locate_ui_element(target, window, want_crop=bool(zoom),
+                            refine=False, ensure_visible=True)
     payload = pointer.point_payload(loc, zoom=zoom)
     if payload is None:
         # 못 찾았으면 **그리지 않는다.** 띄워 놓고 "근처일 거예요"라고 하면
         # 사용자는 없는 것을 찾게 된다. → ADR §4-3
         reason = loc.get("reason", "") if isinstance(loc, dict) else ""
-        return f"✗ 화면에서 '{target}'을(를) 찾지 못했습니다. ({reason})"
+        return (prepared_note(loc) +
+                f"✗ 화면에서 '{target}'을(를) 찾지 못했습니다. ({reason})")
 
     pointer.show(payload)
     where = f" ({window} 창)" if window else ""
@@ -620,7 +667,8 @@ def point_at_element(target: str, window: str = "", zoom: bool = False) -> str:
     # find_ui_element와 **같은 단서**를 단다. 화면의 표시 자체에는 단서가 없으므로
     # (그림은 정확해 보인다) 문장에서라도 추정임을 말한다. 표시 옆 라벨은
     # Electron이 그린다. → ADR §4-3
-    return (f"✓ '{payload['label'] or target}'{where}을(를) 화면에 표시했어요.{extra} "
+    return (prepared_note(loc) +
+            f"✓ '{payload['label'] or target}'{where}을(를) 화면에 표시했어요.{extra} "
             f"{int(payload['seconds'])}초 뒤 사라져요. (화면을 보고 추정한 위치예요)")
 
 

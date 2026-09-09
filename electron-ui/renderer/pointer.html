@@ -64,12 +64,9 @@
                 0 10px 30px rgba(0, 0, 0, .45);
     background: #111 center/cover no-repeat;
   }
-  /* 가운데 십자 — 「여기가 그 지점」을 돋보기 안에서도 알 수 있게 */
-  #zoom::before, #zoom::after {
-    content: ""; position: absolute; background: rgba(74, 87, 201, .8);
-  }
-  #zoom::before { left: 50%; top: 42%; width: 2px; height: 16%; margin-left: -1px; }
-  #zoom::after  { top: 50%; left: 42%; height: 2px; width: 16%; margin-top: -1px; }
+  /* ⚠️ 십자를 뺐다(2026-09-09). 돋보기를 대상에서 **비켜** 놓기로 하면서
+     「돋보기 가운데 = 그 지점」이 더는 성립하지 않는다. 안 맞는 표시를 남겨 두면
+     그 자체가 틀린 안내가 된다 — 위치는 고리가 말한다. */
 </style>
 
 <div id="halo"></div>
@@ -126,16 +123,25 @@
                         ? cy - oy - size / 2 - lh - 10 : below) + 'px';
 
     if (p.zoom && p.zoomImage) {
-      // 돋보기는 **대상 중심**에 놓는다. 지름은 main.js가 DIP로 환산해 준다.
+      // 🚨 돋보기를 대상 **정중앙**에 놓았더니 «가려져서 파일 버튼이 안 보인다»는
+      //   실기 피드백이 나왔다(2026-09-09). 확대해서 보여 주려던 것이 정작 대상을
+      //   가리면 목적을 못 이룬다. → **살짝 비켜서** 놓는다.
+      //   고리는 대상 자리에 그대로 두므로 «어디»는 고리가, «무엇»은 돋보기가 말한다.
       const d = Math.max(80, Number(p.zoomDip) || 200);
+      const gap = Math.max(size / 2, 24) + d / 2 + 12;   // 고리 밖으로 밀어낸다
+      let zx = cx - ox - d / 2;
+      let zy = cy - oy - d / 2 - gap;                    // 기본은 위쪽
+      if (zy < 8) zy = cy - oy - d / 2 + gap;            // 위가 막히면 아래로
+      zx = Math.max(8, Math.min(window.innerWidth  - d - 8, zx));
+      zy = Math.max(8, Math.min(window.innerHeight - d - 8, zy));
       zoom.style.width = d + 'px';
       zoom.style.height = d + 'px';
-      zoom.style.left = (cx - ox - d / 2) + 'px';
-      zoom.style.top  = (cy - oy - d / 2) + 'px';
+      zoom.style.left = zx + 'px';
+      zoom.style.top  = zy + 'px';
       zoom.style.backgroundImage = `url("${p.zoomImage}")`;   // data: URI
       zoom.style.display = 'block';
-      // 돋보기가 고리를 덮으므로 고리는 **바깥 테두리**로만 남긴다
-      halo.style.display = 'none';
+      // ⚠️ 고리는 **끄지 않는다.** 돋보기가 비켜 있으므로 «그 자리»를 가리킬 것이
+      //   필요하다. 대상을 가리지 않으면서 시선 이동도 짧다.
     } else {
       zoom.style.display = 'none';
       zoom.style.backgroundImage = '';

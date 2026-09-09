@@ -320,9 +320,37 @@ def run():
     from tools.vision import locate_ui_element
     sig = inspect.signature(locate_ui_element)
     check("want_crop 기본 False", sig.parameters["want_crop"].default is False)
-    # ⚠️ refine도 기본 False다. click_ui_element에 Vision 왕복을 하나 더 얹으면
-    #   승인 대기가 길어지고, 클릭은 정확도보다 «되돌릴 수 없음»이 더 큰 문제다.
+    # ⚠️ refine도 기본 False다. 2026-09-09 실측에서 **효과가 음수**였다(요소 크기가
+    #   75×22 → 13~26px로 무너지고 턴이 9초 → 13~17초). 코드는 남겨 두되 끈다.
     check("refine 기본 False", sig.parameters["refine"].default is False)
+    # ⚠️ ensure_visible도 기본 False — click_ui_element는 «클릭» 승인만 받았지
+    #   «앱 실행» 승인을 받은 게 아니다. 승인 범위를 넘기지 않는다.
+    check("ensure_visible 기본 False", sig.parameters["ensure_visible"].default is False)
+
+    # ═══ ⑥ 창 상태 처리 — 한 일을 반드시 말한다 (2026-09-09) ═══════
+    print("=== ⑥ 창을 열거나 앞으로 냈으면 **말한다** ===")
+    from tools.vision import prepared_note
+    check("열었으면 말한다",
+          "먼저 열었어요" in prepared_note({"prepared": {"action": "launched", "label": "메모장"}}))
+    check("최소화 복원도 말한다",
+          "다시 띄웠어요" in prepared_note({"prepared": {"action": "restored", "label": "메모장"}}))
+    check("앞으로 냈어도 말한다",
+          "앞으로 가져왔어요" in prepared_note({"prepared": {"action": "fronted", "label": "메모장"}}))
+    # ⚠️ 아무 일도 안 했으면 **아무 말도 안 한다** — 매번 붙으면 문구가 소음이 된다
+    check("아무 일도 안 했으면 조용하다",
+          prepared_note({"prepared": {"action": "", "label": "메모장"}}) == "")
+    check("prepared가 없어도 안 죽는다", prepared_note({}) == "")
+    check("None이어도 안 죽는다", prepared_note(None) == "")
+
+    print("=== ⑥ ensure_window_ready — 전체화면은 건드리지 않는다 ===")
+    from tools.system import ensure_window_ready
+    r0 = ensure_window_ready("")
+    check("window가 비면 ok이고 아무 동작도 없다",
+          r0["ok"] is True and r0["action"] == "")
+    r1 = ensure_window_ready("__존재하지않는앱__", launch=False)
+    check("launch=False면 열지 않고 실패를 돌려준다",
+          r1["ok"] is False and r1["action"] == "")
+    check("실패에 이유가 있다", bool(r1["reason"]))
 
     # ═══ ④ 도구 계약 ═════════════════════════════════════════════
     print("=== ④ 도구가 등록돼 있고 좌표 인자를 받지 않는다 ===")

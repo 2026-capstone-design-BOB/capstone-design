@@ -228,6 +228,83 @@ def capture_origin(window: str = "") -> tuple[int, int]:
     return (left, top)
 
 
+def ensure_window_ready(window: str, launch: bool = True) -> dict:
+    """포인팅·탐색 **전에** 창을 «볼 수 있는 상태»로 만든다.
+
+    반환 `{"ok", "action", "label", "reason"}`.
+    `action`은 `""` · `"launched"` · `"restored"` · `"fronted"` 중 하나다.
+
+    ## 왜 필요한가 (2026-09-09 사용자 요청)
+
+    *"뭔가를 시각적으로 해달라고 한 거니까, 실행 중이지 않으면 실행하겠다고 한 다음에
+    표시해 주든지, 최소화된 상태라면 다시 앞으로 가져온 뒤에 조치를 취해야 할 것 같은데"*
+
+    맞는 말이다. 지금은 창이 없거나 최소화면 **«찾지 못했습니다»** 로 끝나는데,
+    그건 사실이지만 **도움이 안 된다** — 사용자가 원한 건 «화면에서 보는 것»이고,
+    보이지 않는 이유가 «없어서»가 아니라 **«가려져서»** 일 때가 많다.
+
+    ⚠️ **`take_screenshot`과 다르다.** 그쪽은 찍고 **다시 최소화**한다(한 장 찍는 게
+      목적이라 사용자를 방해하지 않는 게 맞다). 포인팅은 **사용자가 그 창을 볼 것**이
+      목적이므로 **앞에 남겨 둔다.**
+
+    ⚠️ **클릭 경로에는 쓰지 않는다.** 승인 질문은 «클릭»에 대해 물은 것이지
+      «앱을 실행»에 대해 물은 게 아니다. 승인받은 범위를 넘기지 않는다.
+    """
+    import ctypes
+    import time as _t
+
+    out = {"ok": True, "action": "", "label": window, "reason": ""}
+    if not window:
+        return out                      # 전체화면 — 만들 상태가 없다
+
+    u = ctypes.windll.user32
+    hwnd, label = resolve_window_hwnd(window)
+    out["label"] = label or window
+
+    # ① 창이 없다 → 열어 준다 (사용자가 «실행하겠다고 한 다음에»라고 했다)
+    if not hwnd:
+        if not launch:
+            out.update(ok=False, reason=f"'{window}' 창을 찾을 수 없습니다")
+            return out
+        try:
+            from tools.app_control import open_app
+            open_app.invoke({"app": window})
+        except Exception as e:
+            out.update(ok=False, reason=f"'{window}'을(를) 열지 못했습니다: {e}")
+            return out
+        # 창이 뜰 때까지 잠깐 기다린다. 바로 캡처하면 흰 화면을 찍는다.
+        for _ in range(20):             # 최대 4초
+            _t.sleep(0.2)
+            hwnd, label = resolve_window_hwnd(window)
+            if hwnd:
+                break
+        if not hwnd:
+            out.update(ok=False, reason=f"'{window}'을(를) 열었지만 창이 나타나지 않았습니다")
+            return out
+        out.update(action="launched", label=label or window)
+        _t.sleep(0.6)                   # 첫 렌더가 끝나도록
+        return out
+
+    # ② 최소화돼 있다 → 되살린다 (그리고 **다시 최소화하지 않는다**)
+    if u.IsIconic(hwnd):
+        u.ShowWindow(hwnd, 9)           # SW_RESTORE
+        _t.sleep(0.4)
+        out["action"] = "restored"
+
+    # ③ 뒤에 있다 → 앞으로. 실패해도 진행한다 —
+    #    Windows가 포그라운드 전환을 거부하는 경우가 있는데(다른 앱이 활성),
+    #    그때도 창은 보이므로 캡처와 표시는 된다.
+    try:
+        if u.GetForegroundWindow() != hwnd:
+            u.SetForegroundWindow(hwnd)
+            _t.sleep(0.25)
+            if not out["action"]:
+                out["action"] = "fronted"
+    except Exception:
+        pass
+    return out
+
+
 def _capture_hwnd(hwnd: int):
     """
     PrintWindow API로 HWND 창 픽셀만 캡처. PIL Image(RGB) 반환.
