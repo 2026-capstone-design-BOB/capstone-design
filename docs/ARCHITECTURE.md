@@ -246,7 +246,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 
 ---
 
-## 도구 (39개)
+## 도구 (40개)
 
 [`core/tool_registry.py`](../core/tool_registry.py)에 단일 등록.
 
@@ -258,10 +258,17 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 | 시스템 | 10 | `volume_up/down/set` `mute_toggle` `brightness_up/down` `take_screenshot` `get_battery_status` `get_current_time` `get_running_apps` |
 | 입력 | 3 | `type_text` `press_key` `get_clipboard_text` |
 | 캘린더 | 1 | `create_calendar_event` |
-| 화면 이해 | 2 | `describe_screen`(무엇이 보이나) · `find_ui_element`(어디에 있나 — **화면 좌표**) — ⚠️ 둘 다 **화면 내용을 외부 LLM로 전송** (아래 참조) |
+| 화면 이해 | 3 | `describe_screen`(무엇이 보이나) · `find_ui_element`(어디에 있나 — **화면 좌표**) · **`point_at_element`**(그 자리를 **화면에 직접 표시** — M4) — ⚠️ 셋 다 **화면 내용을 외부 LLM로 전송** (아래 참조) |
 | 화면 조작 | 1 | `click_ui_element` — ⚠️ **승인 필수.** 되돌릴 수 없고 좌표는 추정이다 (아래 참조) |
 | 화면 감시 | 2 | `watch_screen`(지켜보다 알려주기) · `stop_watching` — ⚠️ **지켜보는 동안 반복해서** 화면이 나간다. 승인 대신 **고지 + 상한** (아래 참조) |
 | **삭제** | **2** | `delete_file` `delete_folder` — **HITL 승인 필수** |
+
+> **포인팅(M4)은 승인이 없다 — 아무것도 바꾸지 않기 때문이다.** 표시는 8초 뒤
+> 저절로 사라지고, 다음 턴이 시작될 때도 지워진다. ⚠️ 다만 **화면 한 장이 나가는
+> 비용은 `find_ui_element`와 같다**(같은 `locate_ui_element`를 쓴다) — 그래서 위
+> 전송 목록에 함께 들어 있다. 오버레이가 스크린샷에 찍혀 Vision과 화면 감시를
+> 오염시키는 문제는 서버가 «표시 중»을 알고 캡처를 기다리는 것으로 막는다.
+> → [design/M4_포인팅_확대.md](design/M4_포인팅_확대.md)
 
 > **삭제 도구 안전장치**: `core/graph.py`의 `DANGEROUS_TOOLS`에 등록돼 있어
 > `hitl` 노드가 `interrupt()`로 실행을 멈추고 사람 승인을 받는다. 프롬프트로 부탁하는
