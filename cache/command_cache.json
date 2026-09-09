@@ -10,11 +10,11 @@
       }
     ],
     "response_template": "✓ 메모장을 실행했습니다.",
-    "hit_count": 93,
+    "hit_count": 94,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-09T16:57:11"
+    "last_used": "2026-09-09T17:13:27"
   },
   "메모장 켜줘": {
     "pattern": "메모장 켜줘",
