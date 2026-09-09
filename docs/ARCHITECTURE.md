@@ -258,7 +258,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 | 시스템 | 10 | `volume_up/down/set` `mute_toggle` `brightness_up/down` `take_screenshot` `get_battery_status` `get_current_time` `get_running_apps` |
 | 입력 | 3 | `type_text` `press_key` `get_clipboard_text` |
 | 캘린더 | 1 | `create_calendar_event` |
-| 화면 이해 | 3 | `describe_screen`(무엇이 보이나) · `find_ui_element`(어디에 있나 — **화면 좌표**) · **`point_at_element`**(그 자리를 **화면에 직접 표시** — M4) — ⚠️ 셋 다 **화면 내용을 외부 LLM로 전송** (아래 참조) |
+| 화면 이해 | 3 | `describe_screen`(무엇이 보이나) · `find_ui_element`(어디에 있나 — **화면 좌표**) · **`point_at_element`**(그 자리를 **화면에 직접 표시**, `zoom=True`면 확대본도 — M4) — ⚠️ 셋 다 **화면 내용을 외부 LLM로 전송** (아래 참조) |
 | 화면 조작 | 1 | `click_ui_element` — ⚠️ **승인 필수.** 되돌릴 수 없고 좌표는 추정이다 (아래 참조) |
 | 화면 감시 | 2 | `watch_screen`(지켜보다 알려주기) · `stop_watching` — ⚠️ **지켜보는 동안 반복해서** 화면이 나간다. 승인 대신 **고지 + 상한** (아래 참조) |
 | **삭제** | **2** | `delete_file` `delete_folder` — **HITL 승인 필수** |

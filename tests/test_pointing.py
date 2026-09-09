@@ -62,7 +62,10 @@ def run():
     check("center도 같이 넘긴다", pl["center"] == [60, 40])
     check("label 유지", pl["label"] == "블루투스")
     check("zoom 기본 False", pl["zoom"] is False)
-    check("zoom=True 반영", P.point_payload(loc, zoom=True)["zoom"] is True)
+    # ⚠️ zoom=True인데 확대본(crop)이 없으면 **False로 내려간다** — 없는 확대를
+    #   «했다»고 말하지 않기 위해서다. crop이 있는 경우는 ⑤에서 본다.
+    check("확대본이 없으면 zoom=True라도 False로 내려간다",
+          P.point_payload(loc, zoom=True)["zoom"] is False)
     check("seconds가 실려 나간다(Electron 타이머의 근거)",
           isinstance(pl["seconds"], float) and pl["seconds"] > 0)
     # 좌표를 여기서 보정하면 click_ui_element와 다른 곳을 가리키게 된다
@@ -247,6 +250,50 @@ def run():
     check("표시가 사라진 뒤 «변화»로 잡히지 않는다", len(vision_calls) == 0)
     # ⚠️ 위가 «루프가 안 돌아서» 통과하는 것을 막는다.
     check("[전제] 표시 구간을 지나 그 뒤까지 돌았다", iters["n"] > 5)
+
+    # ═══ ⑤ 확대(zoom) — ADR §6 ═══════════════════════════════════
+    # 핵심은 «화면을 다시 찍지 않는다»와 «못 만들어도 포인팅은 산다»이다.
+    print("=== ⑤ 확대 — 이미 찍어 둔 캡처에서 자른다 ===")
+    import tempfile as _tf, base64 as _b64, io as _bio
+    try:
+        from PIL import Image, ImageDraw
+        from tools.vision import crop_data_uri
+        cap = os.path.join(_tf.gettempdir(), "pluiz_zoom_regress.png")
+        im = Image.new("RGB", (1000, 600), (230, 230, 235))
+        ImageDraw.Draw(im).rectangle([400, 300, 500, 340], fill=(60, 90, 200))
+        im.save(cap)
+
+        uri = crop_data_uri(cap, [400, 300, 500, 340], (1000, 600))
+        check("data URI를 만든다", bool(uri) and uri.startswith("data:image/png;base64,"))
+        z = Image.open(_bio.BytesIO(_b64.b64decode(uri.split(",", 1)[1])))
+        check("원본 요소(100x40)보다 크다(확대됐다)", z.size[0] > 100 and z.size[1] > 40)
+        check("상한을 넘지 않는다", z.size[0] <= 420 * 1.2)
+        # ⚠️ 실패가 예외가 되면 포인팅 자체가 죽는다. 확대는 곁들이다.
+        check("범위 밖이면 None (예외 아님)",
+              crop_data_uri(cap, [9999, 9999, 10000, 10000], (1000, 600)) is None)
+        check("없는 파일이면 None (예외 아님)",
+              crop_data_uri("__없는파일__.png", [1, 1, 2, 2], (10, 10)) is None)
+        os.unlink(cap)
+    except ImportError:
+        print("  (PIL 없음 — 확대 검사 생략)")
+
+    print("=== ⑤ payload — 못 만들었으면 «확대했다»고 하지 않는다 ===")
+    locz = {"found": True, "rect": [400, 300, 500, 340], "center": [450, 320],
+            "label": "버튼", "crop": "data:image/png;base64,AAAA"}
+    check("zoom=True면 zoomImage가 실린다", "zoomImage" in P.point_payload(locz, zoom=True))
+    check("zoom=False면 안 실린다", "zoomImage" not in P.point_payload(locz, zoom=False))
+    nocrop = {k: v for k, v in locz.items() if k != "crop"}
+    pz = P.point_payload(nocrop, zoom=True)
+    check("crop이 없으면 zoom이 False로 내려간다(거짓말 방지)", pz["zoom"] is False)
+    check("crop이 없어도 고리는 그린다", pz is not None and pz["rect"] is not None)
+
+    print("=== ⑤ locate_ui_element는 기본이 «자르지 않음» ===")
+    import inspect
+    from tools.vision import locate_ui_element
+    sig = inspect.signature(locate_ui_element)
+    check("want_crop 인자가 있다", "want_crop" in sig.parameters)
+    check("기본값이 False다(기존 호출자는 그대로)",
+          sig.parameters["want_crop"].default is False)
 
     # ═══ ④ 도구 계약 ═════════════════════════════════════════════
     print("=== ④ 도구가 등록돼 있고 좌표 인자를 받지 않는다 ===")

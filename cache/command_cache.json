@@ -678,10 +678,25 @@
       }
     ],
     "response_template": "✓ 실행했어요.",
-    "hit_count": 1,
+    "hit_count": 2,
     "is_seed": false,
     "source": "dynamic",
     "learned_at": "2026-09-08T23:27:34",
-    "last_used": "2026-09-08T23:27:34"
+    "last_used": "2026-09-09T17:24:51"
+  },
+  "지금 실행 중인 앱 목록 알려줘": {
+    "pattern": "지금 실행 중인 앱 목록 알려줘",
+    "tool_calls": [
+      {
+        "name": "get_running_apps",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 실행했어요.",
+    "hit_count": 1,
+    "is_seed": false,
+    "source": "dynamic",
+    "learned_at": "2026-09-09T17:25:39",
+    "last_used": "2026-09-09T17:25:39"
   }
 }

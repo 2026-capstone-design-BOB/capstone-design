@@ -65,7 +65,7 @@ def point_payload(loc: Any, zoom: bool = False) -> Optional[dict]:
     center = loc.get("center")
     if not rect and not center:
         return None
-    return {
+    payload = {
         "type": "point",
         "rect": list(rect) if rect else None,
         "center": list(center) if center else None,
@@ -73,6 +73,14 @@ def point_payload(loc: Any, zoom: bool = False) -> Optional[dict]:
         "zoom": bool(zoom),
         "seconds": POINTER_SECONDS,
     }
+    # 확대본(§6). **없으면 조용히 고리만 그린다** — 확대는 곁들이라서,
+    # 못 만들었다고 포인팅 자체를 실패시키지 않는다.
+    crop = loc.get("crop") if zoom else None
+    if crop:
+        payload["zoomImage"] = crop
+    elif zoom:
+        payload["zoom"] = False          # 그릴 게 없으면 «확대했다»고 하지 않는다
+    return payload
 
 
 def remaining(now: Optional[float] = None, until: Optional[float] = None) -> float:

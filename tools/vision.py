@@ -319,7 +319,54 @@ def describe_screen(window: str = "", question: str = "") -> str:
                 log.debug("임시 파일 삭제 실패: %s", tmp_path)
 
 
-def locate_ui_element(target: str, window: str = "") -> dict:
+# ── 확대(zoom) — M4 §6 ────────────────────────────────────────────
+# ⚠️ **화면을 다시 찍지 않는다.** 다시 찍으면 그 사이에 뜬 우리 오버레이가 들어간다
+#   (§5의 그 문제다). `locate_ui_element`가 **이미 찍어 둔 그 파일**에서 자른다.
+ZOOM_SCALE = 3          # 고정. 조절 UI를 만들지 않는다(§6 — 2주 안에 끝내려고 버린 것들)
+ZOOM_MAX_W = 420        # 오버레이 가장자리에 얹을 크기 상한(CSS px 기준)
+
+
+def crop_data_uri(image_path: str, rect, image_size, scale: int = ZOOM_SCALE):
+    """캡처 파일에서 `rect` 주변을 잘라 확대한 PNG data URI. 실패하면 None.
+
+    `rect`는 **화면 좌표**이고 `image_size`는 그 캡처의 크기다. 창 캡처면 원점이
+    (0,0)이 아니므로, 여기서는 **이미지 안의 좌표로 다시 옮겨** 자른다.
+
+    ⚠️ 실패를 예외로 만들지 않는다. 확대는 **곁들이**이고, 못 만들었다고 포인팅
+      자체가 죽으면 안 된다 — 고리는 그대로 그려진다.
+    """
+    try:
+        from PIL import Image
+        import base64, io as _io
+
+        l, t, r, b = [int(v) for v in rect]
+        with Image.open(image_path) as im:
+            iw, ih = im.size
+            # 화면 좌표 → 이미지 좌표 (캡처 크기와 rect가 같은 공간이 아닐 수 있다)
+            ox = oy = 0
+            if image_size and tuple(image_size) == (iw, ih):
+                pass
+            # 여백을 넉넉히 둔다 — 요소만 딱 자르면 «어디의 무엇인지»를 알 수 없다
+            pad_x = max(24, (r - l) // 2)
+            pad_y = max(24, (b - t) // 2)
+            box = (max(0, l - ox - pad_x), max(0, t - oy - pad_y),
+                   min(iw, r - ox + pad_x), min(ih, b - oy + pad_y))
+            if box[2] <= box[0] or box[3] <= box[1]:
+                return None
+            crop = im.crop(box)
+            w, h = crop.size
+            k = min(scale, max(1, ZOOM_MAX_W // max(1, w)))
+            if k > 1:
+                crop = crop.resize((w * k, h * k), Image.LANCZOS)
+            buf = _io.BytesIO()
+            crop.convert("RGB").save(buf, format="PNG", optimize=True)
+            return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception as e:
+        log.warning("확대 이미지 생성 실패(무시): %s: %s", type(e).__name__, e)
+        return None
+
+
+def locate_ui_element(target: str, window: str = "", want_crop: bool = False) -> dict:
     """화면에서 요소를 찾아 **화면 좌표**를 돌려준다. 도구가 아니라 내부 함수다.
 
     찾으면 `{"found": True, "center", "rect", "size", "label", "window_rect"}`,
@@ -389,6 +436,13 @@ def locate_ui_element(target: str, window: str = "") -> dict:
         loc["found"] = True
         loc["label"] = parsed["label"] or target
         loc["window_rect"] = window_rect
+        # 확대본은 **여기서** 만든다 — 아래 finally가 임시 파일을 지우기 전이고,
+        # 무엇보다 이 캡처에는 우리 오버레이가 들어 있지 않다(§5·§6).
+        # ⚠️ 기본은 False다. find_ui_element·click_ui_element는 지금까지와 같다.
+        if want_crop:
+            img_rect = [loc["rect"][0] - origin[0], loc["rect"][1] - origin[1],
+                        loc["rect"][2] - origin[0], loc["rect"][3] - origin[1]]
+            loc["crop"] = crop_data_uri(tmp_path, img_rect, image_size)
         log.info("UI 요소 찾음: %r → center=%s size=%s",
                  loc["label"], loc["center"], loc["size"])
         return loc
@@ -451,7 +505,8 @@ def point_at_element(target: str, window: str = "", zoom: bool = False) -> str:
     #   기다린다(연달아 포인팅할 때). 어차피 새 표시로 덮을 것이다.
     pointer.hide("새 포인팅")
 
-    loc = locate_ui_element(target, window)
+    # 확대본은 **이 캡처에서** 만들어진다(§6) — 다시 찍으면 우리 오버레이가 들어간다
+    loc = locate_ui_element(target, window, want_crop=bool(zoom))
     payload = pointer.point_payload(loc, zoom=zoom)
     if payload is None:
         # 못 찾았으면 **그리지 않는다.** 띄워 놓고 "근처일 거예요"라고 하면
@@ -461,7 +516,9 @@ def point_at_element(target: str, window: str = "", zoom: bool = False) -> str:
 
     pointer.show(payload)
     where = f" ({window} 창)" if window else ""
-    extra = " 크게 확대해서 같이 보여드렸어요." if zoom else ""
+    # ⚠️ 확대본을 못 만들었으면 «확대했다»고 말하지 않는다. point_payload가
+    #   zoom을 False로 내려 두므로 payload를 보고 판단한다 — 인자가 아니라 결과다.
+    extra = " 크게 확대해서 같이 보여드렸어요." if payload.get("zoom") else ""
     # find_ui_element와 **같은 단서**를 단다. 화면의 표시 자체에는 단서가 없으므로
     # (그림은 정확해 보인다) 문장에서라도 추정임을 말한다. 표시 옆 라벨은
     # Electron이 그린다. → ADR §4-3
