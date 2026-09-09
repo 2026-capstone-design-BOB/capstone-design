@@ -857,7 +857,58 @@ def turn_tool_call_count(messages: list[AnyMessage]) -> int:
     여기서는 **낙관적인 상한**만 주고, 비관적인 쪽은 커서가 맡는다(steps_covered).
     """
     return sum(len(getattr(m, "tool_calls", None) or [])
-               for m in current_turn_messages(messages))
+               for m in current_turn_messages(messages)
+               if not is_reissued(m))
+
+
+# ── BL-20 — 거부 후 «안전한 호출만» 다시 내보내기 ──────────────────
+# 배치에 위험 도구가 하나라도 있으면 배치 **전체**가 hitl로 가고, 거부하면
+# _close_calls가 **전부** 마감했다. 그래서 같이 온 open_app도 조용히 사라졌다.
+# → docs/design/BL-20_거부후_안전호출.md
+#
+# ⚠️ **«안전한 것만 마감하지 않고 tools로 보낸다»는 안 된다.** 설치본
+#   (langgraph 1.2.4) ToolNode._parse_input은 **뒤에서부터 마지막 AIMessage**를
+#   찾아 그 tool_calls를 **전부** 실행한다 — 어떤 게 이미 마감됐는지는 보지 않는다.
+#   원본을 그대로 두면 **방금 거부당한 delete_file까지 실행된다.**
+#   그래서 원본은 전부 마감하고, 안전한 것만 **새 id로 재발행**해 다시 내보낸다.
+_REISSUE_KEY = "pluiz_reissued"      # response_metadata 표식(§5)
+_REISSUE_SUFFIX = "-r"
+
+
+def split_calls(calls: Any, dangerous: Any) -> tuple[list, list]:
+    """tool_calls를 (안전, 위험)으로 가른다. 순서는 원본을 유지한다."""
+    names = set(dangerous or ())
+    safe, risky = [], []
+    for c in (calls or []):
+        (risky if (c or {}).get("name") in names else safe).append(c)
+    return safe, risky
+
+
+def is_reissued(msg: Any) -> bool:
+    """재발행된 AIMessage인가. **진행 근거를 두 번 세지 않으려고** 본다(§5).
+
+    이 표식이 없으면 재발행분이 turn_tool_call_count에 더해져 steps_covered가
+    부풀고, 그러면 M3-1이 지키려던 «승인 거부 → 못 한 단계 보고»가 조용해진다.
+    """
+    meta = getattr(msg, "response_metadata", None) or {}
+    return bool(meta.get(_REISSUE_KEY))
+
+
+def reissue_message(safe_calls: Any) -> Optional[AIMessage]:
+    """안전한 호출만 담은 새 AIMessage. 살릴 게 없으면 **None**.
+
+    None이 중요하다 — 안전한 호출이 없으면 이 경로 자체가 열리지 않고
+    hitl은 오늘과 **글자 그대로 같게** 동작한다(§4).
+
+    ⚠️ id는 반드시 새로 만든다. 원본 id를 재사용하면 add_messages 리듀서가
+      ToolMessage를 **교체**해 짝이 깨진다(visual_verify가 그 성질을 반대로 쓴다).
+    """
+    calls = list(safe_calls or [])
+    if not calls:
+        return None
+    fresh = [{**c, "id": f"{c.get('id') or 'call'}{_REISSUE_SUFFIX}"} for c in calls]
+    return AIMessage(content="", tool_calls=fresh,
+                     response_metadata={_REISSUE_KEY: True})
 
 
 def steps_covered(cursor: Any, tool_calls: Any) -> int:
@@ -1176,10 +1227,26 @@ def build_pluiz_graph(
         last = state["messages"][-1]
         calls = list(getattr(last, "tool_calls", []) or [])
         dcall = next((c for c in calls if c.get("name") in dangerous), None)
+        # BL-20 — 배치에 섞여 온 **안전한 호출**. 거부는 위험한 것 하나에 대한
+        # 판단이지 이것들까지 취소해 달라는 뜻이 아니다.
+        safe_calls, _risky_calls = split_calls(calls, dangerous)
 
-        def _close_calls(reason: str) -> list:
-            """매달린 tool_calls를 ToolMessage로 마감(히스토리 오염 방지)."""
-            return [ToolMessage(content=reason, tool_call_id=c["id"])
+        def _close_calls(reason: str, *, hold_safe: bool = False) -> list:
+            """매달린 tool_calls를 ToolMessage로 마감(히스토리 오염 방지).
+
+            ⚠️ **언제나 전부 마감한다** — 하나라도 매달리면 Gemini 400이다
+              (절대규칙 3). BL-20의 «살린다»는 «마감하지 않는다»가 아니라
+              «새 id로 재발행한다»로 구현된다.
+            `hold_safe`면 안전한 호출에는 «취소»가 아니라 «보류»를 적는다.
+            사실이 아닌 사유를 히스토리에 남기지 않으려는 것이고, 실제로 바로
+            뒤에서 재발행돼 실행되기 때문이다. → BL-20 ADR §3-1
+            """
+            safe_ids = {c.get("id") for c in safe_calls}
+            held = "승인 절차로 보류됐습니다. 이 호출은 이어서 다시 실행됩니다."
+            return [ToolMessage(
+                        content=(held if hold_safe and c.get("id") in safe_ids
+                                 else reason),
+                        tool_call_id=c["id"])
                     for c in calls if c.get("id")]
 
         # ── 대상이 존재하지 않으면 **묻지 않는다** ──────────────────
@@ -1194,9 +1261,18 @@ def build_pluiz_graph(
                 found = True          # 확인 못 하면 원래대로 승인 절차를 밟는다
             if not found:
                 base = _target_name(dcall)
-                return {"messages": _close_calls(
-                    f"✗ '{base}'을(를) 찾을 수 없습니다. 삭제하지 않았습니다."
-                ), "decision": "not_found", "deletion_cancelled": False}
+                # BL-20 — 여기서는 **아무것도 거부되지 않았다.** 삭제 대상이 없었을
+                # 뿐인데 같이 온 앱 실행까지 사라지는 건 근거가 없다(ADR §4).
+                reissued = reissue_message(safe_calls)
+                msgs = _close_calls(
+                    f"✗ '{base}'을(를) 찾을 수 없습니다. 삭제하지 않았습니다.",
+                    hold_safe=reissued is not None)
+                if reissued is not None:
+                    msgs.append(reissued)
+                    return {"messages": msgs, "decision": "not_found_partial",
+                            "deletion_cancelled": False}
+                return {"messages": msgs, "decision": "not_found",
+                        "deletion_cancelled": False}
 
         # 그래프를 멈추고 사용자에게 질문(오케스트레이터가 질문을 UI로 전달)
         question = _confirm_question(dcall)
@@ -1232,7 +1308,23 @@ def build_pluiz_graph(
                     "deletion_cancelled": True, "plan": [], "plan_cursor": 0}
 
         # 거부/애매: 취소 응답
-        cancel = _close_calls("사용자가 삭제를 취소했습니다.")
+        # BL-20 — 거부는 **위험한 호출 하나**에 대한 판단이다. 같이 온 안전한 호출은
+        # 새 id로 재발행해 이어서 실행한다(ADR §3-2). 재발행할 게 없으면 아래 줄부터는
+        # 오늘과 **글자 그대로 같다.**
+        # ⚠️ unclear에서는 재발행하지 않는다 — 답을 한 글자도 못 읽었으므로 이 분기의
+        #   일은 «다시 말씀해 주세요»다. 되물으면서 도구까지 실행하면 사용자는 무엇이
+        #   일어났는지 모른 채 결과만 보게 된다. 안전 기본값을 유지한다(ADR §4).
+        reissued = reissue_message(safe_calls) if verdict == "reject" else None
+        cancel = _close_calls("사용자가 삭제를 취소했습니다.",
+                              hold_safe=reissued is not None)
+        if reissued is not None:
+            cancel.append(reissued)
+            # 최종 응답은 뒤이을 agent가 만든다. 거부 사실은 **문구가 아니라
+            # 플래그로** 전한다 — output_guard가 "삭제는 취소했어요. "를 접두로
+            # 붙이고 곧바로 끈다(ADR §3-4). 켜 둔 채 새면 실제로 삭제해 놓고
+            # "취소했어요"라고 답하는 그 사고와 같은 모양이 된다.
+            return {"messages": cancel, "decision": "rejected_partial",
+                    "deletion_cancelled": True}
         cancel.append(AIMessage(content=(
             "네, 삭제를 취소했어요." if verdict == "reject"
             else "답을 알아듣지 못해서 삭제는 취소했어요. 방금 하신 말씀을 다시 한 번 말씀해 주세요."
@@ -1268,6 +1360,11 @@ def build_pluiz_graph(
     def route_after_hitl(state: PluizState) -> str:
         d = state.get("decision")
         if d == "approved":
+            return "tools"
+        # BL-20 — 위험한 호출은 마감됐고, **재발행된 안전한 호출만** 실행된다.
+        # ToolNode는 마지막 AIMessage만 보므로(ADR §2) 거부된 삭제는 구조적으로
+        # 실행될 수 없다. 조건문이 아니라 메시지 모양이 막는 것이다.
+        if d in ("rejected_partial", "not_found_partial"):
             return "tools"
         # 다른 명령 / 대상 없음 → LLM이 이어서 처리한다(명령 실행 · 자연스러운 안내)
         if d in ("other_command", "not_found"):

@@ -62,6 +62,63 @@ def build(target_exists=None):
         target_exists=target_exists)
 
 
+# ── BL-20 — 한 배치에 «위험 + 안전»이 섞여 오는 경우 ────────────────
+# 이 mock이 이 결함의 전제 조건 그 자체다. 오늘 실기에서 드물게 나오는 배치를
+# 여기서는 **반드시** 나오게 만들어 놓고, 거부했을 때 안전한 쪽이 살아남는지 본다.
+# → docs/design/BL-20_거부후_안전호출.md
+opened = []
+
+@tool
+def open_app(app_name: str) -> str:
+    """앱 실행(mock)."""
+    opened.append(app_name)
+    return f"✓ '{app_name}'을(를) 열었어요."
+
+
+class MixedLLM:
+    """삭제 요청에 **[open_app, delete_file] 두 개를 한 AIMessage에** 담는 mock."""
+    _n = 0
+    def bind_tools(self, tools, **kw): return self
+    def invoke(self, messages):
+        turn = G.current_turn_messages(messages)
+        if any(isinstance(m, ToolMessage) for m in turn):
+            return AIMessage(content="메모장을 열었어요.")
+        human = next((m for m in turn if isinstance(m, HumanMessage)), None)
+        text = str(getattr(human, "content", "")) if human else ""
+        if "삭제" in text or "지워" in text:
+            MixedLLM._n += 1
+            n = MixedLLM._n
+            calls = [{"name": "delete_file",
+                      "args": {"file_path": "바탕화면/test.txt"},
+                      "id": f"mix_del_{n}", "type": "tool_call"}]
+            if "메모장" in text:
+                calls.insert(0, {"name": "open_app", "args": {"app_name": "메모장"},
+                                 "id": f"mix_open_{n}", "type": "tool_call"})
+            return AIMessage(content="", tool_calls=calls)
+        return AIMessage(content="네, 처리했어요.")
+
+
+def build_mixed(target_exists=None):
+    return G.build_pluiz_graph(
+        llm=MixedLLM(), tools=[delete_file, open_app],
+        security_check=fake_security, fast_resolve=fake_fast_resolve,
+        target_exists=target_exists)
+
+
+def pairs_intact(msgs) -> bool:
+    """모든 tool_call.id에 ToolMessage가 하나씩 있는가 (절대규칙 3 / ADR §3-1).
+
+    깨지면 실기에서 Gemini 400이다 — mock으로는 안 터지므로 여기서 직접 센다.
+    """
+    want, got = [], []
+    for m in msgs:
+        for c in (getattr(m, "tool_calls", None) or []):
+            want.append(c["id"])
+        if isinstance(m, ToolMessage):
+            got.append(m.tool_call_id)
+    return sorted(want) == sorted(got)
+
+
 def run():
     passed = total = 0
     def check(name, cond):
@@ -210,6 +267,102 @@ def run():
     check("'아니' → False", G.interpret_confirmation("아니") is False)
     check("'아니 삭제해'(모순) → False", G.interpret_confirmation("아니 삭제해") is False)
     check("'글쎄'(애매) → False(안전)", G.interpret_confirmation("글쎄") is False)
+
+    # ═══ BL-20 — 위험 도구를 거부해도 안전한 호출은 살린다 ═══════════
+    # docs/design/BL-20_거부후_안전호출.md
+    print("=== BL-20 순수 함수 — 가르기 · 재발행 ===")
+    mixed = [{"name": "open_app", "args": {}, "id": "a", "type": "tool_call"},
+             {"name": "delete_file", "args": {}, "id": "b", "type": "tool_call"}]
+    safe, risky = G.split_calls(mixed, {"delete_file"})
+    check("split_calls — 안전/위험이 갈린다",
+          [c["id"] for c in safe] == ["a"] and [c["id"] for c in risky] == ["b"])
+    check("split_calls — 안전한 것만 있으면 위험은 빈 목록",
+          G.split_calls(mixed[:1], {"delete_file"})[1] == [])
+    check("살릴 게 없으면 재발행하지 않는다(None)", G.reissue_message([]) is None)
+    ri = G.reissue_message(safe)
+    check("재발행 id가 원본과 다르다", ri.tool_calls[0]["id"] != "a")
+    check("재발행에 위험 호출이 없다",
+          [c["name"] for c in ri.tool_calls] == ["open_app"])
+    check("재발행에는 표식이 붙는다", G.is_reissued(ri))
+    check("보통 AIMessage는 표식이 없다", not G.is_reissued(AIMessage(content="x")))
+
+    # ⚠️ §5 — 표식이 없으면 재발행분이 «진행 근거»로 두 번 세어져, M3-1이 지키려던
+    #   «승인 거부 → 못 한 단계 보고»가 조용해진다. 접두 문구로는 못 메운다.
+    print("=== BL-20 §5 — 재발행분은 진행 근거로 세지 않는다 ===")
+    turn = [HumanMessage("메모장 열고 test.txt 지워줘"),
+            AIMessage(content="", tool_calls=mixed),
+            ToolMessage(content="보류", tool_call_id="a"),
+            ToolMessage(content="취소", tool_call_id="b"),
+            ri]
+    check("원본 2개만 센다(재발행 1개는 제외)", G.turn_tool_call_count(turn) == 2)
+    check("그래야 거부 단계가 '못 했어요'로 남는다",
+          G.steps_covered(1, G.turn_tool_call_count(turn)) == 1)
+
+    print("=== BL-20 ① 거부 → 삭제만 취소, 메모장은 열린다 ===")
+    executed.clear(); opened.clear()
+    gb1 = build_mixed()
+    cfgb1 = {"configurable": {"thread_id": "bl20_reject"}}
+    gb1.invoke({"messages": [HumanMessage("메모장 열고 test.txt 지워줘")]}, cfgb1)
+    rb1 = gb1.invoke(Command(resume="아니 취소해"), cfgb1)
+    check("거부한 삭제는 실행되지 않는다", executed == [])
+    check("같이 온 안전한 호출은 실행된다", opened == ["메모장"])
+    respb1 = G.extract_response(rb1)
+    check("거부 사실이 응답에 남는다(접두)", "취소" in respb1)
+    check("한 일도 같이 말한다", "메모장" in respb1)
+    check("짝 불변식이 유지된다", pairs_intact(rb1.get("messages", [])))
+    check("대기 상태가 남지 않는다", not rb1.get("__interrupt__"))
+
+    print("=== BL-20 ③ 안전 호출이 없으면 오늘과 똑같다 ===")
+    executed.clear(); opened.clear()
+    gb2 = build_mixed()
+    cfgb2 = {"configurable": {"thread_id": "bl20_only_risky"}}
+    gb2.invoke({"messages": [HumanMessage("test.txt 지워줘")]}, cfgb2)   # 메모장 없음
+    rb2 = gb2.invoke(Command(resume="아니 취소해"), cfgb2)
+    check("살릴 게 없으면 미실행 그대로", executed == [] and opened == [])
+    check("살릴 게 없으면 기존 취소 응답 그대로", "취소" in G.extract_response(rb2))
+    check("살릴 게 없으면 짝도 그대로", pairs_intact(rb2.get("messages", [])))
+
+    print("=== BL-20 ④ 승인 경로는 바뀌지 않는다 ===")
+    executed.clear(); opened.clear()
+    gb3 = build_mixed()
+    cfgb3 = {"configurable": {"thread_id": "bl20_approve"}}
+    gb3.invoke({"messages": [HumanMessage("메모장 열고 test.txt 지워줘")]}, cfgb3)
+    rb3 = gb3.invoke(Command(resume="응 지워 줘"), cfgb3)
+    check("승인하면 배치 전체가 실행된다",
+          executed == ["바탕화면/test.txt"] and opened == ["메모장"])
+    check("승인했는데 '취소했어요'라고 하지 않는다",
+          "취소" not in G.extract_response(rb3))
+
+    print("=== BL-20 ④' 끝까지 애매하면 재발행하지 않는다(안전 기본값) ===")
+    executed.clear(); opened.clear()
+    gb4 = build_mixed()
+    cfgb4 = {"configurable": {"thread_id": "bl20_unclear"}}
+    gb4.invoke({"messages": [HumanMessage("메모장 열고 test.txt 지워줘")]}, cfgb4)
+    gb4.invoke(Command(resume="베이"), cfgb4)
+    rb4 = gb4.invoke(Command(resume="오 오 오"), cfgb4)
+    check("애매 → 삭제도 안전 호출도 실행하지 않는다",
+          executed == [] and opened == [])
+    check("애매 → 다시 말해 달라고 한다", "다시" in G.extract_response(rb4))
+
+    print("=== BL-20 ⑥ 다른 명령이면 재발행하지 않는다 ===")
+    executed.clear(); opened.clear()
+    gb5 = build_mixed()
+    cfgb5 = {"configurable": {"thread_id": "bl20_other"}}
+    gb5.invoke({"messages": [HumanMessage("메모장 열고 test.txt 지워줘")]}, cfgb5)
+    rb5 = gb5.invoke(Command(resume="네이버 열어줘"), cfgb5)
+    check("다른 명령 → 지난 배치의 안전 호출을 되살리지 않는다", opened == [])
+    check("다른 명령 → 삭제도 안 한다", executed == [])
+    check("다른 명령 → 짝은 그대로", pairs_intact(rb5.get("messages", [])))
+
+    print("=== BL-20 대상이 없을 때도 안전 호출은 살린다 ===")
+    executed.clear(); opened.clear()
+    gb6 = build_mixed(target_exists=lambda dcall: False)
+    cfgb6 = {"configurable": {"thread_id": "bl20_not_found"}}
+    rb6 = gb6.invoke({"messages": [HumanMessage("메모장 열고 test.txt 지워줘")]}, cfgb6)
+    check("없는 대상 → 묻지 않는다", not rb6.get("__interrupt__"))
+    check("없는 대상 → 삭제 미실행", executed == [])
+    check("없는 대상이어도 메모장은 열린다", opened == ["메모장"])
+    check("없는 대상 경로도 짝이 유지된다", pairs_intact(rb6.get("messages", [])))
 
     print(f"\n결과: {passed}/{total} 통과")
     return passed == total
