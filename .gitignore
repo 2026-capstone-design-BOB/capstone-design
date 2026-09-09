@@ -77,3 +77,9 @@ docs/*.docx
 docs/*.hwp
 docs/*.hwpx
 docs/*.pdf
+
+# 웨이크워드 실제 녹음 — 저장소에 넣지 않는다.
+# ① 실제 사람 목소리(본인·팀원)라 개인정보다. ② 9MB짜리 원본이고,
+# 저장소에 필요한 산출물은 학습 결과인 services/wakeword_model.npz 하나다.
+# 만드는 법은 scripts/record_wakeword.py (docs/TASKS.md ③)
+wake_voice*.npy
