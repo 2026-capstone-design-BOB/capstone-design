@@ -84,6 +84,10 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_running_apps.py      # 실행 중인 앱 목록      12/12
 "$PY" tests/test_wakeword_ui.py       # 웨이크워드 설정 UI 배선 25/25
 "$PY" tests/test_wakeword_kws.py      # 전용 KWS 백엔드 계약   25/25
+"$PY" tests/test_pointing.py          # 포인팅·확대(M4)        70/70
+"$PY" tests/test_window_truth.py      # 유령 창 판정(BL-26)    13/13
+                                      #   ★ Windows API를 실제로 부른다 — mock이 아니다.
+                                      #     유령 창은 mock으로 만들 수 없다(그래서 결함이 살아남았다)
 "$PY" tests/test_trim.py              # 히스토리 trim
 "$PY" tests/test_injection.py         # 프롬프트 인젝션
 "$PY" tests/test_sensitive.py         # 민감정보 보호
