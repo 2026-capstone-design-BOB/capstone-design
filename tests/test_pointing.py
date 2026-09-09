@@ -251,49 +251,78 @@ def run():
     # ⚠️ 위가 «루프가 안 돌아서» 통과하는 것을 막는다.
     check("[전제] 표시 구간을 지나 그 뒤까지 돌았다", iters["n"] > 5)
 
-    # ═══ ⑤ 확대(zoom) — ADR §6 ═══════════════════════════════════
-    # 핵심은 «화면을 다시 찍지 않는다»와 «못 만들어도 포인팅은 산다»이다.
-    print("=== ⑤ 확대 — 이미 찍어 둔 캡처에서 자른다 ===")
+    # ═══ ⑤ 확대 = 돋보기 · 2패스 정밀화 (M4 §6, 2026-09-09 사용자 선택) ═══
+    print("=== ⑤ 돋보기 — 대상 중심 정사각형을 잘라 확대한다 ===")
     import tempfile as _tf, base64 as _b64, io as _bio
     try:
         from PIL import Image, ImageDraw
-        from tools.vision import crop_data_uri
-        cap = os.path.join(_tf.gettempdir(), "pluiz_zoom_regress.png")
+        from tools.vision import (loupe_data_uri, refine_box, box_in_crop_to_image,
+                                  LOUPE_SRC_PX, LOUPE_OUT_PX)
+        cap = os.path.join(_tf.gettempdir(), "pluiz_loupe_regress.png")
         im = Image.new("RGB", (1000, 600), (230, 230, 235))
-        ImageDraw.Draw(im).rectangle([400, 300, 500, 340], fill=(60, 90, 200))
+        ImageDraw.Draw(im).rectangle([440, 290, 540, 330], fill=(60, 90, 200))
         im.save(cap)
 
-        uri = crop_data_uri(cap, [400, 300, 500, 340], (1000, 600))
+        uri = loupe_data_uri(cap, (490, 310))
         check("data URI를 만든다", bool(uri) and uri.startswith("data:image/png;base64,"))
         z = Image.open(_bio.BytesIO(_b64.b64decode(uri.split(",", 1)[1])))
-        check("원본 요소(100x40)보다 크다(확대됐다)", z.size[0] > 100 and z.size[1] > 40)
-        check("상한을 넘지 않는다", z.size[0] <= 420 * 1.2)
-        # ⚠️ 실패가 예외가 되면 포인팅 자체가 죽는다. 확대는 곁들이다.
-        check("범위 밖이면 None (예외 아님)",
-              crop_data_uri(cap, [9999, 9999, 10000, 10000], (1000, 600)) is None)
+        # ⚠️ 정사각형이어야 한다 — 렌더러가 **원형**으로 그리므로 비율이 어긋나면
+        #   돋보기 가운데가 대상에서 밀린다.
+        check("정사각형이다(원형 돋보기의 전제)", z.size[0] == z.size[1])
+        check("보낼 크기로 키운다", z.size[0] == LOUPE_OUT_PX)
+
+        # 가장자리에 붙은 대상도 **중심과 정사각형**을 유지해야 한다
+        edge = loupe_data_uri(cap, (5, 5))
+        ze = Image.open(_bio.BytesIO(_b64.b64decode(edge.split(",", 1)[1])))
+        check("화면 가장자리여도 정사각형", ze.size[0] == ze.size[1])
+
         check("없는 파일이면 None (예외 아님)",
-              crop_data_uri("__없는파일__.png", [1, 1, 2, 2], (10, 10)) is None)
+              loupe_data_uri("__없는파일__.png", (10, 10)) is None)
         os.unlink(cap)
     except ImportError:
-        print("  (PIL 없음 — 확대 검사 생략)")
+        print("  (PIL 없음 — 돋보기 검사 생략)")
+
+    print("=== ⑤ 2패스 정밀화 — 조각 영역 계산 ===")
+    from tools.vision import refine_box, box_in_crop_to_image, REFINE_MIN_PX, REFINE_MAX_PX
+    r = refine_box((400, 300, 500, 325), (1000, 600))
+    check("조각은 정사각형", (r[2] - r[0]) == (r[3] - r[1]))
+    check("작은 요소여도 최소 크기를 지킨다", (r[2] - r[0]) >= REFINE_MIN_PX)
+    check("1차 중심을 품는다", r[0] <= 450 <= r[2] and r[1] <= 312 <= r[3])
+    # ⚠️ 가장자리 요소에서 조각이 작아지면 배율이 떨어져 정밀화 의미가 없다
+    e = refine_box((0, 0, 40, 20), (1000, 600))
+    check("가장자리에서도 조각 크기를 유지한다(밀어 넣는다)",
+          (e[2] - e[0]) >= REFINE_MIN_PX and e[0] >= 0 and e[1] >= 0)
+    big = refine_box((0, 0, 900, 550), (1000, 600))
+    check("큰 요소여도 상한을 넘지 않는다", (big[2] - big[0]) <= REFINE_MAX_PX)
+
+    print("=== ⑤ 조각 좌표 → 원본 좌표 되돌리기 ===")
+    back = box_in_crop_to_image((250, 250, 750, 750), (100, 100, 300, 300))
+    check("조각 한가운데는 원본 한가운데로", [round(v) for v in back] == [150, 150, 250, 250])
+    full = box_in_crop_to_image((0, 0, 1000, 1000), (50, 60, 250, 260))
+    check("조각 전체는 조각 사각형 그대로", [round(v) for v in full] == [50, 60, 250, 260])
 
     print("=== ⑤ payload — 못 만들었으면 «확대했다»고 하지 않는다 ===")
     locz = {"found": True, "rect": [400, 300, 500, 340], "center": [450, 320],
-            "label": "버튼", "crop": "data:image/png;base64,AAAA"}
-    check("zoom=True면 zoomImage가 실린다", "zoomImage" in P.point_payload(locz, zoom=True))
+            "label": "버튼", "crop": "data:image/png;base64,AAAA",
+            "crop_src_px": 150, "crop_mag": 3}
+    pz = P.point_payload(locz, zoom=True)
+    check("zoom=True면 zoomImage가 실린다", "zoomImage" in pz)
+    check("돋보기 크기 근거(zoomSrcPx)가 실린다", pz.get("zoomSrcPx") == 150)
+    check("배율도 실린다", pz.get("zoomMag") == 3)
     check("zoom=False면 안 실린다", "zoomImage" not in P.point_payload(locz, zoom=False))
     nocrop = {k: v for k, v in locz.items() if k != "crop"}
-    pz = P.point_payload(nocrop, zoom=True)
-    check("crop이 없으면 zoom이 False로 내려간다(거짓말 방지)", pz["zoom"] is False)
-    check("crop이 없어도 고리는 그린다", pz is not None and pz["rect"] is not None)
+    pn = P.point_payload(nocrop, zoom=True)
+    check("crop이 없으면 zoom이 False로 내려간다(거짓말 방지)", pn["zoom"] is False)
+    check("crop이 없어도 고리는 그린다", pn is not None and pn["rect"] is not None)
 
-    print("=== ⑤ locate_ui_element는 기본이 «자르지 않음» ===")
+    print("=== ⑤ locate_ui_element 기본값 — 기존 호출자는 그대로 ===")
     import inspect
     from tools.vision import locate_ui_element
     sig = inspect.signature(locate_ui_element)
-    check("want_crop 인자가 있다", "want_crop" in sig.parameters)
-    check("기본값이 False다(기존 호출자는 그대로)",
-          sig.parameters["want_crop"].default is False)
+    check("want_crop 기본 False", sig.parameters["want_crop"].default is False)
+    # ⚠️ refine도 기본 False다. click_ui_element에 Vision 왕복을 하나 더 얹으면
+    #   승인 대기가 길어지고, 클릭은 정확도보다 «되돌릴 수 없음»이 더 큰 문제다.
+    check("refine 기본 False", sig.parameters["refine"].default is False)
 
     # ═══ ④ 도구 계약 ═════════════════════════════════════════════
     print("=== ④ 도구가 등록돼 있고 좌표 인자를 받지 않는다 ===")

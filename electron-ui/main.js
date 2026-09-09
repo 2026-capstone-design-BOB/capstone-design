@@ -295,6 +295,12 @@ function showPointer(p) {
     conv.center = [m.x, m.y];
   }
 
+  // 돋보기가 «잘라 온 영역»도 물리 픽셀이다. 화면에 그릴 지름을 여기서 정한다.
+  if (conv.zoomImage && conv.zoomSrcPx) {
+    const sf = screen.getPrimaryDisplay().scaleFactor || 1;
+    conv.zoomDip = (conv.zoomSrcPx / sf) * (conv.zoomMag || 3);
+  }
+
   const send = () => {
     // 화면 좌표 → 오버레이 창 기준 좌표. 원점이 (0,0)이 아닌 배치가 있어 뺀다.
     win.webContents.send('point-draw', { ...conv, originX: b.x, originY: b.y });

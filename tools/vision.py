@@ -319,54 +319,107 @@ def describe_screen(window: str = "", question: str = "") -> str:
                 log.debug("임시 파일 삭제 실패: %s", tmp_path)
 
 
-# ── 확대(zoom) — M4 §6 ────────────────────────────────────────────
+# ── 확대(zoom) — 돋보기 방식 (M4 §6, 2026-09-09 사용자 선택) ────────
 # ⚠️ **화면을 다시 찍지 않는다.** 다시 찍으면 그 사이에 뜬 우리 오버레이가 들어간다
 #   (§5의 그 문제다). `locate_ui_element`가 **이미 찍어 둔 그 파일**에서 자른다.
-ZOOM_SCALE = 3          # 고정. 조절 UI를 만들지 않는다(§6 — 2주 안에 끝내려고 버린 것들)
-ZOOM_MAX_W = 420        # 오버레이 가장자리에 얹을 크기 상한(CSS px 기준)
+#
+# 처음엔 가장자리 카드였는데, 사용자가 *"저렇게 위에 그림이 뜨는 게 아니라 다른
+# 방식으로"* 라고 해서 **돋보기**로 바꿨다(2026-09-09). 대상 자리에 겹쳐 띄우므로
+# **시선을 옮길 필요가 없다** — 접근성 보조라는 목적에 더 맞는다.
+LOUPE_SRC_PX = 150      # 대상 중심 기준 **물리 픽셀** 정사각 한 변. 이만큼을 잘라
+LOUPE_OUT_PX = 450      # 이 크기 PNG로 키워 보낸다(고해상도 화면에서도 또렷하게)
+LOUPE_MAG = 3           # 화면에 보일 배율. 고정한다 — 조절 UI를 만들지 않는다
 
 
-def crop_data_uri(image_path: str, rect, image_size, scale: int = ZOOM_SCALE):
-    """캡처 파일에서 `rect` 주변을 잘라 확대한 PNG data URI. 실패하면 None.
+def loupe_data_uri(image_path: str, center_img, src_px: int = LOUPE_SRC_PX,
+                   out_px: int = LOUPE_OUT_PX):
+    """대상 중심 주변 정사각형을 잘라 확대한 PNG data URI. 실패하면 None.
 
-    `rect`는 **화면 좌표**이고 `image_size`는 그 캡처의 크기다. 창 캡처면 원점이
-    (0,0)이 아니므로, 여기서는 **이미지 안의 좌표로 다시 옮겨** 자른다.
+    `center_img`는 **캡처 이미지 안의** 좌표다(화면 좌표가 아니다 — 창 캡처면
+    원점이 (0,0)이 아니므로 호출부에서 미리 옮겨 준다).
 
     ⚠️ 실패를 예외로 만들지 않는다. 확대는 **곁들이**이고, 못 만들었다고 포인팅
       자체가 죽으면 안 된다 — 고리는 그대로 그려진다.
+    ⚠️ 정사각형이어야 한다. 렌더러가 **원형 돋보기**로 그리므로 비율이 어긋나면
+      가운데가 대상이 아니게 된다.
     """
     try:
         from PIL import Image
         import base64, io as _io
 
-        l, t, r, b = [int(v) for v in rect]
+        cx, cy = int(center_img[0]), int(center_img[1])
+        half = max(8, int(src_px) // 2)
         with Image.open(image_path) as im:
             iw, ih = im.size
-            # 화면 좌표 → 이미지 좌표 (캡처 크기와 rect가 같은 공간이 아닐 수 있다)
-            ox = oy = 0
-            if image_size and tuple(image_size) == (iw, ih):
-                pass
-            # 여백을 넉넉히 둔다 — 요소만 딱 자르면 «어디의 무엇인지»를 알 수 없다
-            pad_x = max(24, (r - l) // 2)
-            pad_y = max(24, (b - t) // 2)
-            box = (max(0, l - ox - pad_x), max(0, t - oy - pad_y),
-                   min(iw, r - ox + pad_x), min(ih, b - oy + pad_y))
-            if box[2] <= box[0] or box[3] <= box[1]:
+            # 가장자리에 붙어도 **정사각형과 중심을 유지**한다 — 잘린 채로 늘이면
+            # 돋보기 가운데가 대상에서 밀린다.
+            l, t = cx - half, cy - half
+            r, b = cx + half, cy + half
+            pad_l, pad_t = max(0, -l), max(0, -t)
+            pad_r, pad_b = max(0, r - iw), max(0, b - ih)
+            crop = im.crop((max(0, l), max(0, t), min(iw, r), min(ih, b)))
+            if crop.size[0] <= 0 or crop.size[1] <= 0:
                 return None
-            crop = im.crop(box)
-            w, h = crop.size
-            k = min(scale, max(1, ZOOM_MAX_W // max(1, w)))
-            if k > 1:
-                crop = crop.resize((w * k, h * k), Image.LANCZOS)
+            if pad_l or pad_t or pad_r or pad_b:
+                canvas = Image.new("RGB", (half * 2, half * 2), (24, 26, 32))
+                canvas.paste(crop.convert("RGB"), (pad_l, pad_t))
+                crop = canvas
+            crop = crop.convert("RGB").resize((out_px, out_px), Image.LANCZOS)
             buf = _io.BytesIO()
-            crop.convert("RGB").save(buf, format="PNG", optimize=True)
+            crop.save(buf, format="PNG", optimize=True)
             return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
     except Exception as e:
         log.warning("확대 이미지 생성 실패(무시): %s: %s", type(e).__name__, e)
         return None
 
 
-def locate_ui_element(target: str, window: str = "", want_crop: bool = False) -> dict:
+# ── 2패스 정밀화 (2026-09-09 사용자 선택) ──────────────────────────
+# 1차 좌표의 **반복 오차가 요소 크기만큼** 있었다(실측: 같은 «파일 메뉴»를 5번
+# 찾아 x 편차 36px · y 편차 43px, 요소는 100×25px). 원인은 버그가 아니라
+# **보내는 이미지의 해상도**다 — 전체화면 3072px를 1600px로 줄여 보내므로
+# 작은 UI 요소는 몇 픽셀짜리가 된다.
+#
+# 그래서 1차 주변만 잘라 **그 조각만** 다시 묻는다. 조각은 축소되지 않으므로
+# 같은 요소가 훨씬 크게 보인다.
+#
+# ⚠️ **실패하면 1차 결과를 그대로 쓴다.** 정밀화는 개선 시도이지 관문이 아니다 —
+#   여기서 못 찾았다고 «못 찾음»으로 뒤집으면, 1차가 맞았을 때도 놓친다.
+REFINE_PAD = 3.0        # 1차 요소 크기의 몇 배를 여유로 둘지
+REFINE_MIN_PX = 260     # 조각이 너무 작으면 맥락이 없어 오히려 헷갈린다
+REFINE_MAX_PX = 900     # 너무 크면 축소가 다시 일어나 의미가 없다
+
+
+def refine_box(base_rect, image_size, pad=REFINE_PAD):
+    """정밀화에 쓸 **조각 영역**(이미지 좌표). `(l, t, r, b)`.
+
+    순수 함수라 테스트가 이미지 없이 본다.
+    """
+    l, t, r, b = [float(v) for v in base_rect]
+    iw, ih = image_size
+    w, h = max(1.0, r - l), max(1.0, b - t)
+    side = max(REFINE_MIN_PX, min(REFINE_MAX_PX, max(w, h) * pad))
+    cx, cy = (l + r) / 2, (t + b) / 2
+    half = side / 2
+    # 이미지 밖으로 나가면 **밀어 넣는다**(잘라내지 않는다) — 조각이 작아지면
+    # 배율이 줄어 정밀화 효과가 사라진다.
+    x1 = max(0, min(iw - side, cx - half))
+    y1 = max(0, min(ih - side, cy - half))
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(iw, x1 + side), min(ih, y1 + side)
+    return (int(x1), int(y1), int(x2), int(y2))
+
+
+def box_in_crop_to_image(box, crop_rect):
+    """조각 안의 정규화 박스 → **원본 이미지 좌표** 사각형."""
+    ymin, xmin, ymax, xmax = box
+    l, t, r, b = crop_rect
+    cw, ch = max(1, r - l), max(1, b - t)
+    return (l + xmin / _BOX_SCALE * cw, t + ymin / _BOX_SCALE * ch,
+            l + xmax / _BOX_SCALE * cw, t + ymax / _BOX_SCALE * ch)
+
+
+def locate_ui_element(target: str, window: str = "", want_crop: bool = False,
+                      refine: bool = False) -> dict:
     """화면에서 요소를 찾아 **화면 좌표**를 돌려준다. 도구가 아니라 내부 함수다.
 
     찾으면 `{"found": True, "center", "rect", "size", "label", "window_rect"}`,
@@ -436,15 +489,57 @@ def locate_ui_element(target: str, window: str = "", want_crop: bool = False) ->
         loc["found"] = True
         loc["label"] = parsed["label"] or target
         loc["window_rect"] = window_rect
+
+        # ── 2패스 정밀화 ─────────────────────────────────────────
+        # 1차 주변만 잘라 **그 조각만** 다시 묻는다. 조각은 축소되지 않으므로
+        # 같은 요소가 훨씬 크게 보인다. 실패하면 1차 결과를 그대로 쓴다.
+        if refine:
+            img_rect = (loc["rect"][0] - origin[0], loc["rect"][1] - origin[1],
+                        loc["rect"][2] - origin[0], loc["rect"][3] - origin[1])
+            crop_rect = refine_box(img_rect, image_size)
+            try:
+                from PIL import Image
+                with Image.open(tmp_path) as im:
+                    piece = im.crop(crop_rect)
+                b64p = _shrink_and_encode_image(piece)
+                res2 = build_llm().invoke([HumanMessage(content=[
+                    {"type": "text", "text": _UI_PROMPT.format(target=target)},
+                    {"type": "image_url", "image_url": f"data:image/png;base64,{b64p}"},
+                ])])
+                p2 = parse_ui_box(getattr(res2, "content", "") or "")
+                if p2["found"]:
+                    r2 = box_in_crop_to_image(p2["box"], crop_rect)
+                    before = loc["center"]
+                    loc["rect"] = (round(r2[0] + origin[0]), round(r2[1] + origin[1]),
+                                   round(r2[2] + origin[0]), round(r2[3] + origin[1]))
+                    loc["center"] = (round((loc["rect"][0] + loc["rect"][2]) / 2),
+                                     round((loc["rect"][1] + loc["rect"][3]) / 2))
+                    loc["size"] = (loc["rect"][2] - loc["rect"][0],
+                                   loc["rect"][3] - loc["rect"][1])
+                    loc["refined"] = True
+                    dx = loc["center"][0] - before[0]
+                    dy = loc["center"][1] - before[1]
+                    log.info("좌표 정밀화 | %s → %s (Δ%+d,%+d)",
+                             before, loc["center"], dx, dy)
+                else:
+                    # ⚠️ 뒤집지 않는다. 조각에서 못 봤다고 1차가 틀린 건 아니다.
+                    log.info("좌표 정밀화 실패(1차 유지): %s", p2["reason"])
+            except Exception as e:
+                log.warning("좌표 정밀화 건너뜀(%s: %s) — 1차 좌표를 쓴다",
+                            type(e).__name__, e)
+
         # 확대본은 **여기서** 만든다 — 아래 finally가 임시 파일을 지우기 전이고,
         # 무엇보다 이 캡처에는 우리 오버레이가 들어 있지 않다(§5·§6).
         # ⚠️ 기본은 False다. find_ui_element·click_ui_element는 지금까지와 같다.
         if want_crop:
-            img_rect = [loc["rect"][0] - origin[0], loc["rect"][1] - origin[1],
-                        loc["rect"][2] - origin[0], loc["rect"][3] - origin[1]]
-            loc["crop"] = crop_data_uri(tmp_path, img_rect, image_size)
-        log.info("UI 요소 찾음: %r → center=%s size=%s",
-                 loc["label"], loc["center"], loc["size"])
+            loc["crop"] = loupe_data_uri(
+                tmp_path,
+                (loc["center"][0] - origin[0], loc["center"][1] - origin[1]))
+            loc["crop_src_px"] = LOUPE_SRC_PX
+            loc["crop_mag"] = LOUPE_MAG
+        log.info("UI 요소 찾음: %r → center=%s size=%s%s",
+                 loc["label"], loc["center"], loc["size"],
+                 " (정밀화됨)" if loc.get("refined") else "")
         return loc
 
     except ImportError as e:
@@ -506,7 +601,10 @@ def point_at_element(target: str, window: str = "", zoom: bool = False) -> str:
     pointer.hide("새 포인팅")
 
     # 확대본은 **이 캡처에서** 만들어진다(§6) — 다시 찍으면 우리 오버레이가 들어간다
-    loc = locate_ui_element(target, window, want_crop=bool(zoom))
+    # refine=True — 좌표 정밀도가 요소 크기만큼 흔들려서(실측) 2패스를 쓴다.
+    # 대가는 Vision 왕복 1회(약 4~5초)다. 포인팅은 «사람이 눈으로 찾는» 것이라
+    # 정확도가 속도보다 중요하다 — click_ui_element와는 판단이 다르다.
+    loc = locate_ui_element(target, window, want_crop=bool(zoom), refine=True)
     payload = pointer.point_payload(loc, zoom=zoom)
     if payload is None:
         # 못 찾았으면 **그리지 않는다.** 띄워 놓고 "근처일 거예요"라고 하면

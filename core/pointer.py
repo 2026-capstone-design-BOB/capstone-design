@@ -78,6 +78,10 @@ def point_payload(loc: Any, zoom: bool = False) -> Optional[dict]:
     crop = loc.get("crop") if zoom else None
     if crop:
         payload["zoomImage"] = crop
+        # 돋보기 크기를 렌더러가 계산할 근거. **물리 픽셀**로 보낸다 —
+        # DIP 변환은 Electron 쪽 한 곳에서만 한다(§5-A).
+        payload["zoomSrcPx"] = int(loc.get("crop_src_px") or 150)
+        payload["zoomMag"] = int(loc.get("crop_mag") or 3)
     elif zoom:
         payload["zoom"] = False          # 그릴 게 없으면 «확대했다»고 하지 않는다
     return payload
