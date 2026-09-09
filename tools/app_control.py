@@ -57,6 +57,44 @@ def _display_name(app_key: str, original: str) -> str:
     return APP_DISPLAY_NAMES.get(app_key, original)
 
 
+def is_window_cloaked(hwnd: int) -> bool:
+    """DWM이 **가려 둔(cloaked)** 창인가. 가려져 있으면 사용자 눈에 **안 보인다.**
+
+    🚨 **2026-09-09 — 이 한 줄이 없어서 «설정 창을 열었다»고 세 번 거짓말했다.**
+
+    Windows는 정지된 UWP 앱(설정·계산기 등)의 창을 **닫지 않고 cloak** 한다.
+    그 창은 이렇게 보인다:
+
+        IsWindowVisible : True          ← «보인다»고 나온다
+        IsIconic        : False         ← 최소화도 아니다
+        GetWindowRect   : 1536x912      ← 크기까지 정상
+        제목            : '설정'
+        DWMWA_CLOAKED   : 2             ← 실제로는 **가려져 있다**
+
+    그래서 `IsWindowVisible`만 보면 **없는 창을 있다고 센다.** 포커스는 «성공»하고,
+    캡처는 **낡거나 빈 픽셀**을 준다(포인팅 고리가 엉뚱한 데 그려진 이유이기도 하다).
+
+    ⚠️ 실패하면 **False**(가려지지 않음)로 본다 — 판정 실패 때문에 멀쩡한 창을
+      없다고 하면 그게 더 나쁘다.
+    """
+    try:
+        cloaked = ctypes.c_int(0)
+        # DWMWA_CLOAKED = 14
+        hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            hwnd, 14, ctypes.byref(cloaked), ctypes.sizeof(cloaked))
+        return hr == 0 and cloaked.value != 0
+    except Exception:
+        return False
+
+
+def _is_real_window(hwnd: int) -> bool:
+    """사용자가 **실제로 볼 수 있는** 최상위 창인가."""
+    u = ctypes.windll.user32
+    if not u.IsWindowVisible(hwnd):
+        return False
+    return not is_window_cloaked(hwnd)
+
+
 def _find_hwnd_by_title(keywords: list[str]) -> int:
     """창 제목으로 HWND 검색. UWP 앱(Calculator 등) PID 매칭 실패 시 fallback.
     keywords 중 하나라도 포함된 visible 창의 HWND 반환. 없으면 0.
@@ -65,7 +103,10 @@ def _find_hwnd_by_title(keywords: list[str]) -> int:
     kws_lower = [k.lower() for k in keywords if k]
 
     def callback(h, _):
-        if not ctypes.windll.user32.IsWindowVisible(h):
+        # ⚠️ 여기도 cloaked를 걸러야 한다. 2026-09-09에 이 폴백이 정지된 UWP의
+        #   `ApplicationFrameWindow`(제목 '설정')를 집어, 프로세스 필터를 통과한
+        #   것도 아닌 **유령 창**을 «설정 창»으로 돌려줬다.
+        if not _is_real_window(h):
             return True
         buf = ctypes.create_unicode_buffer(256)
         ctypes.windll.user32.GetWindowTextW(h, buf, 256)
@@ -167,7 +208,8 @@ def _focus_window(app_key: str) -> bool:
 
     def _enum_cb(hwnd, _):
         nonlocal found_hwnd
-        if not ctypes.windll.user32.IsWindowVisible(hwnd):
+        # ⚠️ IsWindowVisible만으로는 부족하다 — cloaked 창이 True를 준다
+        if not _is_real_window(hwnd):
             return True
         pid_buf = ctypes.wintypes.DWORD()
         ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_buf))
@@ -275,8 +317,11 @@ def _is_running(app_key: str) -> bool:
 
 def find_hwnd_for_app(app_name: str) -> int:
     """
-    앱 이름(한국어 포함)으로 최상위 가시 HWND 반환. 0이면 창 없음.
-    system.py의 창별 스크린샷 등 외부 모듈에서 재사용 가능.
+    앱 이름(한국어 포함)으로 **사용자가 실제로 볼 수 있는** 최상위 HWND 반환.
+    0이면 창 없음. system.py의 창별 스크린샷 등 외부 모듈에서 재사용 가능.
+
+    ⚠️ **cloaked 창은 «없는 것»으로 센다**(→ `is_window_cloaked`). 정지된 UWP 앱의
+      유령 창을 세면, 있지도 않은 창을 «앞으로 가져왔다»고 답하게 된다.
     """
     app_key = _normalize(app_name)
     targets = {p.lower() for p in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
@@ -284,7 +329,9 @@ def find_hwnd_for_app(app_name: str) -> int:
     found = [0]
 
     def _cb(hwnd, _):
-        if not ctypes.windll.user32.IsWindowVisible(hwnd):
+        # ⚠️ cloaked 창을 세면 «있는데 안 보이는 창»을 있다고 답하게 된다.
+        #   그러면 포커스는 성공하고 캡처는 빈 픽셀을 준다 → 2026-09-09 «뻥카».
+        if not _is_real_window(hwnd):
             return True
         pid_buf = ctypes.wintypes.DWORD()
         ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_buf))
