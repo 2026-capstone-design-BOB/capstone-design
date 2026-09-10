@@ -267,6 +267,38 @@ _RESIDUAL_MODIFIERS = frozenset([
     "새로", "새로운", "새", "새창", "새탭", "또", "추가로", "하나", "더", "따로",
 ])
 
+# ── BL-27: 부정·대조 토큰 ─────────────────────────────────────────
+#
+# 캐시는 문장에서 **처음 걸린 entity 하나**만 집는다. 그래서 대조문이 뒤집힌다:
+#
+#   "메모장 말고 계산기 열어줘" → (notepad, open) → **메모장이 열린다**
+#
+# `has_uncovered_command()`도 못 잡는다 — 남는 어절이 「말고」뿐이라 명령의 꼴이 아니고,
+# 잔여 어절도 2개뿐이라 커버율 임계(3)에 걸리지 않는다.
+#
+# ⚠️ **이건 임베딩으로 바꿔도 안 고쳐진다.** 문장 임베딩은 부정·대조에 약하고
+# 「메모장 말고 계산기」의 벡터는 「메모장 열어줘」와 가깝다. 그래서 **고치지 않고
+# 피한다** — 대조 표지가 있으면 캐시를 통째로 포기하고 LLM이 문장 전체를 읽게 한다.
+# 오판의 방향이 안전하다: 느려질 뿐(2.5초) 틀리지 않는다.
+# → [M5 ADR §3-4](../docs/design/M5_임베딩_캐시.md)
+_CONTRAST_TOKENS = frozenset(["말고", "말구", "대신", "아니라", "아니고", "빼고"])
+
+# ── BL-27: 학습 자격 — **발화** 쪽 조건 ───────────────────────────
+#
+# `_is_learnable()`은 **도구**가 화이트리스트인지만 봤다. 발화가 명령의 꼴인지는
+# 보지 않아서, 승인 응답·잡담·STT 오인식이 그대로 «패턴»이 됐다. 실제로 박혀 있던 것:
+#
+#   '그래'               → close_app   ← **승인 응답이다.** 승인 대기가 아닐 때
+#                                        「그래」라고 하면 앱이 꺼진다
+#   '오시가 된거야 다시'  → get_current_time  ← STT 오인식
+#
+# 한 번 박히면 `hit_count`만 늘며 영구화된다(BL-21과 같은 계열).
+#
+# ⚠️ **임계는 실측으로 정했다** (2026-09-10, ADR §6-1):
+#   글자수 3 — '그래'(2)는 막고 **'음소거'(3)·'음소거해줘'(5)는 살린다.**
+#   ADR 초안의 «어절 2개 이상»은 **틀렸다** — 시드 '음소거해줘'가 1어절이다.
+_MIN_LEARN_CHARS = 3
+
 _RESIDUAL_CMD_TAIL = re.compile(
     r'(줘|줄래|주라|주세요|주시겠어요|주시겠어|달라|달라니까|다오'
     r'|봐|봐라|보여|알려|해라|하렴|하자)$'
@@ -453,6 +485,25 @@ class CommandCache:
                 return True
         return False
 
+    def has_contrast_marker(self, user_input: str) -> bool:
+        """발화에 부정·대조 표지가 있는가. (BL-27)
+
+        「메모장 **말고** 계산기 열어줘」처럼 대조가 있으면 캐시는 **처음 걸린 것**을
+        집어 정반대를 실행한다. 있으면 캐시를 쓰지 않는다.
+
+        어절 **완전일치** 또는 **어절의 끝**만 본다 — 붙여 쓴 「메모장말고」를 잡되,
+        부분일치로 엉뚱한 낱말을 삼키지 않기 위해서다.
+        """
+        text = self._normalize(user_input)
+        for tok in text.split(" "):
+            if not tok:
+                continue
+            if tok in _CONTRAST_TOKENS:
+                return True
+            if any(tok.endswith(m) and len(tok) > len(m) for m in _CONTRAST_TOKENS):
+                return True
+        return False
+
     def _extract_intent(self, text: str) -> Optional[tuple[str, str]]:
         """(entity_key, action_key) 쌍 추출. 둘 다 있을 때만 반환."""
         entity = self._extract_entity(text)
@@ -522,6 +573,15 @@ class CommandCache:
         Returns: (CacheEntry, similarity_score) 또는 None
         """
         normalized = self._normalize(user_input)
+
+        # Stage 0: 부정·대조 게이트 (BL-27) — **두 단계 모두에 건다.**
+        #
+        # Stage 1의 결함이라 Stage 2 쪽에만 걸면 안 되고, 반대로 Stage 2(장차 임베딩)도
+        # 대조를 못 보므로 한쪽만 걸어도 샌다. 여기 한 곳에서 막으면 호출자가
+        # 무엇이든(fast_path·테스트) 같은 판정을 받는다.
+        if self.has_contrast_marker(normalized):
+            print(f"[CommandCache] [BL-27] 대조 표지 → 캐시 포기, LLM으로: {normalized!r}")
+            return None
 
         # Stage 1: Intent-based
         intent = self._extract_intent(normalized)
@@ -631,6 +691,35 @@ class CommandCache:
             return False                        # 그 외 파라미터 → 학습 거부
         return True
 
+    def is_learnable_utterance(self, user_input: str) -> Optional[str]:
+        """**발화**가 패턴이 될 자격이 있는가. 거절 사유(문자열) 또는 None(=통과). (BL-27)
+
+        `_is_learnable()`이 «도구» 쪽을 보는 것과 짝이다. 이쪽은 «발화» 쪽을 본다.
+
+        - **L1** — 캐시가 아는 낱말(entity **또는** action)이 **하나도 없으면** 거절.
+          캐시가 한 낱말도 못 알아듣는 말은 캐시의 패턴이 될 수 없다.
+          → `'그래'`·`'오시가 된거야 다시'`(STT 오인식) 차단
+        - **L2** — 공백 제외 `_MIN_LEARN_CHARS`글자 미만이면 거절. → `'그래'`(2글자)
+        - **L3** — 부정·대조 표지가 있으면 거절. → `'계산기 말고 메모장 열어줘'`
+
+        ⚠️ **L1은 «entity **또는** action»이다. «둘 다»가 아니다.**
+        ADR 초안은 «intent(둘 다) 추출 실패 시 거절»이었는데, 재보니 **시드 37개 중
+        9개와 정상 표현 12개 중 11개**를 막았다(2026-09-10 실측, ADR §6-1).
+        『창 최대화해줘』·『지금 몇 시야』에는 entity가 없다 — 낱말 자체가 명령이다.
+
+        비용도 적어 둔다: L1은 캐시 어휘에 없는 정상 표현
+        (『충전 얼마나 남았어』·『창 좀 꽉 채워줘』)도 막는다. **미스는 LLM이 2.5초에
+        처리하지만 오매칭은 엉뚱한 실행이라** 정밀도를 위로 둔 것이다.
+        """
+        key = self._normalize(user_input)
+        if len(key.replace(" ", "")) < _MIN_LEARN_CHARS:
+            return f"L2:너무 짧음({len(key.replace(' ', ''))}글자)"
+        if self.has_contrast_marker(key):
+            return "L3:부정·대조 표지"
+        if not (self._extract_entity(key) or self._extract_action(key)):
+            return "L1:아는 낱말 없음"
+        return None
+
     def learn(self, user_input: str, tool_calls: list) -> bool:
         """LLM이 성공 실행한 화이트리스트 제어명령의 '사용자 표현'을 학습한다.
         파라미터는 저장하지 않음(오염 차단). 반환: 새로 학습했으면 True."""
@@ -640,6 +729,10 @@ class CommandCache:
             return False
         key = self._normalize(user_input)
         if not key or len(key) < 2:
+            return False
+        reason = self.is_learnable_utterance(key)      # BL-27: 발화 쪽 자격
+        if reason is not None:
+            print(f"[CommandCache] [BL-27] 학습 거부({reason}): {key!r}")
             return False
         now = _now_iso()
         if key in self._cache:                  # 이미 알고 있음 → 사용 기록만 갱신
@@ -684,6 +777,30 @@ class CommandCache:
         self._build_intent_index()
         self._persist()
         return True
+
+    def prune_unlearnable_dynamic(self, dry_run: bool = False) -> list[tuple[str, str]]:
+        """새 학습 자격(BL-27)을 통과 못 하는 **동적** 항목을 골라 지운다.
+
+        `[(패턴, 거절사유), ...]`를 반환한다. `dry_run=True`면 목록만 만들고 지우지 않는다.
+
+        **필터를 넣는다고 이미 박힌 것이 사라지지는 않는다.** 그리고
+        `clear_dynamic()`은 **전부** 지운다 — 쓸 만한 것까지 날린다. 그래서 선별 제거다.
+        시드는 건드리지 않는다(`source == "dynamic"`만 본다).
+        """
+        victims: list[tuple[str, str]] = []
+        for key, entry in list(self._cache.items()):
+            if entry.source != "dynamic" or entry.is_seed:
+                continue
+            reason = self.is_learnable_utterance(key)
+            if reason is not None:
+                victims.append((key, reason))
+        if dry_run or not victims:
+            return victims
+        for key, _ in victims:
+            del self._cache[key]
+        self._build_intent_index()
+        self._persist()
+        return victims
 
     def clear_dynamic(self) -> int:
         """동적 학습 전체 초기화(오염 롤백 원버튼). 시드 유지. 삭제 개수 반환."""
