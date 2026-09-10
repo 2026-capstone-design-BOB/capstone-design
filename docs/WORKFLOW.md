@@ -87,6 +87,14 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_wakeword_kws.py      # 전용 KWS 백엔드 계약   25/25
 "$PY" tests/test_pointing.py          # 포인팅·확대(M4)        70/70
 "$PY" tests/test_embedder.py          # 임베딩 로더(M5)        20/20
+"$PY" tests/test_tool_result.py       # 도구 결과 계약(BL-29)  35/35
+                                      #   ★ 도구 소스를 **전수 스캔**한다 — 새 도구가
+                                      #     금지 마커(ASCII x)를 쓰면 여기서 깨진다
+"$PY" tests/test_find_file.py         # 파일 찾기(BL-07)       28/28
+"$PY" tests/test_portable.py          # 내보내기/가져오기(M6)  38/38
+"$PY" tests/test_portable_api.py      # /export·/import 배선   36/36
+                                      #   ★ 오염된 번들이 BL-27 필터를 **우회하지
+                                      #     못하는지**를 실제로 넣어 본다
 "$PY" tests/test_log_format.py        # 로그 형식 계약(BL-28)  20/20
                                       #   ★ 생산자(graph_agent)와 소비자(analyze_tool_usage)가
                                       #     다른 파일이라 한쪽만 고치면 조용히 깨진다
@@ -101,8 +109,20 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_dependencies.py     # ★ requirements.txt 선언 = 실제 설치인지
 ```
 
-전체 mock 스위트는 **36파일 1071개**([README 상태표](README.md)가 출처). 이 중 `test_dependencies.py`(34개)는 로컬 전용이라
-CI는 35파일 1037개를 돌린다. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
+전체 mock 스위트는 **40파일 1228개**. **숫자는 기억으로 적지 않는다** — 세는 방식을 스크립트로 고정해 뒀다:
+
+```bash
+python scripts/run_mock_suite.py        # 전부 돌리고 파일 수·건수를 센다
+python scripts/run_mock_suite.py --md   # DEVLOG에 붙일 한 줄
+```
+
+> 예전엔 사람마다 세는 범위가 달라(서버 필요 파일을 넣느냐, `test_sprint1_2`의
+> PART A만 세느냐) 합계가 수십 개씩 흔들렸다. 그러면 세션 간 비교(«+102개»)가
+> 의미를 잃는다. **숫자가 아니라 재는 자를 저장소에 둔다.**
+> ⚠️ **서버를 띄운 채로 돌리지 말 것** — PART B가 실제 서버에 붙어 시드
+> `hit_count`를 올린다(2026-09-10에 실측 데이터를 그렇게 오염시켰다).
+
+**코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
 
 ### 테스트는 제품 로그를 건드리지 않는다
 

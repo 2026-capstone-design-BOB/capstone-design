@@ -791,6 +791,12 @@ entity 하나만 집어서 「메모장 **말고** 계산기 열어줘」에 **�
 | GET | `/cache/ui` | 필요 (`?token=`) | 개발용 캐시 대시보드 (HTML). **전체 URL이 서버 기동 로그에 찍힌다** |
 | DELETE | `/cache` | 필요 | 동적 학습 전체 초기화 (시드 유지) |
 | DELETE | `/cache/entry?pattern=` | 필요 | 동적 항목 개별 삭제 (시드 보호) |
+| GET | `/export?history=` | 필요 | 캐시·즐겨찾기를 zip으로 (M6). **allowlist라 `.env`는 담길 수 없다** |
+| POST | `/import` | 필요 | 번들 가져오기 (M6). 들어오는 엔트리도 **BL-27 게이트**를 통과해야 한다 · 병합 기본 · 자동 백업 |
+
+> ⚠️ **`/import`의 `mode`·`history`에서 `Form(...)`을 빼지 말 것** — 절대규칙 8과 같은 함정이다.
+> 빼면 FastAPI가 스칼라를 **쿼리 파라미터**로 해석해 FormData로 온 값을 통째로 무시하고,
+> `mode=replace`를 보내도 **조용히 merge로 돈다**. → [M6 ADR](design/M6_내보내기_가져오기.md)
 
 ### API 키 교체 흐름
 

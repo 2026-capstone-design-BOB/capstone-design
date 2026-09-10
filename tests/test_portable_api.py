@@ -182,6 +182,41 @@ def run():
           not r.json()["report"].get("cache", {}).get("rejected"),
           r.json()["report"].get("cache"))
 
+    # ── §8. UI 배선 (BL-13이 가르쳐 준 것) ──────────────────
+    #
+    # 프런트와 서버가 **다른 파일**이라 어긋나도 아무도 안 알려 준다.
+    # BL-13에서 `test_wakeword_ui.py`가 필드 이름(422)·토큰 경로(401)를
+    # 소스 대조로 못 박은 것과 같은 수법이다.
+    print("\n=== §8. UI 배선 — 프런트와 서버가 같은 말을 하는가 ===")
+    ui = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                      "electron-ui", "renderer", "index.html")
+    with open(ui, encoding="utf-8") as f:          # ⚠️ cp949로 읽으면 깨진다(절대규칙 7)
+        html = f.read()
+
+    check("내보내기 버튼이 있다", 'id="export-btn"' in html)
+    check("가져오기 버튼이 있다", 'id="import-btn"' in html)
+    check("파일 선택 input이 있다", 'id="import-file"' in html)
+    check("zip만 고르게 한다", 'accept=".zip"' in html)
+
+    check("경로가 서버와 같다 — /export", "`${API}/export`" in html)
+    check("경로가 서버와 같다 — /import", "`${API}/import`" in html)
+    check("필드 이름이 서버와 같다 — file",
+          "fd.append('file'" in html)
+    check("필드 이름이 서버와 같다 — mode",
+          "fd.append('mode'" in html)
+
+    # 🔒 다운로드를 <a href>로 걸면 토큰이 안 실려 401이 난다 (BL-14).
+    #    사용자에겐 «그 버튼만 조용히 안 되는» 것으로 보인다.
+    check("🔒 다운로드를 fetch로 받는다 (토큰 래퍼를 타야 한다 — BL-14)",
+          "await fetch(`${API}/export`)" in html)
+    check("🔒 <a href>로 /export를 직접 걸지 않는다",
+          'href="' + "${API}/export" not in html and "href='${API}/export" not in html)
+
+    # 되돌릴 수 없는 변경 앞에서는 한 번 묻는다
+    check("가져오기 전에 확인을 받는다", "confirm(" in html.split("async function importBundle")[-1])
+    check("기본이 merge다 (조용한 덮어쓰기 없음)", "'merge'" in html)
+    check("API 키가 안 담긴다고 말해 준다", "API 키" in html and "담기지 않아요" in html)
+
     print(f"\n결과: {passed}/{total} 통과")
     return passed == total
 

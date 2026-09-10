@@ -1270,6 +1270,30 @@
           </div>
           <div class="s-status" id="wake-status"></div>
         </div>
+
+        <!-- ── 내보내기 / 가져오기 (M6) ──────────────────────────
+             클라우드를 «안 하기로» 한 것의 대안.
+             → docs/design/M6_내보내기_가져오기.md
+             ⚠️ 가져오기는 **되돌릴 수 없는 상태 변경**이라 확인을 한 번 받는다.
+                (그래서 도구로도 만들지 않았다 — 사람이 파일을 고르는 흐름이다) -->
+        <div class="s-divider"></div>
+
+        <div>
+          <div class="s-row">
+            <div class="s-label" style="margin:0">내 설정 옮기기</div>
+          </div>
+          <div class="s-desc" style="margin:4px 0 6px">
+            배운 명령과 즐겨찾기를 파일 하나로 저장하고, 다른 PC에서 불러올 수 있어요.
+            <b>API 키와 대화 기록은 담기지 않아요.</b>
+          </div>
+          <div class="s-row">
+            <button class="s-mini-btn" id="export-btn" onclick="exportBundle()">내보내기</button>
+            <button class="s-mini-btn" id="import-btn" onclick="pickImportFile()">가져오기</button>
+            <input type="file" id="import-file" accept=".zip" style="display:none"
+              onchange="importBundle(this.files[0])">
+          </div>
+          <div class="s-status" id="portable-status"></div>
+        </div>
       </div>
     </div>
 
@@ -1686,6 +1710,82 @@
       ok ? ring.classList.add('listening') : ring.classList.remove('listening');
       document.getElementById('idle-hint').textContent =
         ok ? '더블클릭 · 🎙️' : '서버 연결 중...';
+    }
+
+    // ── 내보내기 / 가져오기 (M6) ───────────────────────────────────
+    //
+    // ⚠️ window.fetch가 토큰을 자동으로 실어 주지만(위 래퍼), 파일 **다운로드**는
+    //    fetch로 받아 blob으로 떨궈야 한다 — <a href>로 걸면 토큰이 안 실려
+    //    401이 나고, 사용자에겐 «그 버튼만 조용히 안 되는» 것으로 보인다(BL-14).
+    function portableStatus(msg, bad) {
+      const el = document.getElementById('portable-status');
+      if (!el) return;
+      el.textContent = msg || '';
+      el.style.color = bad ? '#e66' : '';
+    }
+
+    async function exportBundle() {
+      const btn = document.getElementById('export-btn');
+      if (btn) btn.disabled = true;
+      portableStatus('내보내는 중…');
+      try {
+        const r = await fetch(`${API}/export`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const blob = await r.blob();
+        // 파일 이름은 서버가 정한다 (날짜가 들어간다)
+        let name = 'pluiz-export.zip';
+        const cd = r.headers.get('content-disposition') || '';
+        const m = cd.match(/filename="([^"]+)"/);
+        if (m) name = m[1];
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        portableStatus(`${name} 으로 저장했어요.`);
+      } catch (e) {
+        console.error('[portable] 내보내기 실패', e);
+        portableStatus('내보내지 못했어요. 서버가 켜져 있는지 확인해 주세요.', true);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function pickImportFile() {
+      const el = document.getElementById('import-file');
+      if (el) { el.value = ''; el.click(); }
+    }
+
+    async function importBundle(file) {
+      if (!file) return;
+      // 되돌릴 수 없는 변경이다 — 한 번 묻는다.
+      // (서버가 백업을 남기지만, 사용자는 그걸 모른 채 누른다)
+      if (!confirm(
+            `'${file.name}' 을(를) 가져올까요?\n\n` +
+            '배운 명령과 즐겨찾기가 더해집니다. 이미 있는 건 그대로 둡니다.\n' +
+            '바꾸기 전 상태는 자동으로 백업돼요.')) {
+        return;
+      }
+      const btn = document.getElementById('import-btn');
+      if (btn) btn.disabled = true;
+      portableStatus('가져오는 중…');
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('mode', 'merge');        // 기존 우선. 덮어쓰기는 기본이 아니다
+        const r = await fetch(`${API}/import`, { method: 'POST', body: fd });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          portableStatus(d.message || `가져오지 못했어요 (HTTP ${r.status})`, true);
+          return;
+        }
+        portableStatus(d.message || '가져왔어요.');
+      } catch (e) {
+        console.error('[portable] 가져오기 실패', e);
+        portableStatus('가져오지 못했어요. 서버가 켜져 있는지 확인해 주세요.', true);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
     // ── API 설정 확인 ──────────────────────────────────────────────
