@@ -168,6 +168,80 @@ def run():
         check("실패가 성공으로 오독되지 않는다",
               not tool_succeeded(find(name="zzzz없는이름zzzz", location="desktop")))
 
+        # ── ⑦ BL-31 — 찾은 것을 열 수 있는가 (두 도구의 계약) ─────
+        #
+        # 실기(2026-09-10): find_file이 *"바탕화면에서 '00_개발착수서.md'를
+        # 찾았어요!"* 라고 답한 **바로 다음 턴**에 open_file이 «찾을 수 없습니다».
+        # find_file은 재귀로 찾는데 open_file은 바로 아래 한 겹만 봤다.
+        # 여기서 두 도구를 **한 테스트 안에서** 이어 붙여 계약을 고정한다.
+        print("\n=== ⑦ find_file이 찾은 것을 open_file이 연다 (BL-31) ===")
+        opened = []
+        orig_startfile = getattr(os, "startfile", None)
+        os.startfile = lambda p: opened.append(p)      # 실제로 열지 않는다
+        try:
+            r = find(name="회의록", location="desktop")
+            check("① find_file은 하위 폴더의 파일을 찾는다", "회의록.txt" in r, r)
+
+            opened.clear()
+            r = fs.open_file.invoke({"file_path": "회의록.txt"})
+            check("② 🚩 그 파일을 open_file이 연다 (BL-31 원문)",
+                  tool_succeeded(r) and opened and "회의록.txt" in opened[0], r)
+            check("③ 어디서 찾았는지 말한다", "하위/깊은" in r, r)
+            check("④ 절대경로를 응답에 싣지 않는다",
+                  tmp not in r and "C:\\Users" not in r, r)
+
+            # 바로 아래 파일은 원래 경로로 열린다 — 느린 탐색을 타지 않는다
+            opened.clear()
+            r = fs.open_file.invoke({"file_path": "주간보고서.docx"})
+            check("⑤ 바로 아래 파일은 그대로 열린다 (회귀)",
+                  tool_succeeded(r) and opened, r)
+            check("⑥ 그때는 «찾았어요»를 붙이지 않는다", "찾았어요" not in r, r)
+
+            # 기준 폴더 **바로 아래**에 있으면 그걸 연다 — 탐색은 못 찾았을 때만
+            # 도는 보조 경로다. 직접 놓인 파일이 더 강한 근거이고, 이건 BL-31
+            # 이전부터의 동작이라 바꾸면 흔한 경우가 느려지고 시끄러워진다.
+            _touch(down, "회의록.txt")
+            opened.clear()
+            r = fs.open_file.invoke({"file_path": "회의록.txt"})
+            check("⑦ 바로 아래에 있으면 탐색까지 가지 않는다",
+                  tool_succeeded(r) and "찾았어요" not in r, r)
+            os.remove(os.path.join(down, "회의록.txt"))
+
+            # **탐색 안에서** 둘이 나오면 열지 않고 되묻는다 — 무엇을 여는지
+            # 사용자가 정해야 한다. 여는 것은 되돌릴 수 있지만, 엉뚱한 파일을 연 뒤의
+            # *"그거 지워줘"* 는 되돌릴 수 없다.
+            _touch(docs, "보관", "회의록.txt")
+            opened.clear()
+            r = fs.open_file.invoke({"file_path": "회의록.txt"})
+            check("⑧ 탐색 결과가 여러 개면 열지 않는다", not opened, r)
+            check("⑨ 후보를 보여주고 되묻는다",
+                  tool_failed(r) and "여러 개" in r, r)
+            check("⑩ 후보마다 어디 것인지 말한다",
+                  "desktop" in r and "documents" in r, r)
+            os.remove(os.path.join(docs, "보관", "회의록.txt"))
+
+            opened.clear()
+            r = fs.open_file.invoke({"file_path": "zzzz없는파일zzzz.txt"})
+            check("⑪ 없는 파일은 여전히 «찾을 수 없습니다»",
+                  tool_failed(r) and not opened, r)
+
+            # 🔒 탐색을 새 입구로 쓰지 못하게 한다
+            opened.clear()
+            r = fs.open_file.invoke({"file_path": ".env"})
+            check("⑫ 🔒 탐색 경로로도 비밀 파일은 안 열린다",
+                  not opened and tool_failed(r), r)
+
+            # 🚨 의도된 비대칭 — 삭제는 재귀 탐색을 타지 않는다.
+            #    여는 것은 되돌릴 수 있지만 지우는 것은 되돌릴 수 없다.
+            deep = os.path.join(desk, "하위", "깊은", "회의록.txt")
+            r = fs.delete_file.invoke({"file_path": "회의록.txt"})
+            check("⑬ 🚨 delete_file은 하위 폴더를 뒤지지 않는다",
+                  tool_failed(r), r)
+            check("⑭ 🚨 그래서 깊은 곳의 파일이 살아 있다", os.path.exists(deep))
+        finally:
+            if orig_startfile is not None:
+                os.startfile = orig_startfile
+
     finally:
         fs.LOCATION_MAP.clear()
         fs.LOCATION_MAP.update(orig_map)

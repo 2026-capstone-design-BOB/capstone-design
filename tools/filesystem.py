@@ -387,8 +387,33 @@ def open_file(file_path: str, app: str = "") -> str:
     if _is_secret_path(resolved):
         return _SECRET_REFUSE
 
+    # BL-31 — 여기서 그냥 «없습니다»로 끝내면 **find_file이 방금 찾은 파일을
+    # 못 여는** 일이 난다. 두 도구의 계약이 어긋나 있었다:
+    #   find_file  : glob(base/**/…, recursive=True)  → 하위 폴더까지 본다
+    #   open_file  : os.path.join(base, file_path)    → 바로 아래 한 겹만 본다
+    # 그래서 못 찾았을 때만 **find_file과 같은 탐색을 한 번** 한다.
+    found_note = ""
     if not os.path.exists(resolved):
-        return f"✗ 파일을 찾을 수 없습니다: {resolved}"
+        hits = _locate_for_open(file_path)
+        if len(hits) == 1:
+            loc, path = hits[0]
+            # 탐색으로 새로 얻은 경로다 — 비밀 파일 판정을 **다시** 통과시킨다.
+            # (_match_in도 거르지만, 관문을 우회하는 입구를 만들지 않는다)
+            if _is_secret_path(path):
+                return _SECRET_REFUSE
+            resolved = path
+            found_note = _where_note(loc, path)
+        elif len(hits) > 1:
+            # **열지 않는다.** 무엇을 여는지 사용자가 정해야 한다.
+            lines = [f"✗ '{os.path.basename(file_path)}' 이름이 여러 개라 "
+                     f"어느 것인지 몰라 열지 않았습니다:"]
+            for i, (loc, p) in enumerate(hits[:5], 1):
+                lines.append(f"  {i}. {os.path.basename(p)} {_where_note(loc, p)}")
+            if len(hits) > 5:
+                lines.append(f"  ... 외 {len(hits) - 5}개")
+            return "\n".join(lines)
+        else:
+            return f"✗ 파일을 찾을 수 없습니다: {resolved}"
 
     try:
         if app:
@@ -410,7 +435,10 @@ def open_file(file_path: str, app: str = "") -> str:
         else:
             os.startfile(resolved)
 
-        return f"✓ '{os.path.basename(resolved)}' 파일을 열었습니다."
+        # **한 일은 반드시 말한다** — 시킨 경로가 아닌 데서 찾아 열었으면
+        # 그걸 밝히지 않으면 다음 명령("그거 지워줘")이 엉뚱한 걸 가리킨다.
+        # (find_file이 «어디서 찾았는지»를 말하는 것과 같은 규칙)
+        return f"✓ '{os.path.basename(resolved)}' 파일을 열었습니다.{found_note}"
     except Exception as e:
         return f"✗ 파일 열기 실패: {e}"
 
@@ -434,6 +462,64 @@ def _resolve_location_in_path(file_path: str) -> str:
                 return candidate
 
     return file_path
+
+
+def _where_note(loc: str, path: str) -> str:
+    """«어디서 찾았는지» 한 조각. 절대경로는 내보내지 않는다.
+
+    사용자 이름이 든 전체 경로(`C:/Users/…`)를 응답에 실으면 개인정보가 섞이고
+    TTS로도 읽힌다. 기준 폴더 이름 + 그 아래 상대경로까지만 말한다.
+    """
+    base = LOCATION_MAP.get(loc)
+    if not base:
+        return ""
+    try:
+        rel = os.path.relpath(os.path.dirname(path), base)
+    except ValueError:      # 드라이브가 다르면 relpath가 실패한다
+        return f" ('{loc}'에서 찾았어요)"
+    if rel in (".", ""):
+        return f" ('{loc}'에서 찾았어요)"
+    return f" ('{loc}/{rel.replace(os.sep, '/')}'에서 찾았어요)"
+
+
+def _locate_for_open(file_path: str) -> list[tuple[str, str]]:
+    """`open_file`이 못 찾았을 때 **find_file과 같은 탐색**을 한 번 한다 (BL-31).
+
+    반환: `[(위치키, 경로), ...]` — 0개면 없는 것, 2개 이상이면 **부르는 쪽이
+    열지 말고 되물어야 한다.**
+
+    🚨 **여는 것에만 쓴다. `delete_file`·`delete_folder`에 붙이지 말 것.**
+      여는 것은 되돌릴 수 있지만 지우는 것은 되돌릴 수 없다. 삭제에 재귀 탐색을
+      붙이면 *"보고서.docx 지워줘"* 가 **사용자가 생각한 적 없는 하위 폴더의 파일**을
+      지운다. 승인 질문은 이름만 보여주므로 사용자는 그게 다른 파일인지 알 수 없다.
+      이 비대칭은 실수가 아니라 **의도된 것**이다.
+    """
+    name = os.path.basename(file_path.replace("\\", "/")).strip()
+    if not name:
+        return []
+    stem, dot_ext = os.path.splitext(name)
+    ext = dot_ext.lstrip(".")
+    if not stem:            # ".env" 같은 것 — 확장자만 남는 이름은 탐색하지 않는다
+        return []
+
+    # find_file과 같은 2패스: 준 확장자로 먼저, 없으면 빼고 다시
+    # (LLM이 확장자를 지어냈을 수 있다 — BL-07에서 확인된 실패 양상)
+    for use_ext in ((ext, "") if ext else ("",)):
+        hits: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for loc in _FIND_ORDER:
+            base = LOCATION_MAP.get(loc)
+            if not base:
+                continue
+            for m in _match_in(base, stem, use_ext):
+                key = os.path.normcase(os.path.abspath(m))
+                if key in seen or not os.path.isfile(m):
+                    continue        # 폴더는 열지 않는다 — 이 도구의 계약은 «파일»이다
+                seen.add(key)
+                hits.append((loc, m))
+        if hits:
+            return hits
+    return []
 
 
 @tool
