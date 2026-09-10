@@ -85,6 +85,8 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_wakeword_ui.py       # 웨이크워드 설정 UI 배선 25/25
 "$PY" tests/test_wakeword_kws.py      # 전용 KWS 백엔드 계약   25/25
 "$PY" tests/test_pointing.py          # 포인팅·확대(M4)        70/70
+"$PY" tests/test_embedder.py          # 임베딩 로더(M5)        20/20
+                                      #   ★ 모델 파일이 없어도 전부 돈다 — 그게 계약이다
 "$PY" tests/test_window_truth.py      # 유령 창 판정(BL-26)    13/13
                                       #   ★ Windows API를 실제로 부른다 — mock이 아니다.
                                       #     유령 창은 mock으로 만들 수 없다(그래서 결함이 살아남았다)
@@ -95,8 +97,8 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_dependencies.py     # ★ requirements.txt 선언 = 실제 설치인지
 ```
 
-전체 mock 스위트는 **34파일 992개**([README 상태표](README.md)가 출처). 이 중 `test_dependencies.py`(34개)는 로컬 전용이라
-CI는 33파일 958개를 돌린다. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
+전체 mock 스위트는 **35파일 1012개**([README 상태표](README.md)가 출처). 이 중 `test_dependencies.py`(34개)는 로컬 전용이라
+CI는 34파일 978개를 돌린다. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
 
 ### 테스트는 제품 로그를 건드리지 않는다
 

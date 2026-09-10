@@ -85,3 +85,4 @@ docs/*.pdf
 # 저장소에 필요한 산출물은 학습 결과인 services/wakeword_model.npz 하나다.
 # 만드는 법은 scripts/record_wakeword.py (docs/TASKS.md ③)
 wake_voice*.npy
+models/embed/
