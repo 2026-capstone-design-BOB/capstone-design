@@ -205,7 +205,24 @@ def _target_name(dcall: Optional[dict]) -> str:
     return os.path.basename(str(target).rstrip("/\\")) or str(target)
 
 
-def _confirm_question(dcall: Optional[dict]) -> str:
+def _describe_call(dcall: dict) -> str:
+    """위험 호출 하나를 사용자 말로. (조사까지 맞춘다)
+
+    ⚠️ 조사 하드코딩('을(를)') 금지 — 대상 종류가 정해져 있어 각각 맞는 것을 쓴다.
+    ("파일"은 ㄹ 받침 → 을 / "폴더"는 받침 없음 → 를)
+    """
+    name = (dcall or {}).get("name", "")
+    args = (dcall or {}).get("args", {}) or {}
+    if name == "click_ui_element":
+        what = str(args.get("target", "")).strip() or "화면의 어떤 것"
+        where = str(args.get("window", "")).strip()
+        place = f"'{where}' 창에서 " if where else ""
+        return f"{place}'{what}'"
+    kind = "폴더" if name == "delete_folder" else "파일"
+    return f"'{_target_name(dcall)}' {kind}"
+
+
+def _confirm_question(dcalls: Any) -> str:
     """위험 도구 호출로부터 승인 질문 문구 생성.
 
     승인 '전에' 되돌릴 수 있는지를 알려준다. 휴지통이면 복구 가능하다고,
@@ -216,26 +233,70 @@ def _confirm_question(dcall: Optional[dict]) -> str:
     else:
         consequence = "⚠️ 휴지통을 거치지 않고 영구 삭제돼요. 복구할 수 없어요"
 
-    if not dcall:
+    calls = [c for c in (dcalls if isinstance(dcalls, list) else [dcalls]) if c]
+    if not calls:
         return f"정말 실행할까요? ({consequence})"
-    name = dcall.get("name", "")
-    args = dcall.get("args", {}) or {}
 
     # 클릭은 삭제와 결과가 달라 문구도 달라야 한다. "휴지통으로 갑니다"는 거짓이 된다.
     # 좌표는 아직 모른다 — 도구가 실행될 때 화면을 보고 정하기 때문이다.
     # 그래서 **무엇을 어디서** 누를지만 알린다.
-    if name == "click_ui_element":
-        what = str(args.get("target", "")).strip() or "화면의 어떤 것"
-        where = str(args.get("window", "")).strip()
-        place = f"'{where}' 창에서 " if where else ""
-        return (f"{place}'{what}'을(를) 찾아서 클릭할까요? "
-                "(클릭은 되돌릴 수 없어요)")
+    clicks = [c for c in calls if c.get("name") == "click_ui_element"]
+    deletes = [c for c in calls if c.get("name") != "click_ui_element"]
 
-    target = args.get("file_path") or args.get("folder_path") or ""
-    # 조사 하드코딩('을(를)') 금지 — 대상이 둘뿐이라 각각 맞는 조사를 쓴다.
-    # ("파일"은 ㄹ 받침 → 을 / "폴더"는 받침 없음 → 를)
-    kind = "폴더를" if name == "delete_folder" else "파일을"
-    return f"'{_target_name(dcall)}' {kind} 정말 삭제할까요? ({consequence})"
+    parts = []
+    if deletes:
+        parts.append(f"{_join_targets(deletes)} 정말 삭제할까요? ({consequence})")
+    if clicks:
+        parts.append(f"{_join_targets(clicks)}을(를) 찾아서 클릭할까요? "
+                     "(클릭은 되돌릴 수 없어요)")
+    return " 그리고 ".join(parts)
+
+
+def _obj_particle(word: str) -> str:
+    """마지막 글자의 받침으로 목적격 조사를 고른다. 한글이 아니면 «를».
+
+    한글 음절(U+AC00~U+D7A3): (코드 - 0xAC00) % 28 != 0 이면 받침 있음.
+    (`core/command_cache.py`의 `_select_particle`과 같은 규칙이다 — 여기서
+     import하지 않는 건 graph가 캐시를 끌어오지 않게 두기 위해서다)
+    """
+    w = (word or "").strip().strip("'\"")
+    if not w:
+        return "를"
+    code = ord(w[-1]) - 0xAC00
+    if 0 <= code <= 11171:
+        return "을" if code % 28 else "를"
+    return "를"
+
+
+def missing_notice(names: Any) -> str:
+    """«없어서 못 지운 것»을 접미로 알리는 문구. 없으면 빈 문자열. (BL-24 §6-4)
+
+    조용히 빠지면 이 저장소가 반복해서 데인 **«안 한 걸 말하지 않는 것»** 이 된다.
+    `unfinished_notice`(M3)와 같은 자리에 붙는 접미다.
+    """
+    items = [str(n) for n in (names or []) if n]
+    if not items:
+        return ""
+    head = items[0]
+    more = f" 외 {len(items) - 1}개" if len(items) > 1 else ""
+    return f" 다만 '{head}'{more}은(는) 찾지 못해 삭제하지 않았어요."
+
+
+def _join_targets(calls: list) -> str:
+    """대상 여럿을 한 구절로. (BL-24)
+
+    🚨 **개수를 반드시 말한다.** 목록이 길면 사람은 안 읽는다 — 그래서 3개 이상은
+    이름을 줄이되 «N개»는 남긴다. 승인 질문에서 «몇 개인지»는 마지막까지 남아야
+    하는 정보다(그게 «묻지 않은 삭제»를 사용자가 알아챌 유일한 단서다).
+    """
+    if len(calls) == 1:
+        # ⚠️ 조사까지 붙여야 **기존 문구와 글자 그대로 같다.**
+        #   ("파일"은 ㄹ 받침 → 을 / "폴더"는 받침 없음 → 를)
+        one = _describe_call(calls[0])
+        return one + _obj_particle(one)
+    if len(calls) == 2:
+        return f"{_describe_call(calls[0])}과 {_describe_call(calls[1])} 2개를"
+    return f"{_describe_call(calls[0])} 외 {len(calls) - 1}개를"
 
 
 # 승인 대기 중 애매한 답이 왔을 때 다시 묻는 최대 횟수(첫 질문 포함).
@@ -243,9 +304,9 @@ def _confirm_question(dcall: Optional[dict]) -> str:
 _MAX_CONFIRM_ASKS = 2
 
 
-def _reask_question(dcall: Optional[dict]) -> str:
+def _reask_question(dcalls: Any) -> str:
     """애매한 답이 왔을 때의 재질문. 무엇을 물었는지 다시 알려준다."""
-    return (f"{_confirm_question(dcall)} "
+    return (f"{_confirm_question(dcalls)} "
             "진행하려면 '네', 그만두려면 '아니오'라고 말씀해 주세요.")
 
 
@@ -261,6 +322,11 @@ class PluizState(MessagesState):
     # output_guard가 최종 응답 앞에 "삭제는 취소했어요"를 붙인다 — 이걸 안 알리면
     # 사용자는 삭제가 어떻게 됐는지 모른 채 새 명령의 결과만 보게 된다.
     deletion_cancelled: bool
+    # BL-24 — 승인은 됐는데 **대상이 없어서 못 지운 것**의 이름.
+    # ⚠️ `deletion_cancelled`(거부)와 다르다. 여기선 거부가 아니라 «없었다»이다.
+    #   문구로 전하지 않고 플래그로 전한다 — 재발행 메시지 **뒤에** AIMessage를
+    #   붙이면 그게 마지막 AIMessage가 돼 ToolNode가 도구를 못 본다(§6-4).
+    missing_targets: list[str]
     # 이번 턴에 화면 검증(visual_verify)을 이미 한 번 했는지.
     # Vision 1회가 약 8초라 **턴당 1회**로 묶는다. deletion_cancelled와 같은 이유로
     # input_guard가 새 턴 시작 시 끈다 — 플래그가 턴을 넘어 새면, 다음 턴의 type_text가
@@ -871,6 +937,10 @@ def turn_tool_call_count(messages: list[AnyMessage]) -> int:
 #   찾아 그 tool_calls를 **전부** 실행한다 — 어떤 게 이미 마감됐는지는 보지 않는다.
 #   원본을 그대로 두면 **방금 거부당한 delete_file까지 실행된다.**
 #   그래서 원본은 전부 마감하고, 안전한 것만 **새 id로 재발행**해 다시 내보낸다.
+# 재발행돼 «이어서 실행될» 호출의 마감 사유. 사실이 아닌 «취소»를 히스토리에
+# 남기지 않으려는 것이다(BL-20 §3-1). BL-24의 승인 경로도 같은 문구를 쓴다 —
+# 승인된 호출 역시 원본은 마감되고 새 id로 다시 나가기 때문이다.
+_HELD_REASON = "승인 절차로 보류됐습니다. 이 호출은 이어서 다시 실행됩니다."
 _REISSUE_KEY = "pluiz_reissued"      # response_metadata 표식(§5)
 _REISSUE_SUFFIX = "-r"
 
@@ -1032,9 +1102,9 @@ def build_pluiz_graph(
         if blocked:
             return {"messages": [AIMessage(content=reason)], "decision": "blocked",
                     "deletion_cancelled": False, "visual_verified": False,
-                    "plan": [], "plan_cursor": 0}
+                    "missing_targets": [], "plan": [], "plan_cursor": 0}
         return {"decision": "", "deletion_cancelled": False, "visual_verified": False,
-                "plan": [], "plan_cursor": 0}
+                "missing_targets": [], "plan": [], "plan_cursor": 0}
 
     def fast_path(state: PluizState) -> dict:
         """캐시/라우터 빠른 경로. 히트 시 결과를 messages에 기록(맥락 통합 핵심).
@@ -1145,12 +1215,14 @@ def build_pluiz_graph(
             state.get("plan"),
             steps_covered(state.get("plan_cursor"),
                           turn_tool_call_count(state["messages"])))
+        # BL-24 — 승인은 됐는데 없어서 못 지운 것. M3의 «못 한 단계»와 같은 자리의 접미다.
+        tail += missing_notice(state.get("missing_targets"))
 
         notice = watch_notice_to_deliver(state["messages"])
         if notice is not None:
             note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
             return {"messages": [AIMessage(content=note + notice + tail)],
-                    "deletion_cancelled": False}
+                    "deletion_cancelled": False, "missing_targets": []}
 
         # 도구를 안 부르고 "지켜볼게요"·"중단했어요"라고 말한 경우 (BL-19).
         # ⚠️ 캐시 히트는 제외한다. fast_path는 도구를 **실제로 실행하고도** messages에는
@@ -1161,20 +1233,20 @@ def build_pluiz_graph(
         if lie is not None:
             note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
             return {"messages": [AIMessage(content=note + lie + tail)],
-                    "deletion_cancelled": False}
+                    "deletion_cancelled": False, "missing_targets": []}
 
         corrected = verify_output(state["messages"])
         note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
         if corrected is not None:
             return {"messages": [AIMessage(content=note + corrected + tail)],
-                    "deletion_cancelled": False}
+                    "deletion_cancelled": False, "missing_targets": []}
         if note or tail:
             # 새 명령의 답변 앞에 취소 사실을 붙인다. 안 붙이면 사용자는 삭제가
             # 어떻게 됐는지 모른 채 새 명령의 결과만 보게 된다.
             last = state["messages"][-1]
             if isinstance(last, AIMessage):
                 return {"messages": [AIMessage(content=note + _msg_text(last) + tail)],
-                        "deletion_cancelled": False}
+                        "deletion_cancelled": False, "missing_targets": []}
         return {}
 
     def visual_verify(state: PluizState) -> dict:
@@ -1235,10 +1307,14 @@ def build_pluiz_graph(
         """
         last = state["messages"][-1]
         calls = list(getattr(last, "tool_calls", []) or [])
-        dcall = next((c for c in calls if c.get("name") in dangerous), None)
-        # BL-20 — 배치에 섞여 온 **안전한 호출**. 거부는 위험한 것 하나에 대한
+        # BL-20 — 배치에 섞여 온 **안전한 호출**. 거부는 위험한 것에 대한
         # 판단이지 이것들까지 취소해 달라는 뜻이 아니다.
-        safe_calls, _risky_calls = split_calls(calls, dangerous)
+        # BL-24 — 위험한 것도 **전부** 본다. 예전엔 `next()`로 하나만 집었고,
+        #   그 하나에 대해서만 묻고는 승인 시 **배치 전체**를 실행했다
+        #   (ToolNode는 마지막 AIMessage의 tool_calls를 전부 실행한다).
+        #   → docs/design/BL-24_다중위험호출_승인.md
+        safe_calls, risky_calls = split_calls(calls, dangerous)
+        dcall = risky_calls[0] if risky_calls else None
 
         def _close_calls(reason: str, *, hold_safe: bool = False) -> list:
             """매달린 tool_calls를 ToolMessage로 마감(히스토리 오염 방지).
@@ -1251,9 +1327,8 @@ def build_pluiz_graph(
             뒤에서 재발행돼 실행되기 때문이다. → BL-20 ADR §3-1
             """
             safe_ids = {c.get("id") for c in safe_calls}
-            held = "승인 절차로 보류됐습니다. 이 호출은 이어서 다시 실행됩니다."
             return [ToolMessage(
-                        content=(held if hold_safe and c.get("id") in safe_ids
+                        content=(_HELD_REASON if hold_safe and c.get("id") in safe_ids
                                  else reason),
                         tool_call_id=c["id"])
                     for c in calls if c.get("id")]
@@ -1262,29 +1337,41 @@ def build_pluiz_graph(
         # 예전엔 없는 폴더인데도 "정말 삭제할까요?"를 먼저 묻고, 승인한 뒤에야
         # "없는 것 같아요"라고 답했다(실기에서 확인). 순서가 거꾸로였다.
         # 없는 대상은 삭제될 것도 없으니 승인이 무의미하고, 사용자만 헷갈린다.
-        if target_exists is not None and dcall is not None:
-            try:
-                found = target_exists(dcall)
-            except Exception as e:
-                print(f"[graph.hitl] 대상 확인 실패(무시): {type(e).__name__}: {e}")
-                found = True          # 확인 못 하면 원래대로 승인 절차를 밟는다
-            if not found:
-                base = _target_name(dcall)
-                # BL-20 — 여기서는 **아무것도 거부되지 않았다.** 삭제 대상이 없었을
-                # 뿐인데 같이 온 앱 실행까지 사라지는 건 근거가 없다(ADR §4).
-                reissued = reissue_message(safe_calls)
-                msgs = _close_calls(
-                    f"✗ '{base}'을(를) 찾을 수 없습니다. 삭제하지 않았습니다.",
-                    hold_safe=reissued is not None)
-                if reissued is not None:
-                    msgs.append(reissued)
-                    return {"messages": msgs, "decision": "not_found_partial",
-                            "deletion_cancelled": False}
-                return {"messages": msgs, "decision": "not_found",
-                        "deletion_cancelled": False}
+        # BL-24 — **각각** 확인한다. 예전엔 첫 호출 하나만 봐서, 같은 상황인데도
+        #   **배치 순서에 따라 결과가 달라졌다**(ADR §1-2):
+        #     [없는것, 있는것] → 묻지 않고 끝 (있는것이 안 지워진다)
+        #     [있는것, 없는것] → 묻고, 승인하면 **둘 다** 실행
+        askable, missing = list(risky_calls), []
+        if target_exists is not None and risky_calls:
+            askable, missing = [], []
+            for c in risky_calls:
+                try:
+                    found = target_exists(c)
+                except Exception as e:
+                    print(f"[graph.hitl] 대상 확인 실패(무시): {type(e).__name__}: {e}")
+                    found = True      # 확인 못 하면 원래대로 승인 절차를 밟는다
+                (askable if found else missing).append(c)
+            dcall = askable[0] if askable else (risky_calls[0] if risky_calls else None)
+
+        if missing and not askable:
+            # 물어볼 게 하나도 안 남았다 — 오늘과 같은 «없는 대상» 경로다.
+            # BL-20 — 여기서는 **아무것도 거부되지 않았다.** 삭제 대상이 없었을
+            # 뿐인데 같이 온 앱 실행까지 사라지는 건 근거가 없다(ADR §4).
+            base = _target_name(missing[0])
+            more = f" 외 {len(missing) - 1}개" if len(missing) > 1 else ""
+            reissued = reissue_message(safe_calls)
+            msgs = _close_calls(
+                f"✗ '{base}'{more}을(를) 찾을 수 없습니다. 삭제하지 않았습니다.",
+                hold_safe=reissued is not None)
+            if reissued is not None:
+                msgs.append(reissued)
+                return {"messages": msgs, "decision": "not_found_partial",
+                        "deletion_cancelled": False, "missing_targets": []}
+            return {"messages": msgs, "decision": "not_found",
+                    "deletion_cancelled": False, "missing_targets": []}
 
         # 그래프를 멈추고 사용자에게 질문(오케스트레이터가 질문을 UI로 전달)
-        question = _confirm_question(dcall)
+        question = _confirm_question(askable or dcall)
         verdict = "unclear"
         answer: Any = ""
         for _ask in range(_MAX_CONFIRM_ASKS):
@@ -1295,12 +1382,41 @@ def build_pluiz_graph(
             _log.info("승인 판정 | %d번째 | 답변=%r → %s", _ask + 1, answer, verdict)
             if verdict != "unclear":
                 break
-            question = _reask_question(dcall)
+            question = _reask_question(askable or dcall)
 
         if verdict == "approve":
-            # ⚠️ 반드시 끈다. 예전엔 앞 턴에서 켜진 값이 살아남아, **실제로 삭제해 놓고**
-            #    "삭제는 취소했어요. …휴지통으로 옮겼어요" 라고 답했다(실기에서 확인).
-            return {"decision": "approved", "deletion_cancelled": False}
+            # 🔒 BL-24 — **물어본 것만** 실행되게 못 박는다.
+            #
+            # 예전엔 이 분기가 messages를 **안 건드렸다.** 그래서 ToolNode가
+            # 마지막 AIMessage의 tool_calls를 **전부** 실행했고, 묻지 않은 삭제가
+            # 같이 나갔다. 조건문으로 거를 수 없다 — ToolNode는 조건을 안 본다.
+            # **마지막 AIMessage에 없으면 실행될 수 없다**는 게 유일한 장치다
+            # (BL-20이 배운 «조건문이 아니라 메시지 모양이 막는다»와 같은 자리).
+            #
+            # ⚠️ `missing`은 넣지 않는다 — 없는 파일을 지우려 들게 된다.
+            approved = reissue_message(askable + safe_calls)
+            if approved is None:
+                # 살릴 게 없으면(=위험도 안전도 없다) 오늘과 **글자 그대로 같다.**
+                # ⚠️ 반드시 끈다. 예전엔 앞 턴에서 켜진 값이 살아남아, **실제로
+                #    삭제해 놓고** "삭제는 취소했어요"라고 답했다(실기에서 확인).
+                return {"decision": "approved", "deletion_cancelled": False, "missing_targets": []}
+
+            # 원본은 **전부** 마감한다(짝 불변식, 절대규칙 3). 다만 사유는 다르다 —
+            # 없어서 못 지운 것에 «이어서 실행됩니다»라고 적으면 거짓이 된다.
+            missing_ids = {c.get("id") for c in missing}
+            msgs = [ToolMessage(
+                        content=(f"✗ '{_target_name(c)}'을(를) 찾을 수 없습니다. "
+                                 "삭제하지 않았습니다."
+                                 if c.get("id") in missing_ids else _HELD_REASON),
+                        tool_call_id=c["id"])
+                    for c in calls if c.get("id")]
+            # 🔒 재발행이 **마지막 AIMessage**여야 한다. 뒤에 무엇이든 붙이면
+            #    ToolNode가 그걸 보고 «도구 없음»으로 읽어 아무것도 실행하지 않는다.
+            #    그래서 «못 지운 것»은 문구가 아니라 **플래그**로 전한다(§6-4).
+            msgs.append(approved)
+            return {"messages": msgs, "decision": "approved",
+                    "deletion_cancelled": False,
+                    "missing_targets": [_target_name(c) for c in missing]}
 
         # ── 승인 대기 중에 들어온 **다른 명령** ────────────────────
         # 삭제를 취소하고 그 명령을 처리한다. 재질문하면 사용자가 같은 말을
@@ -1338,7 +1454,7 @@ def build_pluiz_graph(
             "네, 삭제를 취소했어요." if verdict == "reject"
             else "답을 알아듣지 못해서 삭제는 취소했어요. 방금 하신 말씀을 다시 한 번 말씀해 주세요."
         )))
-        return {"messages": cancel, "decision": "rejected", "deletion_cancelled": False}
+        return {"messages": cancel, "decision": "rejected", "deletion_cancelled": False, "missing_targets": []}
 
     # ── 라우팅 ─────────────────────────────────────────────────────
     def route_after_guard(state: PluizState) -> str:

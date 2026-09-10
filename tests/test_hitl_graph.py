@@ -98,6 +98,36 @@ class MixedLLM:
         return AIMessage(content="네, 처리했어요.")
 
 
+class TwoDeleteLLM:
+    """한 배치에 **위험 호출 두 개**를 담는 mock. (BL-24)
+
+    실기에서 재현하려면 사용자가 *"a도 b도 지워줘"* 라고 말해야 하고 계획 수립이
+    그걸 보통 단계로 쪼갠다 — 그래서 **관측된 적이 없는 잠재 결함**이다.
+    여기서는 그 배치를 **강제로 만들어** 검증한다(BL-20의 MixedLLM과 같은 방식).
+    """
+    _n = 0
+    def bind_tools(self, tools): return self
+    def invoke(self, messages):
+        turn = G.current_turn_messages(messages)
+        if any(isinstance(m, ToolMessage) for m in turn):
+            return AIMessage(content="처리했어요.")
+        TwoDeleteLLM._n += 1
+        n = TwoDeleteLLM._n
+        return AIMessage(content="", tool_calls=[
+            {"name": "delete_file", "args": {"file_path": "바탕화면/a.txt"},
+             "id": f"d1_{n}", "type": "tool_call"},
+            {"name": "delete_file", "args": {"file_path": "바탕화면/b.txt"},
+             "id": f"d2_{n}", "type": "tool_call"},
+        ])
+
+
+def build_two(target_exists=None):
+    return G.build_pluiz_graph(
+        llm=TwoDeleteLLM(), tools=[delete_file, open_app],
+        security_check=fake_security, fast_resolve=fake_fast_resolve,
+        target_exists=target_exists)
+
+
 def build_mixed(target_exists=None):
     return G.build_pluiz_graph(
         llm=MixedLLM(), tools=[delete_file, open_app],
@@ -363,6 +393,104 @@ def run():
     check("없는 대상 → 삭제 미실행", executed == [])
     check("없는 대상이어도 메모장은 열린다", opened == ["메모장"])
     check("없는 대상 경로도 짝이 유지된다", pairs_intact(rb6.get("messages", [])))
+
+    print("=== BL-24 질문 문구 — 1개일 때는 «글자 그대로» 같아야 한다 ===")
+    d1 = {"name": "delete_file", "args": {"file_path": "C:/x/a.txt"}}
+    d2 = {"name": "delete_file", "args": {"file_path": "C:/x/b.txt"}}
+    d3 = {"name": "delete_file", "args": {"file_path": "C:/x/c.txt"}}
+    fol = {"name": "delete_folder", "args": {"folder_path": "C:/x/사진"}}
+    # ⚠️ 이 줄이 회귀 방지의 핵심이다 — 문구가 미묘하게 바뀌면 기존 승인 흐름이
+    #   («'a.txt' 파일을 …») 사용자 눈에 달라 보인다.
+    check("파일 1개 — 조사까지 그대로",
+          G._confirm_question(d1).startswith("'a.txt' 파일을 정말 삭제할까요?"))
+    check("폴더 1개 — 조사가 «를»", G._confirm_question(fol).startswith("'사진' 폴더를 정말"))
+    check("리스트로 줘도 1개면 같다", G._confirm_question([d1]) == G._confirm_question(d1))
+    check("2개 — 둘 다 이름을 부르고 개수를 말한다",
+          "'a.txt' 파일과 'b.txt' 파일 2개를" in G._confirm_question([d1, d2]))
+    check("3개 — 이름은 줄여도 개수는 남는다",
+          "외 2개를" in G._confirm_question([d1, d2, d3]))
+    check("종류가 섞이면 각각의 종류로 부른다",
+          "'a.txt' 파일과 '사진' 폴더 2개를" in G._confirm_question([d1, fol]))
+    # 클릭은 «휴지통으로 갑니다»가 거짓이 되므로 결과 문구가 달라야 한다
+    clk = {"name": "click_ui_element", "args": {"window": "메모장", "target": "파일 메뉴"}}
+    q_mix = G._confirm_question([d1, clk])
+    check("삭제+클릭이면 결과를 각각 말한다",
+          "휴지통" in q_mix and "클릭은 되돌릴 수 없어요" in q_mix)
+    check("재질문도 여러 개를 그대로 싣는다",
+          "2개를" in G._reask_question([d1, d2]) and "'네'" in G._reask_question([d1, d2]))
+
+    print("=== 🔒 BL-24 핵심 — 묻지 않은 삭제가 실행되지 않는다 ===")
+    # 없는 파일이 섞이면 그건 «물어본 것»이 아니다. 승인해도 실행되면 안 된다.
+    executed.clear(); opened.clear()
+    g24 = build_two(target_exists=lambda c: "a.txt" in str(c.get("args", {})))
+    cfg24 = {"configurable": {"thread_id": "bl24_partial"}}
+    r0 = g24.invoke({"messages": [HumanMessage("a랑 b 지워줘")]}, cfg24)
+    q24 = r0["__interrupt__"][0].value["question"]
+    check("있는 것만 묻는다(a)", "a.txt" in q24)
+    check("없는 것은 안 묻는다(b)", "b.txt" not in q24)
+    r24 = g24.invoke(Command(resume="응 지워"), cfg24)
+    check("🔒 승인해도 «없는» b.txt는 실행되지 않는다",
+          "바탕화면/b.txt" not in executed)
+    check("물어본 a.txt는 실행된다", "바탕화면/a.txt" in executed)
+    check("없어서 못 지운 것을 말한다", "b.txt" in G.extract_response(r24))
+    check("짝 불변식이 유지된다", pairs_intact(r24.get("messages", [])))
+    check("대기 상태가 남지 않는다", not r24.get("__interrupt__"))
+
+    print("=== BL-24 둘 다 있으면 둘 다 묻고 둘 다 실행한다 ===")
+    executed.clear()
+    g24b = build_two(target_exists=lambda c: True)
+    cfg24b = {"configurable": {"thread_id": "bl24_both"}}
+    r0b = g24b.invoke({"messages": [HumanMessage("a랑 b 지워줘")]}, cfg24b)
+    qb = r0b["__interrupt__"][0].value["question"]
+    check("질문이 둘 다 이름을 부른다", "a.txt" in qb and "b.txt" in qb)
+    check("개수를 말한다", "2개" in qb)
+    r24b = g24b.invoke(Command(resume="응"), cfg24b)
+    check("승인하면 둘 다 실행된다",
+          "바탕화면/a.txt" in executed and "바탕화면/b.txt" in executed)
+    check("짝 불변식이 유지된다", pairs_intact(r24b.get("messages", [])))
+
+    print("=== BL-24 거부는 BL-20 그대로 — 둘 다 취소된다 ===")
+    executed.clear()
+    g24c = build_two(target_exists=lambda c: True)
+    cfg24c = {"configurable": {"thread_id": "bl24_reject"}}
+    g24c.invoke({"messages": [HumanMessage("a랑 b 지워줘")]}, cfg24c)
+    r24c = g24c.invoke(Command(resume="아니 취소해"), cfg24c)
+    check("거부하면 둘 다 실행되지 않는다", executed == [])
+    check("취소 사실이 응답에 남는다", "취소" in G.extract_response(r24c))
+    check("짝 불변식이 유지된다", pairs_intact(r24c.get("messages", [])))
+
+    print("=== BL-24 §1-2 — 배치 «순서»에 따라 결과가 달라지지 않는다 ===")
+    # 예전엔 첫 호출 하나만 target_exists로 봤다:
+    #   [없는것, 있는것] → 묻지 않고 끝  /  [있는것, 없는것] → 묻고 둘 다 실행
+    # 지금은 각각 보므로 순서와 무관하게 «있는 것만» 묻고 «있는 것만» 실행한다.
+    class RevLLM(TwoDeleteLLM):
+        def invoke(self, messages):
+            m = TwoDeleteLLM.invoke(self, messages)
+            if getattr(m, "tool_calls", None):
+                m.tool_calls.reverse()          # b.txt 가 먼저 오게
+            return m
+    executed.clear()
+    grev = G.build_pluiz_graph(
+        llm=RevLLM(), tools=[delete_file, open_app],
+        security_check=fake_security, fast_resolve=fake_fast_resolve,
+        target_exists=lambda c: "a.txt" in str(c.get("args", {})))
+    cfgrev = {"configurable": {"thread_id": "bl24_order"}}
+    rrev0 = grev.invoke({"messages": [HumanMessage("b랑 a 지워줘")]}, cfgrev)
+    check("순서가 반대여도 «있는 것»을 묻는다",
+          "a.txt" in rrev0["__interrupt__"][0].value["question"])
+    rrev = grev.invoke(Command(resume="응"), cfgrev)
+    check("순서가 반대여도 없는 b.txt는 실행되지 않는다",
+          "바탕화면/b.txt" not in executed)
+    check("순서가 반대여도 a.txt는 실행된다", "바탕화면/a.txt" in executed)
+
+    print("=== BL-24 §6-3 — 승인 재발행분도 진행 근거로 두 번 세지 않는다 ===")
+    # BL-20 §5와 같은 자리다. 세면 M3-1의 «못 한 단계 보고»가 조용해진다.
+    two = [dict(d1, id="x1", type="tool_call"), dict(d2, id="x2", type="tool_call")]
+    ri24 = G.reissue_message(two)
+    turn24 = [HumanMessage("a랑 b 지워줘"), AIMessage(content="", tool_calls=two),
+              ToolMessage(content="보류", tool_call_id="x1"),
+              ToolMessage(content="보류", tool_call_id="x2"), ri24]
+    check("원본 2개만 센다", G.turn_tool_call_count(turn24) == 2)
 
     print(f"\n결과: {passed}/{total} 통과")
     return passed == total
