@@ -603,23 +603,6 @@
     "learned_at": "2026-08-19T10:08:00",
     "last_used": "2026-08-19T10:08:00"
   },
-  "계산기 말고 메모장 열어줘": {
-    "pattern": "계산기 말고 메모장 열어줘",
-    "tool_calls": [
-      {
-        "name": "open_app",
-        "args": {
-          "app": "메모장"
-        }
-      }
-    ],
-    "response_template": "✓ 실행했어요.",
-    "hit_count": 2,
-    "is_seed": false,
-    "source": "dynamic",
-    "learned_at": "2026-09-01T22:40:14",
-    "last_used": "2026-09-01T22:52:12"
-  },
   "메모장 불러와줘": {
     "pattern": "메모장 불러와줘",
     "tool_calls": [
@@ -636,53 +619,6 @@
     "source": "dynamic",
     "learned_at": "2026-09-01T22:52:08",
     "last_used": "2026-09-01T22:52:08"
-  },
-  "오시가 된거야 다시": {
-    "pattern": "오시가 된거야 다시",
-    "tool_calls": [
-      {
-        "name": "get_current_time",
-        "args": {}
-      }
-    ],
-    "response_template": "✓ 실행했어요.",
-    "hit_count": 1,
-    "is_seed": false,
-    "source": "dynamic",
-    "learned_at": "2026-09-02T11:21:12",
-    "last_used": "2026-09-02T11:21:12"
-  },
-  "그래": {
-    "pattern": "그래",
-    "tool_calls": [
-      {
-        "name": "close_app",
-        "args": {
-          "app": "계산기"
-        }
-      }
-    ],
-    "response_template": "✓ 실행했어요.",
-    "hit_count": 1,
-    "is_seed": false,
-    "source": "dynamic",
-    "learned_at": "2026-09-07T15:10:53",
-    "last_used": "2026-09-07T15:10:53"
-  },
-  "오늘 날짜 알려줘": {
-    "pattern": "오늘 날짜 알려줘",
-    "tool_calls": [
-      {
-        "name": "get_current_time",
-        "args": {}
-      }
-    ],
-    "response_template": "✓ 실행했어요.",
-    "hit_count": 2,
-    "is_seed": false,
-    "source": "dynamic",
-    "learned_at": "2026-09-08T23:27:34",
-    "last_used": "2026-09-09T17:24:51"
   },
   "지금 실행 중인 앱 목록 알려줘": {
     "pattern": "지금 실행 중인 앱 목록 알려줘",
