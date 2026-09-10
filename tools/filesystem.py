@@ -6,6 +6,7 @@
 import os
 import re
 import glob
+import difflib
 import subprocess
 from datetime import datetime
 from langchain_core.tools import tool
@@ -96,19 +97,74 @@ def create_folder(name: str, location: str = "desktop") -> str:
         return f"✗ 폴더 생성 실패: {e}"
 
 
-@tool
-def find_file(name: str = "", extension: str = "", location: str = "downloads") -> str:
-    """
-    파일을 탐색합니다.
-    name: 파일명 또는 키워드 (선택)
-    extension: 확장자 (예: pdf, txt, docx) — 선택
-    location: 탐색 위치 (desktop, downloads, documents) — 기본 다운로드
-    """
-    base = _resolve_location(location)
-    if not base:
-        return f"✗ '{location}'은(는) 지원하지 않는 위치입니다."
+# ── 파일 찾기 (BL-07) ────────────────────────────────────────────
+#
+# 2026-09-02 실기에서 이게 «UX»가 아니라 **기능 구멍**이라는 게 드러났다:
+# 사용자는 폴더를 '학교 문서'로 기억했는데 실제 이름은 '학교문'이었고,
+# `glob("*학교 문서*")`는 0건이라 요청이 계속 "없어요"로 끝났다.
+#
+# **2026-09-10에 무엇이 실제로 막고 있었는지 쟀다**(오기억 16쌍 평가셋):
+#
+#   현행 glob (공백 그대로)      긍정 3/8
+#   공백·구분자만 걷어내면       긍정 7/8 · **오매칭 0**      ← 이게 대부분이었다
+#   difflib 0.70                긍정 6/8 · 오매칭 0
+#
+# 즉 **막고 있던 건 근사 매칭의 부재가 아니라 띄어쓰기였다.**
+# difflib를 «실행»에 쓰지 않는 이유도 여기서 나온다 — 정규화 매칭보다 성적이
+# 나쁘고, 마진이 좁다(`이력서`↔`이론서.pdf`가 0.667로 임계 0.70에 붙어 있다).
+# 그래서 difflib는 **아무것도 못 찾았을 때 «혹시 이건가요» 제안**으로만 쓴다.
+# 틀려도 사고가 아니고, 고르는 건 사용자다.
+# (임베딩 캐시 ADR §6-3에서 «실행을 결정하는 데는 쓰지 않는다»고 정한 것과 같은 모양)
+#
+# ⚠️ 평가셋 16쌍은 **내가 만든 것**이라 과적합일 수 있다. 다만 ①의 이득
+#    (3/8 → 7/8)은 띄어쓰기 정규화라는 **기계적인 이유**에서 나오므로
+#    새로운 오기억 패턴에도 그대로 간다. difflib 쪽 숫자는 덜 믿는다.
 
-    # 검색 패턴 구성
+_FIND_ORDER = ("desktop", "downloads", "documents")   # 다른 위치를 훑는 순서
+_MAX_SCAN = 200_000                                   # 폭주 방지 (실측: 바탕화면 5.3만)
+
+
+def _norm_name(s: str) -> str:
+    """비교용 정규화 — 확장자·공백·구분자를 걷어내고 소문자로.
+
+    '학교 문서' 와 '학교문서', '개발착수서' 와 '개발_착수서.hwp' 를 같게 본다.
+    **이 한 줄이 긍정 3/8 → 7/8 을 만든다.**
+    """
+    if "." in s[1:]:
+        s = s.rsplit(".", 1)[0]
+    return re.sub(r"[\s_\-()\[\]]+", "", s).lower()
+
+
+def _walk_names(base: str, include_dirs: bool = False) -> list[str]:
+    """base 아래 모든 파일의 전체 경로. (비밀 파일은 애초에 담지 않는다)
+
+    include_dirs=True면 **폴더도** 담는다 — 근사 제안 전용이다(§_near_misses).
+    """
+    out: list[str] = []
+    for root, dirs, files in os.walk(base):
+        for f in files:
+            p = os.path.join(root, f)
+            if not _is_secret_path(p):
+                out.append(p)
+        if include_dirs:
+            for d in dirs:
+                p = os.path.join(root, d)
+                if not _is_secret_path(p):
+                    out.append(p)
+        if len(out) >= _MAX_SCAN:
+            break
+    return out
+
+
+def _match_in(base: str, name: str, extension: str) -> list[str]:
+    """한 위치에서 찾는다. 빠른 glob 먼저, 안 되면 정규화 비교.
+
+    ⚠️ 순서가 중요하다 — glob은 다운로드 6개에서 0.002초다.
+      대부분의 요청이 여기서 끝나므로 **느린 경로를 기본으로 만들지 않는다.**
+    """
+    if not os.path.isdir(base):
+        return []
+
     if name and extension:
         pattern = f"*{name}*.{extension}"
     elif name:
@@ -116,24 +172,130 @@ def find_file(name: str = "", extension: str = "", location: str = "downloads") 
     elif extension:
         pattern = f"*.{extension}"
     else:
-        return "✗ 파일명 또는 확장자를 지정해주세요."
+        return []
 
-    # recursive=True로 한 번만 검색 (하위 폴더 포함, 중복 없음)
-    matches = glob.glob(os.path.join(base, "**", pattern), recursive=True)
+    hits = [m for m in glob.glob(os.path.join(base, "**", pattern), recursive=True)
+            if not _is_secret_path(m)]
+    if hits:
+        return hits
 
-    # LLM02: 비밀/자격증명 파일은 검색 결과에서 제외
-    matches = [m for m in matches if not _is_secret_path(m)]
+    # 2차 — 띄어쓰기·구분자를 걷어내고 다시 본다 (실측: 여기가 대부분을 잡는다)
+    if not name:
+        return []
+    key = _norm_name(name)
+    if not key:
+        return []
+    ext = extension.lower().lstrip(".")
+    out = []
+    for p in _walk_names(base):
+        b = os.path.basename(p)
+        if ext and not b.lower().endswith("." + ext):
+            continue
+        if key in _norm_name(b):
+            out.append(p)
+    return out
 
-    if not matches:
-        return f"✗ '{location}'에서 조건에 맞는 파일을 찾지 못했습니다."
 
-    result_lines = [f"✓ {len(matches)}개 파일을 찾았습니다:"]
-    for i, m in enumerate(matches[:10], 1):
-        result_lines.append(f"  {i}. {os.path.basename(m)}")
-    if len(matches) > 10:
-        result_lines.append(f"  ... 외 {len(matches)-10}개")
+def _near_misses(name: str, bases: list[str], limit: int = 3) -> list[str]:
+    """아무것도 못 찾았을 때의 «혹시 이건가요» 후보.
 
-    return "\n".join(result_lines)
+    ⚠️ **제안이지 답이 아니다.** 실행에 쓰지 않는다 — 위 주석의 마진 이야기 참조.
+
+    ⚠️ **폴더도 넣는다.** BL-07 원문 사례('학교 문서' → '학교문')가 하필 폴더였다.
+      결과 목록에는 안 넣는다(이 도구의 계약은 «파일 탐색»이다) — 제안에만 넣고
+      «(폴더)»라고 밝혀서, 사용자가 다음에 무엇을 할지 알 수 있게 한다.
+      *"왜 없는지 확인할 방법이 없었다"* 가 BL-07의 원래 불평이었다.
+    """
+    if not name:
+        return []
+    key = _norm_name(name)
+    pool: dict[str, str] = {}          # 정규화 이름 → 보여줄 이름 (중복 제거)
+    for base in bases:
+        if not os.path.isdir(base):
+            continue
+        for p in _walk_names(base, include_dirs=True):
+            label = os.path.basename(p)
+            if os.path.isdir(p):
+                label += " (폴더)"
+            pool.setdefault(_norm_name(os.path.basename(p)), label)
+    close = difflib.get_close_matches(key, list(pool), n=limit, cutoff=0.70)
+    return [pool[c] for c in close]
+
+
+@tool
+def find_file(name: str = "", extension: str = "", location: str = "") -> str:
+    """
+    파일을 탐색합니다. 이름을 정확히 몰라도 됩니다.
+    띄어쓰기가 달라도("학교 문서" ↔ "학교문서") 찾고, 위치를 안 주면
+    바탕화면·다운로드·문서를 차례로 훑습니다.
+    name: 파일명 또는 키워드 (선택)
+    extension: 확장자 (예: pdf, txt, docx) — **모르면 비워 두세요.**
+               지어내지 마세요. 확장자를 주고 못 찾으면 빼고 다시 찾습니다.
+    location: 탐색 위치 (desktop, downloads, documents) — 비우면 전부
+    """
+    if not name and not extension:
+        return "✗ 파일명 또는 확장자를 알려주세요."
+
+    # 어디를 볼 것인가. 위치를 줬으면 거기부터, 그 다음 나머지.
+    if location:
+        base = _resolve_location(location)
+        if not base:
+            return f"✗ '{location}'은(는) 지원하지 않는 위치입니다."
+        ordered = [(location, base)]
+        seen = {os.path.normcase(base)}
+        for k in _FIND_ORDER:
+            p = LOCATION_MAP[k]
+            if os.path.normcase(p) not in seen:
+                ordered.append((k, p))
+                seen.add(os.path.normcase(p))
+    else:
+        ordered = [(k, LOCATION_MAP[k]) for k in _FIND_ORDER]
+
+    # 1차: 준 조건 그대로. 2차: 확장자를 빼고 (LLM이 확장자를 지어냈을 수 있다)
+    for attempt, ext in enumerate((extension, "") if extension else (extension,)):
+        for idx, (loc_name, base) in enumerate(ordered):
+            hits = _match_in(base, name, ext)
+            if not hits:
+                continue
+
+            head = f"✓ {len(hits)}개 파일을 찾았습니다"
+            notes = []
+            # **한 일은 반드시 말한다** — 사용자가 시킨 곳이 아닌 데서 찾았으면
+            # 그걸 밝히지 않으면 다음 명령("그거 지워줘")이 엉뚱한 걸 가리킨다.
+            if location and idx > 0:
+                notes.append(f"'{location}'이 아니라 '{loc_name}'에서")
+            elif not location:
+                notes.append(f"'{loc_name}'에서")
+            if attempt > 0:
+                notes.append(f"확장자 '{extension}'로는 못 찾아 빼고")
+            if notes:
+                head += f" ({' · '.join(notes)} 찾았어요)"
+
+            lines = [head + ":"]
+            for i, m in enumerate(hits[:10], 1):
+                lines.append(f"  {i}. {os.path.basename(m)}")
+            if len(hits) > 10:
+                lines.append(f"  ... 외 {len(hits) - 10}개")
+            return "\n".join(lines)
+
+    # 아무 데도 없다. 여기서 그냥 끝내면 사용자는 **다음에 뭘 할지 모른다** —
+    # BL-07이 «없어요»로만 끝나던 바로 그 자리다.
+    where = "바탕화면·다운로드·문서" if not location else f"'{location}'과 다른 위치들"
+    what = name or extension
+    # 조사 하드코딩('을(를)') 금지 — core/graph.py §211의 규칙과 같다.
+    # (지연 import: 이 도구는 캐시 모듈 없이도 단독으로 돌아야 한다)
+    try:
+        from core.command_cache import _select_particle
+        eul = _select_particle(what, "을", "를")
+    except Exception:
+        eul = "을(를)"
+    near = _near_misses(name, [b for _, b in ordered])
+    if near:
+        listed = " · ".join(f"'{n}'" for n in near)
+        return (f"✗ {where}에서 '{what}'{eul} 찾지 못했습니다.\n"
+                f"  혹시 이건가요? {listed}")
+    return (f"✗ {where}에서 '{what}'{eul} 찾지 못했습니다. "
+            f"비슷한 이름도 없어요.")
 
 
 @tool
