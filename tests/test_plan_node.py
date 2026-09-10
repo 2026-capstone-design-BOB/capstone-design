@@ -360,5 +360,97 @@ check("A: 한 배치로 다 했으면 **거짓 실패를 만들지 않는다**",
 check("A: 두 앱이 실제로 열렸다",
       "open:메모장" in order and "open:계산기" in order, f"→ {order}")
 
+# ── 🚩 BL-30 — 같은 동작은 나누지 않는다 (2026-09-10 실기) ──────────
+#
+# *"a.txt, b.txt 지워줘"* 가 2단계로 쪼개져서 **승인 질문이 두 번** 떴다.
+# 그리고 2단계가 위험 도구면 LLM이 그 단계에서 도구를 아예 안 부르는 일이 있었다:
+#     [Plan] 1/2 '메모장 최소화' → 2/2 'b.txt 파일 지우기'
+#     턴 완료 | 도구=['minimize_window']        ← 삭제를 안 불렀다
+#
+# 사용자: *"두 파일 지워달라고 하면 꼭 뒤 파일과 관련해서는 실행이 안 되는 것 같아"*
+#
+# 쪼개지 않으면 LLM이 한 배치에 담고, **BL-24가 이미 만든 «전부를 이름으로 부르는
+# 질문»이 그대로 받는다** — 새 기계가 필요 없다.
+print("\n=== BL-30 — 같은 동작은 나누지 않는다 ===")
+
+check("🚩 삭제 둘은 안 나눈다", not G.parse_plan(["a.txt 지우기", "b.txt 지우기"]))
+check("🚩 표현이 달라도 같은 동작이면 안 나눈다",
+      not G.parse_plan(["a.txt 지우기", "b.txt 삭제"]))
+check("🚩 '휴지통'도 삭제로 읽는다",
+      not G.parse_plan(["a.txt 휴지통으로", "b.txt 지우기"]))
+
+# ⚠️ 여기가 이 규칙의 경계다. 넓히면 M3가 무력해진다 —
+#   열기는 **쪼개도 피해가 없고**(승인이 없다), 쪼개야 «계산기는 못 했어요»를 말한다.
+check("열기 둘은 **그대로 나눈다** (M3의 «못 했어요»를 지킨다)",
+      len(G.parse_plan(["메모장 열기", "계산기 열기"])) == 2)
+check("동작이 다르면 나눈다", len(G.parse_plan(["메모장 열기", "크롬 닫기"])) == 2)
+check("실기 사례(최소화+삭제)는 나눈다 — 동작이 다르다",
+      len(G.parse_plan(["메모장 최소화", "b.txt 파일 지우기"])) == 2)
+check("동작을 모르면 나눈다 (모르는 건 건드리지 않는다)",
+      len(G.parse_plan(["화면 밝기 올리기", "볼륨 줄이기"])) == 2)
+
+check("_step_action이 동의어를 같은 값으로 읽는다",
+      G._step_action("a.txt 지우기") == G._step_action("b.txt 삭제") == "삭제")
+check("묶는 동작은 «되돌릴 수 없는 것»으로 한정돼 있다",
+      G._BATCHABLE_ACTIONS == frozenset({"삭제"}), f"→ {G._BATCHABLE_ACTIONS}")
+
+# ── 끝단 — 정말 «한 번만» 묻고 «둘 다» 지우는가 ──────────────────
+# 단계 판정만 맞고 승인이 두 번 뜨면 고친 게 아니다. 그래프를 끝까지 돌린다.
+print("\n=== BL-30 끝단 — 한 번 묻고 둘 다 지운다 ===")
+from langchain_core.tools import tool as _tool
+from langgraph.types import Command as _Command
+
+_deleted = []
+
+@_tool
+def delete_file(file_path: str) -> str:
+    """파일 삭제(mock)."""
+    _deleted.append(file_path)
+    return f"✓ '{file_path}' 삭제했어요."
+
+class _TwoDelete:
+    """실기처럼 «두 파일 삭제»를 한 배치에 담는다."""
+    _n = 0
+    def bind_tools(self, t): return self
+    def invoke(self, m):
+        turn = G.current_turn_messages(m)
+        if any(isinstance(x, ToolMessage) for x in turn):
+            return AIMessage(content="다 지웠어요.")
+        _TwoDelete._n += 1
+        return AIMessage(content="", tool_calls=[
+            {"name": "delete_file", "args": {"file_path": "바탕화면/a.txt"},
+             "id": f"b{_TwoDelete._n}a", "type": "tool_call"},
+            {"name": "delete_file", "args": {"file_path": "바탕화면/b.txt"},
+             "id": f"b{_TwoDelete._n}b", "type": "tool_call"}])
+
+g30 = G.build_pluiz_graph(
+    llm=_TwoDelete(), tools=[delete_file],
+    security_check=lambda t: (False, ""), fast_resolve=lambda t: None,
+    target_exists=lambda *a, **k: True)
+cfg30 = {"configurable": {"thread_id": "bl30"}}
+r30 = g30.invoke({"messages": [HumanMessage("a.txt랑 b.txt 지워줘")]}, cfg30)
+itr30 = r30.get("__interrupt__")
+q30 = itr30[0].value.get("question", "") if itr30 else ""
+
+check("질문이 한 번 뜬다", bool(itr30))
+check("🔒 질문이 **둘 다** 이름을 부른다", "a.txt" in q30 and "b.txt" in q30, f"→ {q30!r}")
+check("🔒 개수를 말한다 (묻지 않은 삭제를 알아챌 단서)", "2개" in q30, f"→ {q30!r}")
+
+r30b = g30.invoke(_Command(resume="응"), cfg30)
+check("승인하면 **둘 다** 지워진다",
+      _deleted == ["바탕화면/a.txt", "바탕화면/b.txt"], f"→ {_deleted}")
+check("🚨 질문이 두 번 뜨지 않는다 (실기에서 두 번 떴다)",
+      not r30b.get("__interrupt__"))
+
+_deleted.clear()
+g30r = G.build_pluiz_graph(
+    llm=_TwoDelete(), tools=[delete_file],
+    security_check=lambda t: (False, ""), fast_resolve=lambda t: None,
+    target_exists=lambda *a, **k: True)
+cfg30r = {"configurable": {"thread_id": "bl30r"}}
+g30r.invoke({"messages": [HumanMessage("a.txt랑 b.txt 지워줘")]}, cfg30r)
+g30r.invoke(_Command(resume="아니"), cfg30r)
+check("거부하면 **둘 다** 안 지워진다", _deleted == [], f"→ {_deleted}")
+
 print(f"\n결과: {passed}/{total} 통과")
 sys.exit(0 if passed == total else 1)
