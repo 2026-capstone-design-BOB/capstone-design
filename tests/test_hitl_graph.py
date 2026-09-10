@@ -151,10 +151,15 @@ def pairs_intact(msgs) -> bool:
 
 def run():
     passed = total = 0
-    def check(name, cond):
+    def check(name, cond, detail=""):
         nonlocal passed, total
         total += 1; passed += bool(cond)
         print(f"  {'✓' if cond else '✗ FAIL'} {name}")
+        # 실패했을 때 **무엇이 나왔는지**를 같이 찍는다. 없으면 로그만 보고는
+        # 원인을 못 찾아 테스트를 다시 고쳐 돌려야 한다.
+        if not cond and detail:
+            for line in str(detail).splitlines():
+                print(f"       {line}")
 
     print("=== 승인: 삭제 → 질문 → '응' → 실행 ===")
     executed.clear()
@@ -545,6 +550,80 @@ def run():
               ToolMessage(content="보류", tool_call_id="x1"),
               ToolMessage(content="보류", tool_call_id="x2"), ri24]
     check("원본 2개만 센다", G.turn_tool_call_count(turn24) == 2)
+
+    print("\n=== BL-32 — 지웠으면 **지웠다고 말한다** (한 걸 말하지 않는 것) ===")
+    # 실기(2026-09-10): "a.txt는 삭제하고 b.txt 열어줘" → 승인 "어" →
+    #   🤖 "b.txt 파일을 열었어요."   ← a.txt를 지웠다는 말이 없다
+    #   👤 "다 지운거야?"             ← 사용자가 되물어야 했다
+    # BL-12·19·26(«안 한 걸 했다고 말하는 것»)의 **거울상**이고, 삭제는 되돌릴 수
+    # 없으니 더 나쁘다. 여기서 고정하는 것은 **접미가 반드시 붙는다**는 것이다.
+    dcall = {"name": "delete_file", "args": {"file_path": "바탕화면/a.txt"},
+             "id": "d32", "type": "tool_call"}
+    ocall = {"name": "open_file", "args": {"file_path": "바탕화면/b.txt"},
+             "id": "o32", "type": "tool_call"}
+
+    def turn32(said, tool_out="✓ 'a.txt' 휴지통으로 옮겼어요."):
+        return [HumanMessage("a.txt는 삭제하고 b.txt 열어줘"),
+                AIMessage(content="", tool_calls=[dcall, ocall]),
+                ToolMessage(content=tool_out, tool_call_id="d32"),
+                ToolMessage(content="✓ 'b.txt' 파일을 열었습니다.", tool_call_id="o32"),
+                AIMessage(content=said)]
+
+    said32 = "b.txt 파일을 열었어요."
+    n32 = G.executed_danger_notice(turn32(said32), said32)
+    check("🚩 원문 재현: 삭제를 말하지 않은 응답에 접미가 붙는다", n32 != "", f"→ {n32!r}")
+    check("도구가 만든 문장을 그대로 싣는다 (LLM에 맡기지 않는다)",
+          "휴지통으로 옮겼어요" in n32, f"→ {n32!r}")
+    check("✓ 표시는 응답에 섞지 않는다", "✓" not in n32, f"→ {n32!r}")
+
+    # 이미 말했으면 덧붙이지 않는다 — 같은 사실이 두 번 나가면 사람은 둘 중
+    # 하나를 «다른 일»로 읽는다.
+    said_ok = "'a.txt'를 지우고 b.txt를 열었어요."
+    check("응답이 이미 그 대상을 말했으면 붙이지 않는다",
+          G.executed_danger_notice(turn32(said_ok), said_ok) == "",
+          f"→ {G.executed_danger_notice(turn32(said_ok), said_ok)!r}")
+
+    # 실패는 여기서 말하지 않는다 — missing_notice와 T04가 맡는 자리다.
+    check("실패한 삭제는 싣지 않는다 (두 번 말하지 않게)",
+          G.executed_danger_notice(
+              turn32(said32, "✗ 파일을 찾을 수 없습니다: a.txt"), said32) == "")
+
+    # 같은 파일에 delete_file이 두 번 찍혀도(실기에서 실제로 그랬다) 한 번만 말한다
+    dup = turn32(said32)
+    dup.insert(3, ToolMessage(content="✓ 'a.txt' 휴지통으로 옮겼어요.",
+                              tool_call_id="d32b"))
+    dup[1] = AIMessage(content="", tool_calls=[
+        dcall, dict(dcall, id="d32b"), ocall])
+    check("같은 결과가 두 번 찍혀도 한 번만 말한다",
+          G.executed_danger_notice(dup, said32).count("휴지통") == 1,
+          f"→ {G.executed_danger_notice(dup, said32)!r}")
+
+    # 위험하지 않은 도구는 이 접미의 대상이 아니다 (응답이 길어지기만 한다)
+    safe32 = [HumanMessage("메모장 열어줘"),
+              AIMessage(content="", tool_calls=[
+                  {"name": "open_app", "args": {"app_name": "메모장"},
+                   "id": "s32", "type": "tool_call"}]),
+              ToolMessage(content="✓ '메모장'을 열었어요.", tool_call_id="s32"),
+              AIMessage(content="열었어요.")]
+    check("안전한 도구는 접미를 만들지 않는다",
+          G.executed_danger_notice(safe32, "열었어요.") == "")
+
+    # 🚨 절대규칙 6 — 지난 턴의 삭제를 이번 턴에 다시 보고하지 않는다
+    across = turn32(said32) + [HumanMessage("고마워"), AIMessage(content="천만에요.")]
+    check("🚨 지난 턴의 삭제를 이번 턴에 또 말하지 않는다 (턴 경계)",
+          G.executed_danger_notice(across, "천만에요.") == "",
+          f"→ {G.executed_danger_notice(across, '천만에요.')!r}")
+
+    # 클릭도 되돌릴 수 없다 — 같은 규칙을 받는다
+    ccall = {"name": "click_ui_element",
+             "args": {"target": "파일 메뉴", "window": "메모장"},
+             "id": "c32", "type": "tool_call"}
+    clk = [HumanMessage("메모장에서 파일 메뉴 눌러줘"),
+           AIMessage(content="", tool_calls=[ccall]),
+           ToolMessage(content="✓ '파일 메뉴'를 클릭했어요.", tool_call_id="c32"),
+           AIMessage(content="알겠습니다.")]
+    check("클릭도 말하지 않으면 접미가 붙는다",
+          "클릭했어요" in G.executed_danger_notice(clk, "알겠습니다."))
 
     print(f"\n결과: {passed}/{total} 통과")
     return passed == total

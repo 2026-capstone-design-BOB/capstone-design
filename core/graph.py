@@ -41,7 +41,7 @@ from core.logger import get_logger
 # 복합 명령 감지는 fast_path에 이미 있다(BL-15 때 만든 것). 여기서 다시 쓰지 않는다 —
 # 두 벌이 되면 한쪽만 고쳐진다. (core.fast_path는 core.logger 외에 아무것도 끌어오지 않는다)
 from core.fast_path import has_negation, is_compound_command
-from core.tool_result import tool_failed
+from core.tool_result import tool_failed, tool_succeeded
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode
@@ -281,6 +281,78 @@ def missing_notice(names: Any) -> str:
     head = items[0]
     more = f" 외 {len(items) - 1}개" if len(items) > 1 else ""
     return f" 다만 '{head}'{more}은(는) 찾지 못해 삭제하지 않았어요."
+
+
+def _danger_target(args: Any) -> str:
+    """위험 도구 호출이 가리킨 대상의 **사람이 부르는 이름**. (BL-32)"""
+    if not isinstance(args, dict):
+        return ""
+    raw = (args.get("file_path") or args.get("folder_path")
+           or args.get("target") or "")
+    return os.path.basename(str(raw).replace("\\", "/").rstrip("/")).strip()
+
+
+def executed_danger_notice(messages: list[AnyMessage], said: str) -> str:
+    """이번 턴에 **실제로 실행된 위험 도구의 결과**를 접미로 싣는다. (BL-32)
+
+    🚨 **왜 필요한가 — 이 저장소가 데인 것의 거울상이다.**
+    BL-12·19·26은 «안 한 걸 했다고 말하는 것»이었다. 이건 반대로
+    «한 걸 말하지 않는 것»이다. 실기(2026-09-10):
+
+        👤 a.txt는 삭제하고 b.txt 열어줘
+        🤖 'a.txt' 파일을 정말 삭제할까요?        👤 어
+        🤖 b.txt 파일을 열었어요.        ← 🚨 a.txt를 지웠다는 말이 없다
+        👤 다 지운거야?                 ← 사용자가 되물어야 했다
+
+    계획 2단계 턴에서 **마지막 단계의 결과만** 말했다. 삭제는 되돌릴 수 없으니
+    «안 한 걸 했다고 하는 것»보다 나쁘다.
+
+    ⚠️ **문구를 LLM에 맡기지 않는다.** 맡기면 또 삼킨다 — 방금 삼킨 그 자리다.
+      감시 고지(`watch_notice_to_deliver`)와 같은 규칙으로 **도구가 만든 문장을
+      그대로** 싣는다. 이 저장소의 전례다.
+
+    ⚠️ **성공한 것만 싣는다.** 실패는 `missing_notice`와 T04(`verify_output`)가
+      맡는 자리다. 여기서 같이 말하면 같은 사실이 두 번 나간다.
+
+    ⚠️ 반드시 `current_turn_messages()`를 거친다(절대규칙 6). 전체 히스토리를
+      훑으면 **지난 턴의 삭제를 이번 턴에 다시 보고한다.**
+    """
+    turn = current_turn_messages(messages)
+
+    # tool_call_id → (이름, 인자). 짝을 먼저 모아야 ToolMessage가 어느 호출의
+    # 결과인지 알 수 있다 (ToolMessage.name은 provider에 따라 빌 수 있다).
+    calls: dict[str, tuple[str, Any]] = {}
+    for m in turn:
+        for c in (getattr(m, "tool_calls", None) or []):
+            if isinstance(c, dict) and c.get("id"):
+                calls[c["id"]] = (c.get("name", ""), c.get("args", {}) or {})
+
+    said_l = (said or "").lower()
+    parts: list[str] = []
+    seen: set[str] = set()
+    for m in turn:
+        if not isinstance(m, ToolMessage):
+            continue
+        name, args = calls.get(getattr(m, "tool_call_id", None) or "", ("", {}))
+        if name not in DANGEROUS_TOOLS:
+            continue
+        text = _msg_text(m).strip()
+        if not text or not tool_succeeded(text):
+            continue
+        # 응답이 이미 그 대상을 말했으면 덧붙이지 않는다 — 같은 사실을 두 번
+        # 말하면 사람은 둘 중 하나를 다른 일로 읽는다.
+        target = _danger_target(args)
+        if target and target.lower() in said_l:
+            continue
+        line = text.splitlines()[0].strip().lstrip("✓").strip()
+        if not line or line in seen:
+            continue
+        seen.add(line)
+        parts.append(line)
+
+    if not parts:
+        return ""
+    return " 그리고 " + " ".join(parts)
 
 
 def _join_targets(calls: list) -> str:
@@ -1287,6 +1359,13 @@ def build_pluiz_graph(
         # BL-24 — 승인은 됐는데 없어서 못 지운 것. M3의 «못 한 단계»와 같은 자리의 접미다.
         tail += missing_notice(state.get("missing_targets"))
 
+        # BL-32 — **한 걸 말하지 않는 것**을 막는다. 위험 도구가 실제로 실행됐는데
+        # 응답이 그 대상을 언급하지 않으면, 도구가 만든 문장을 그대로 싣는다.
+        # 판정의 기준은 **LLM이 실제로 한 말**이라 여기서 먼저 꺼내 둔다.
+        _last = state["messages"][-1] if state["messages"] else None
+        _said = _msg_text(_last) if isinstance(_last, AIMessage) else ""
+        tail += executed_danger_notice(state["messages"], _said)
+
         notice = watch_notice_to_deliver(state["messages"])
         if notice is not None:
             note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
@@ -1316,6 +1395,11 @@ def build_pluiz_graph(
             if isinstance(last, AIMessage):
                 return {"messages": [AIMessage(content=note + _msg_text(last) + tail)],
                         "deletion_cancelled": False, "missing_targets": []}
+            # 붙일 응답이 없으면 **접미만이라도 내보낸다.** 예전엔 여기서 조용히
+            # 버려졌는데, 버려지는 내용이 «취소했어요»·«지웠어요»라 BL-32가
+            # 고치려던 바로 그 침묵이다. (BL-32)
+            return {"messages": [AIMessage(content=(note + tail).strip())],
+                    "deletion_cancelled": False, "missing_targets": []}
         return {}
 
     def visual_verify(state: PluizState) -> dict:
