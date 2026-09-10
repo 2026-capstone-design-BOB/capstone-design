@@ -127,18 +127,23 @@ def difflib_scorer():
     return score
 
 
-def embed_scorer(centered: bool):
+def embed_scorer(centered: bool, q_prefix: str = "", p_prefix: str = ""):
+    """`q_prefix`/`p_prefix` — e5 계열은 `query: `/`passage: ` 접두사가 **필수**다.
+
+    ⚠️ 접두사는 «옵션»이 아니다. e5는 그걸 붙여 학습됐고, 빼면 다른 모델이 된다.
+    그래서 **붙였을 때와 뺐을 때를 나란히 잰다** — 접두사 효과 자체가 측정 대상이다.
+    """
     from core.embedder import get_embedder, reset_embedder
     reset_embedder()
     e = get_embedder()
     if not e.available:
         return None, None
-    M = e.encode_many(PATTERNS)
+    M = e.encode_many([p_prefix + p for p in PATTERNS])
     mu = M.mean(axis=0)
     Mc = _norm(M - mu)
 
     def score(text):
-        v = e.encode(text)
+        v = e.encode(q_prefix + text)
         if centered:
             return Mc @ _norm(v - mu)
         return M @ v
@@ -149,9 +154,32 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--compare", action="store_true",
                     help="int8 ↔ fp32 를 나란히 잰다(둘 다 받아 뒀을 때)")
+    ap.add_argument("--e5", action="store_true",
+                    help="multilingual-e5-small 을 잰다 (models/embed/e5-small)")
     args = ap.parse_args()
 
     rows = [measure(difflib_scorer(), "현행 — difflib (임계 0.80)")]
+
+    if args.e5:
+        # e5는 별도 폴더에 둔다 — 토크나이저가 달라 섞이면 안 된다
+        os.environ["PLUIZ_EMBED_DIR"] = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "models", "embed", "e5-small")
+        os.environ["PLUIZ_EMBED_MODEL"] = "model.onnx"
+        import core.embedder as _em
+        import importlib
+        importlib.reload(_em)
+        for label, qp, pp in (("접두사 없음", "", ""),
+                              ("접두사 있음(query/passage)", "query: ", "passage: ")):
+            for centered in (False, True):
+                score, _ = embed_scorer(centered, qp, pp)
+                if score is None:
+                    print("(건너뜀 — e5-small 을 못 엽니다)")
+                    break
+                tag = "중심화" if centered else "원본"
+                rows.append(measure(score, f"e5-small · {label} · {tag}"))
+        _summary(rows)
+        return
 
     models = ["model_quantized.onnx", "model.onnx"] if args.compare \
         else [os.environ.get("PLUIZ_EMBED_MODEL") or "model_quantized.onnx"]
@@ -166,6 +194,10 @@ def main():
             tag = "중심화" if centered else "원본"
             rows.append(measure(score, f"임베딩 {m} · {tag}"))
 
+    _summary(rows)
+
+
+def _summary(rows):
     print("=" * 86)
     print("■ 요약 — **마진이 양수인 줄이 하나도 없으면 임베딩으로 바꾸면 안 된다**")
     print("=" * 86)
