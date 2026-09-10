@@ -197,6 +197,60 @@ def run():
     r5 = g3.invoke(Command(resume="응"), cfg3)                # 이제 승인
     check("재질문 후 승인 → 실행됨", executed == ["바탕화면/test.txt"])
 
+    # ── 🚨 BL-17 — 재질문 뒤 «승인 대기»를 실기가 알아보는가 ──────────
+    #
+    # 위 블록은 `Command(resume=)`를 **그래프에 직접** 준다. 실기는 그 전에
+    # `PluizGraphAgent._pending_interrupt()`가 «지금 승인 대기인가»를 판단하고,
+    # False면 사용자의 '네'를 **새 명령**으로 처리한다.
+    #
+    # **그 판정이 `next`만 보고 있어서 2026-09-10 실기에서 두 번 깨졌다.**
+    # `interrupt()`가 같은 노드에서 두 번째로 걸리면(=재질문) 그 노드는 «다음에
+    # 실행할 노드»가 아니라 «실행 중간에 멈춘 노드»라 `next`가 비어 있다:
+    #
+    #     | 신호               | 1차 질문   | 재질문   |
+    #     | next               | ('hitl',) | 없음 ←🚨 |
+    #     | tasks[].interrupts | 1         | 1        |
+    #
+    # 위 블록이 초록인데 실기가 깨진 이유가 이것이다 — **여기서 그 자리를 직접 본다.**
+    print("=== BL-17 — 재질문 뒤에도 «승인 대기»로 읽히는가 ===")
+    from core.graph_agent import PluizGraphAgent
+
+    executed.clear()
+    g17 = build(target_exists=lambda *a, **k: True)
+    cfg17 = {"configurable": {"thread_id": "bl17"}}
+
+    class _Shim:
+        """실기의 판정 함수를 **그대로** 빌려 쓴다 (복사본이면 또 어긋난다)."""
+        graph = g17
+        _count_interrupts = staticmethod(PluizGraphAgent._count_interrupts)
+        _pending_interrupt = PluizGraphAgent._pending_interrupt
+
+    shim = _Shim()
+
+    g17.invoke({"messages": [HumanMessage("바탕화면 test.txt 삭제해줘")]}, cfg17)
+    check("1차 질문 뒤 승인 대기로 읽힌다", shim._pending_interrupt(cfg17) is True)
+
+    g17.invoke(Command(resume="지호 맘몬"), cfg17)          # STT 잡음 → 재질문
+    # next만 보면 여기서 False가 된다 — '네'가 새 명령이 되고 질문이 다시 뜬다
+    check("🚨 재질문 뒤에도 승인 대기로 읽힌다 (BL-17)",
+          shim._pending_interrupt(cfg17) is True)
+
+    g17.invoke(Command(resume="응"), cfg17)
+    check("재질문 뒤 승인이 실제로 실행된다", executed == ["바탕화면/test.txt"])
+    check("실행이 끝나면 승인 대기가 아니다", shim._pending_interrupt(cfg17) is False)
+
+    # 신호를 세는 쪽도 못 박는다 — langgraph 버전이 올라가며 한쪽이 사라져도
+    # 조용히 0이 되지 않게 «둘 다 본다»는 것 자체를 검사한다.
+    st17 = g17.get_state({"configurable": {"thread_id": "bl17"}})
+    check("_count_interrupts가 스냅샷을 읽는다(예외 없이 정수)",
+          isinstance(PluizGraphAgent._count_interrupts(st17), int))
+
+    class _NoDirect:
+        interrupts = None
+        tasks = (type("T", (), {"interrupts": (1, 2)})(),)
+    check("interrupts 속성이 없으면 tasks[]로 폴백한다",
+          PluizGraphAgent._count_interrupts(_NoDirect()) == 2)
+
     print("=== 끝까지 애매 → 취소(안전 기본값) ===")
     executed.clear()
     g4 = build()

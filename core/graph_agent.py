@@ -205,17 +205,53 @@ class PluizGraphAgent:
         ⚠️ 여기서 False가 나오면 사용자의 "네"가 **승인이 아니라 새 명령**이 된다.
           예외를 조용히 삼키면 그 사실을 아무도 모른다 — 2026-09-03 실기에서
           "네"가 승인으로 안 먹은 원인을 로그로 못 밝혔다. 그래서 남긴다.
+
+        🚨 **`next`만 보면 안 된다 (BL-17).** `interrupt()`가 **같은 노드 안에서
+          두 번째로** 걸리면 — 즉 애매한 답에 «다시 물어볼» 때 — 그 노드는
+          «다음에 실행할 노드»가 아니라 **«실행 중간에 멈춘 노드»** 다.
+          `next`는 비고 `tasks[].interrupts`에만 남는다:
+
+              | 신호               | 1차 질문   | 재질문   |
+              | next               | ('hitl',) | **없음** |
+              | tasks[].interrupts | 1         | **1**    |
+
+          2026-09-10 실기에서 이것 때문에 두 번 깨졌다 — 재질문 뒤의 '그래'가
+          새 명령이 돼서 **승인 질문이 처음부터 다시 떴고**, 사용자는 같은 삭제를
+          두 번 승인해야 했다. 한 번은 승인 대기가 통째로 사라져
+          *"네? 어떤 작업을 말씀하시는지…"* 로 끝났다.
+
+          ⚠️ mock 테스트는 `Command(resume=)`를 **그래프에 직접** 줘서 이 자리를
+            건너뛴다. 그래서 114건이 전부 초록인데 실기가 깨졌다.
+            `tests/test_hitl_graph.py` §BL-17이 이제 이 함수를 직접 부른다.
         """
         try:
             st = self.graph.get_state(config)
             nxt = tuple(getattr(st, "next", ()) or ())
-            _log.debug("승인 대기 확인 | thread=%s | next=%s",
-                       config.get("configurable", {}).get("thread_id"), nxt or "없음")
-            return bool(nxt)
+            n_itr = self._count_interrupts(st)
+            _log.debug("승인 대기 확인 | thread=%s | next=%s | 대기 중인 질문=%d",
+                       config.get("configurable", {}).get("thread_id"),
+                       nxt or "없음", n_itr)
+            return bool(nxt) or n_itr > 0
         except Exception as e:
             _log.warning("승인 대기 확인 실패(새 명령으로 처리됨): %s: %s",
                          type(e).__name__, e)
             return False
+
+    @staticmethod
+    def _count_interrupts(st) -> int:
+        """스냅샷에 «답을 기다리는 질문»이 몇 개인가.
+
+        langgraph 버전에 따라 스냅샷에 `interrupts`가 바로 있기도 하고
+        `tasks[].interrupts`에만 있기도 하다. **둘 다 본다** — 한쪽만 보면
+        버전이 올라갈 때 조용히 0이 되고, 그러면 BL-17이 그대로 재발한다.
+        """
+        direct = getattr(st, "interrupts", None)
+        if direct:
+            return len(direct)
+        total = 0
+        for t in (getattr(st, "tasks", ()) or ()):
+            total += len(getattr(t, "interrupts", ()) or ())
+        return total
 
     def _clear_thread(self, thread_id: str):
         """MemorySaver에서 특정 thread 기록 제거. storage 없으면 전체 재생성."""
