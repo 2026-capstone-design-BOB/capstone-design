@@ -9,6 +9,8 @@
 
 ① 등록된 도구 중 **실제로 쓰인 것이 몇 개인가** (안 쓰인 도구는 왜 있는가)
 ② **도구가 없어서/안 불려서 실패한 턴** ← 가장 중요하다. BL-07·BL-19가 그 사례다
+   (2026-09-10 [BL-28] 이후로는 `사유=못함` 태그를 세면 바로 답이 나온다.
+    그 이전 구간은 «명령처럼 보이는데 도구가 안 불린 턴»으로 **추정**할 뿐이다)
 ③ **잘못 고른 턴** — 사용자가 바로 정정한 턴을 센다
 
 ## ⚠️ 먼저 로그를 걸러야 한다 — 이 로그는 테스트로 오염돼 있다
@@ -36,11 +38,15 @@ _TURN = re.compile(
     r"^(?P<ts>[\d-]{10} [\d:]{8}).*?\[Agent\] 턴 완료 \| 입력=(?P<q>'[^']*'|\"[^\"]*\")"
     r" \| 도구=(?P<tools>없음|\[[^\]]*\])"
     r"(?: \| 응답 (?P<rlen>\d+)자)?"
+    r"(?: \| 사유=(?P<reason>[가-힣]+))?"          # BL-28 (2026-09-10~)
     r"(?: \| 계획 (?P<plan>\d+/\d+))?"
     r"(?: \| 소요 (?P<sec>[\d.]+)s)?"
     r"(?: \| LLM (?P<llm>\d+|\?)회(?P<cached>\(캐시\))?)?"
     r"(?: \| 토큰 (?P<tok>0|미상|in=\d+ out=\d+))?")
 _THREAD = re.compile(r"thread=(?P<t>[A-Za-z0-9_]+)")
+# BL-28 곁들여 — 캐시가 그래프 «밖에서» 돌린 도구. 이 줄이 없으면 캐시가 처리한
+# 도구들이 «한 번도 안 쓰인 도구»로 잘못 집계된다(2026-09-10 실측 §1).
+_CACHE_RUN = re.compile(r"\[캐시 실행\] 패턴=.* \| 도구=(?P<tools>없음|\[[^\]]*\])")
 
 # 사용자가 «방금 그거 아니야»라고 말한 신호. 앞 턴이 틀렸을 가능성이 높다.
 _CORRECTION = re.compile(r"^(아니|아냐|그게 아니|말고|다시|또 |왜 |안 |그거 말고|틀렸)")
@@ -52,11 +58,16 @@ _REAL_PREFIXES = ("pluiz_",)
 def parse(path):
     turns = []
     cur_thread = None
+    pending_cache = []
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             m = _THREAD.search(line)
             if m and "턴 완료" not in line:
                 cur_thread = m.group("t")
+            m = _CACHE_RUN.search(line)
+            if m:
+                raw = m.group("tools")
+                pending_cache = [] if raw == "없음" else re.findall(r"'([^']+)'", raw)
             m = _TURN.search(line)
             if not m:
                 continue
@@ -72,7 +83,11 @@ def parse(path):
                 "tok": m.group("tok") or "미상",
                 "thread": cur_thread,
                 "plan": m.group("plan"),
+                "reason": m.group("reason"),
+                # 캐시 턴이면 «캐시가 돌린 도구»를 붙인다. 그래프에는 안 잡히는 것들이다.
+                "cache_tools": pending_cache if m.group("reason") == "캐시" else [],
             })
+            pending_cache = []
     return turns
 
 
@@ -122,8 +137,10 @@ def main():
 
     # ── ① 도구 사용 빈도 ─────────────────────────────────────────
     used = Counter()
+    cache_used = Counter()
     for t in use:
         used.update(t["tools"])
+        cache_used.update(t["cache_tools"])
     print()
     print("=" * 78)
     print("■ ① 어떤 도구가 실제로 쓰였나")
@@ -141,9 +158,18 @@ def main():
     for name, n in used.most_common():
         bar = "█" * min(40, n)
         print(f"    {name:<24} {n:>4}  {bar}")
+    if cache_used:
+        print(f"\n  🟢 캐시가 그래프 «밖에서» 돌린 도구 (BL-28로 되찾은 분):")
+        for name, n in cache_used.most_common():
+            print(f"    {name:<24} {n:>4}  {chr(9618) * min(40, n)}")
+        print(f"    → 이 {len(cache_used)}종은 «안 쓰인 도구»가 아니다. "
+              f"**LLM을 안 거치고 쓰인** 것이다")
+    else:
+        print("\n  ⚠️ 캐시 실행 로그가 없다 — 2026-09-10 이전 로그이거나 캐시 히트가 없었다.")
+        print("     그 구간에선 캐시가 돌린 도구(볼륨·밝기·시간 등)가 «안 쓰인»으로 잘못 잡힌다.")
     if reg:
-        never = sorted(reg - set(used))
-        print(f"\n  ⛔ 한 번도 안 쓰인 도구 {len(never)}개:")
+        never = sorted(reg - set(used) - set(cache_used))
+        print(f"\n  ⛔ 한 번도 안 쓰인 도구 {len(never)}개 (캐시 실행분을 뺀 뒤):")
         for i in range(0, len(never), 3):
             print("     " + " · ".join(f"{x:<22}" for x in never[i:i + 3]))
 
@@ -158,6 +184,16 @@ def main():
     print(f"  도구 0개인 턴 {len(notool)}/{len(use)}")
     print(f"    - 캐시가 처리 {len(cached)}턴  ← 도구를 «안 부른» 게 아니라 «안 불러도 된» 것이다")
     print(f"    - LLM이 말만  {len(chat)}턴  ← 여기에 «시켰는데 안 된 것»이 섞여 있다")
+    tagged = [t for t in notool if t["reason"]]
+    if tagged:
+        print(f"\n  🟢 BL-28 사유 태그가 붙은 턴 {len(tagged)}/{len(notool)}:")
+        for r, n in Counter(t["reason"] for t in tagged).most_common():
+            mark = " 🔴 ← 진짜 실패다" if r == "못함" else ""
+            print(f"    사유={r:<6} {n:>4}턴{mark}")
+        print("    → «못함»만 세면 «도구가 없어서 실패한 턴»에 **바로 답할 수 있다**")
+    else:
+        print("\n  ⚠️ 사유 태그가 붙은 턴이 없다 — BL-28은 2026-09-10에 들어갔다.")
+        print("     그 이전 구간은 아래처럼 **추정**할 수밖에 없다(그게 BL-28의 이유다).")
     print("\n  LLM이 말만 한 턴 중 **명령처럼 보이는 것** (사람이 봐야 확정된다):")
     imperative = re.compile(r"(줘|줄래|해라|해봐|해 봐|보여|알려|켜|꺼|열어|닫아|실행)")
     cand = [t for t in chat if imperative.search(t["q"])]
@@ -168,7 +204,8 @@ def main():
         print(f"    … 외 {len(cand) - 15}개")
     print(f"\n  🔑 후보 {len(cand)}턴 — 이 중 진짜 실패가 몇인지는 **응답 본문이 있어야** 안다.")
     print(f"     ⚠️ 로그에 응답이 «{'{'}자 수{'}'}»로만 남아 실패 사유를 사후에 못 읽는다.")
-    print(f"        → 다음에 고칠 것: 도구 미호출로 끝난 턴에 **사유 한 줄**을 남긴다.")
+    print("        → ✅ BL-28로 고쳤다(2026-09-10) — 이제 `사유=` 태그가 붙는다.")
+    print("           위 «후보» 목록은 **태그가 없던 옛 구간**을 위한 추정이다.")
 
     # ── ③ 사용자가 곧바로 정정한 턴 ──────────────────────────────
     print()

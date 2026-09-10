@@ -224,6 +224,49 @@ async def run():
     check("승인 대기 줄에도 계측 꼬리표가 붙는 형식이다",
           " | 소요 " in GA.PluizGraphAgent._metrics_note({"messages": []}, 1.5))
 
+    print("=== G. BL-28 — «도구=없음»이 왜 그랬는지 한 단어로 ===")
+    # 2026-09-10 도구 사용 실측 ②가 답을 못 낸 이유: 로그가 응답을 «13자»로만 남겨
+    # «못 한 것»과 «안 해도 됐던 것»을 사후에 못 갈랐다.
+    RN = GA.PluizGraphAgent._reason_note
+
+    check("도구가 돌았으면 사유를 안 붙인다",
+          RN({"decision": ""}, "네 열었어요", ["open_app"]) == "")
+    check("캐시 히트 → 사유=캐시",
+          RN({"decision": "fast_hit"}, "✓ 실행했습니다", []) == " | 사유=캐시")
+    check("보안 차단 → 사유=차단",
+          RN({"decision": "blocked"}, "그건 도와드릴 수 없어요", []) == " | 사유=차단")
+    check("승인 거부 → 사유=승인거부",
+          RN({"decision": "", "deletion_cancelled": True}, "네, 취소했어요", [])
+          == " | 사유=승인거부")
+    check("«못 했어요» → 사유=못함",
+          RN({}, "죄송해요, 그건 못 했어요.", []) == " | 사유=못함")
+    check("«찾지 못» → 사유=못함",
+          RN({}, "'인쇄 버튼'을 찾지 못해 클릭하지 않았습니다.", []) == " | 사유=못함")
+    check("빈 응답 대체 문구 → 사유=못함",
+          RN({}, GA._NOTHING_HAPPENED_MSG, []) == " | 사유=못함")
+    check("평범한 대화 → 사유=잡담",
+          RN({}, "안녕하세요! 무엇을 도와드릴까요?", []) == " | 사유=잡담")
+
+    # ⚠️ «캐시»가 «못함»보다 먼저다 — 캐시 응답에 «없습니다» 같은 말이 들어가도
+    #   그건 캐시가 처리한 턴이지 실패한 턴이 아니다.
+    check("캐시 판정이 문구 판정보다 우선한다",
+          RN({"decision": "fast_hit"}, "실행할 수 없습니다", []) == " | 사유=캐시")
+    check("분류가 예외로 턴을 죽이지 않는다", RN(None, None, []) in ("", " | 사유=잡담"))
+
+    # 실제 턴 로그에 실려 나가는지 (형식 고정 — 11월에 이 줄을 grep한다)
+    agentR, _ = make_agent(UsageLLM())
+    with LogSpy() as spyR:
+        await agentR.run_async("메모장 켜줘", "g1")
+    lr = spyR.last()
+    check("캐시 턴 로그에 사유=캐시가 실린다", "| 사유=캐시" in lr)
+    check("사유는 도구 칸 뒤에 온다", lr.index("도구=") < lr.index("사유="))
+
+    agentS, _ = make_agent(UsageLLM())
+    with LogSpy() as spyS:
+        await agentS.run_async("오늘 날씨 어때", "g2")
+    check("도구 없는 대화 턴에도 사유가 실린다", "| 사유=" in spyS.last())
+
+
     print(f"\n결과: {passed}/{total} 통과")
     return passed == total
 

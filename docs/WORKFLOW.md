@@ -68,7 +68,7 @@ start.bat      # 서버만
 export PYTHONIOENCODING=utf-8
 PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 
-"$PY" tests/test_graph_agent.py       # 그래프 오케스트레이터 + 계측 17/17
+"$PY" tests/test_graph_agent.py       # 그래프 + 계측 + 사유태그  30/30
 "$PY" tests/test_hitl_agent.py        # HITL 승인            8/8
 "$PY" tests/test_cache_learn.py       # 캐시 동적 학습 + BL-27 38/38
 "$PY" tests/test_guardrail_hybrid.py  # 하이브리드 가드       8/8
@@ -86,6 +86,9 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_wakeword_kws.py      # 전용 KWS 백엔드 계약   25/25
 "$PY" tests/test_pointing.py          # 포인팅·확대(M4)        70/70
 "$PY" tests/test_embedder.py          # 임베딩 로더(M5)        20/20
+"$PY" tests/test_log_format.py        # 로그 형식 계약(BL-28)  20/20
+                                      #   ★ 생산자(graph_agent)와 소비자(analyze_tool_usage)가
+                                      #     다른 파일이라 한쪽만 고치면 조용히 깨진다
                                       #   ★ 모델 파일이 없어도 전부 돈다 — 그게 계약이다
 "$PY" tests/test_window_truth.py      # 유령 창 판정(BL-26)    13/13
                                       #   ★ Windows API를 실제로 부른다 — mock이 아니다.
@@ -97,8 +100,8 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_dependencies.py     # ★ requirements.txt 선언 = 실제 설치인지
 ```
 
-전체 mock 스위트는 **35파일 1012개**([README 상태표](README.md)가 출처). 이 중 `test_dependencies.py`(34개)는 로컬 전용이라
-CI는 34파일 978개를 돌린다. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
+전체 mock 스위트는 **36파일 1045개**([README 상태표](README.md)가 출처). 이 중 `test_dependencies.py`(34개)는 로컬 전용이라
+CI는 35파일 1011개를 돌린다. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
 
 ### 테스트는 제품 로그를 건드리지 않는다
 

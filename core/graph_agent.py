@@ -19,6 +19,7 @@ M1-P5에서 구 엔진을 제거해 **유일한 엔진**이 되었다.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from typing import AsyncGenerator, Any, Optional, Callable
 
@@ -314,8 +315,9 @@ class PluizGraphAgent:
             # 도구 결과로 복원하기 때문). 됐다고 하지 않는다.
             _log.warning("빈 응답 — 도구도 실행되지 않았다. 입력=%r", user_input)
             response = _NOTHING_HAPPENED_MSG
-        _log.info("턴 완료 | 입력=%r | 도구=%s | 응답 %d자%s%s",
+        _log.info("턴 완료 | 입력=%r | 도구=%s | 응답 %d자%s%s%s",
                   user_input, tool_names or "없음", len(response),
+                  self._reason_note(result, response, tool_names),
                   self._plan_note(result),
                   self._metrics_note(result, time.perf_counter() - started))
 
@@ -335,6 +337,51 @@ class PluizGraphAgent:
             print(f"[PluizGraphAgent] session_memory 저장 실패(무시): {e}")
 
         return response
+
+    # 「못 함」으로 분류할 응답의 꼴. **응답 본문은 로그에 남기지 않는다** —
+    # 분류는 여기 프로세스 안에서 하고, 로그에는 **한 단어**만 나간다(BL-28).
+    _FAILED_RE = re.compile(
+        r"(못 했|못했|못 봤|못 찾|찾지 못|하지 못|할 수 없|안 됐|안됐|실패|"
+        r"시작하지 못|처리하지 못|어려워요|오류가 발생)")
+
+    @classmethod
+    def _reason_note(cls, result: Any, response: str, tool_names: list) -> str:
+        """도구를 **하나도 안 부른** 턴이 왜 그랬는지 한 단어로. (BL-28)
+
+        `도구=없음`에는 서로 다른 네 가지가 섞여 있었고, 로그가 응답을 «13자»로만
+        남겨 **사후에 못 갈랐다.** 2026-09-10 도구 사용 실측 ②가 그래서 답을 못 냈다
+        (명령처럼 보이는 후보 7턴이 나왔는데 «못 한 것»인지 «안 해도 됐던 것»인지 불명).
+        → [research/2026-09_도구사용_실측.md](../docs/research/2026-09_도구사용_실측.md)
+
+        | 태그 | 뜻 |
+        |---|---|
+        | `캐시` | fast_path가 처리했다. **도구를 안 부른 게 아니라 LLM을 안 거친 것** |
+        | `차단` | input_guard가 막았다(보안) |
+        | `승인거부` | 위험 도구를 사용자가 거부했다 |
+        | `못함` | 모델이 «못 했다»고 답했다 ← **여기가 진짜 실패다** |
+        | `잡담` | 명령이 아니었다 |
+
+        ⚠️ **도구가 하나라도 돌았으면 붙이지 않는다.** 그 턴은 «안 부른 턴»이 아니다.
+        ⚠️ 분류는 휴리스틱이다(응답 문구를 본다). 추세로 쓰고 단정하지 않는다.
+        ⚠️ **응답 전문을 로그에 넣지 않는다** — 개인정보가 로그로 새는 길이고
+           [보안 방향](../docs/ARCHITECTURE.md)과 반대다. 한 단어면 충분하다.
+        """
+        if tool_names:
+            return ""
+        try:
+            state = result if isinstance(result, dict) else {}
+            decision = state.get("decision") or ""
+            if decision == "fast_hit":
+                return " | 사유=캐시"
+            if decision == "blocked":
+                return " | 사유=차단"
+            if state.get("deletion_cancelled"):
+                return " | 사유=승인거부"
+            if response == _NOTHING_HAPPENED_MSG or cls._FAILED_RE.search(response or ""):
+                return " | 사유=못함"
+            return " | 사유=잡담"
+        except Exception:                       # 분류가 턴을 죽이지 않는다
+            return ""
 
     @staticmethod
     def _plan_note(result: Any) -> str:

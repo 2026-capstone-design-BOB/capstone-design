@@ -131,6 +131,20 @@ def resolve_fast_path(
             if hit:
                 entry, _score = hit
                 result = cache.execute_sync(entry)
+                # BL-28 곁들여 — **캐시가 어떤 도구를 돌렸는지 남긴다.**
+                #
+                # 캐시 히트는 `턴 완료`에 `도구=없음`으로 찍힌다(도구를 그래프 밖에서
+                # 돌리므로 messages에 tool_calls가 없다). 그래서 2026-09-10 도구 사용
+                # 실측에서 **볼륨·밝기·스크린샷·시간·배터리가 «한 번도 안 쓰인 도구»로
+                # 집계됐다** — 실제로는 캐시가 그것들을 돌리고 있었는데도.
+                # 이 줄이 있으면 분석기가 캐시 실행분을 되찾아 합칠 수 있다.
+                # → docs/research/2026-09_도구사용_실측.md §1
+                try:
+                    names = [c.get("name", "?") for c in (entry.tool_calls or [])]
+                    _log.info("[캐시 실행] 패턴=%r | 도구=%s",
+                              entry.pattern, names or "없음")
+                except Exception:
+                    pass
                 try:
                     cache.increment_hit(entry.pattern)
                 except Exception:
