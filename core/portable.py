@@ -53,6 +53,33 @@ _EXPORTABLE: tuple[tuple[str, str, bool], ...] = (
     ("history", os.path.join("memory", "session.db"), False),
 )
 
+# ⚠️ **경로를 하드코딩하지 말 것.** 처음엔 `_ROOT` 기준으로 박아 뒀는데,
+#    그러면 `PLUIZ_CACHE_FILE`(테스트가 쓰는 것)을 무시해서 **테스트가 사용자의
+#    실제 캐시와 즐겨찾기를 고쳤다.** BL-11이 `_testenv`로 막아 둔 사고가
+#    «새 모듈이 그 규약을 안 따라서» 되살아난 것이다. 반드시 이 함수를 거친다.
+
+
+def cache_file() -> str:
+    """캐시 파일 경로. `PLUIZ_CACHE_FILE`을 존중한다(command_cache와 같은 값)."""
+    from core.command_cache import CACHE_FILE
+    return CACHE_FILE
+
+
+def favorites_file() -> str:
+    return os.environ.get("PLUIZ_FAVORITES_FILE") or _abs(
+        os.path.join("cache", "favorites.json"))
+
+
+def history_file() -> str:
+    return os.environ.get("PLUIZ_SESSION_DB") or _abs(
+        os.path.join("memory", "session.db"))
+
+
+def _path_for(name: str, rel: str) -> str:
+    return {"command_cache": cache_file,
+            "favorites": favorites_file,
+            "history": history_file}.get(name, lambda: _abs(rel))()
+
 
 class BundleError(Exception):
     """번들이 우리 것이 아니거나 읽을 수 없다. **아무것도 안 하고** 이걸 던진다."""
@@ -89,7 +116,7 @@ def build_bundle(include_history: bool = False,
     파일로 떨구지 않는다 — 서버가 그대로 스트리밍하면 되고, 임시 파일이
     남지 않는다(`take_screenshot`이 임시파일을 안 남기는 것과 같은 이유).
     """
-    cache_path = cache_path or _abs(os.path.join("cache", "command_cache.json"))
+    cache_path = cache_path or cache_file()
     items: dict[str, int] = {}
     buf = io.BytesIO()
 
@@ -104,7 +131,7 @@ def build_bundle(include_history: bool = False,
                 items["command_cache"] = len(entries)
                 continue
 
-            src = _abs(rel)
+            src = _path_for(name, rel)
             if not os.path.exists(src):
                 continue
             arc = os.path.basename(rel)
@@ -240,7 +267,7 @@ def import_bundle(data: bytes, cache, mode: str = "merge",
     절차 (ADR §5-2): 매니페스트 확인 → **백업** → 게이트 → 병합 → 보고.
     """
     manifest = read_manifest(data)           # 실패하면 여기서 끝. 아무것도 안 건드린다.
-    cache_path = cache_path or _abs(os.path.join("cache", "command_cache.json"))
+    cache_path = cache_path or cache_file()
     report: dict[str, Any] = {"manifest": manifest, "backups": []}
 
     with zipfile.ZipFile(io.BytesIO(data)) as z:
@@ -267,7 +294,7 @@ def import_bundle(data: bytes, cache, mode: str = "merge",
 
         # ── 즐겨찾기 ────────────────────────────────────────
         if "favorites.json" in names:
-            fav_path = _abs(os.path.join("cache", "favorites.json"))
+            fav_path = favorites_file()
             backup = backup_file(fav_path)
             if backup:
                 report["backups"].append(os.path.basename(backup))
@@ -296,7 +323,7 @@ def import_bundle(data: bytes, cache, mode: str = "merge",
         # ⚠️ SQLite라 **병합하지 않는다.** 켰을 때 파일을 통째로 바꾼다(ADR §7).
         #    대화 두 벌을 시간순으로 섞는 건 이 기능이 감당할 일이 아니다.
         if include_history and "session.db" in names:
-            db_path = _abs(os.path.join("memory", "session.db"))
+            db_path = history_file()
             backup = backup_file(db_path)
             if backup:
                 report["backups"].append(os.path.basename(backup))

@@ -22,7 +22,7 @@ import os
 import re
 import asyncio
 from datetime import datetime
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, fields
 from difflib import SequenceMatcher
 from typing import Optional
 
@@ -90,6 +90,13 @@ class CacheEntry:
     source: str = "seed"        # "seed" | "dynamic"
     learned_at: str = ""        # 학습 시각 ISO
     last_used: str = ""         # 마지막 사용 시각 ISO
+    # M6: 다른 PC에서 «가져온» 항목인가. 어디서 왔는지 남긴다.
+    #
+    # ⚠️ **필드를 안 만들고 dict에만 넣으면 캐시가 통째로 날아간다.**
+    #   `_load()`가 `CacheEntry(**v)`로 복원하는데 모르는 키가 있으면 TypeError가 나고,
+    #   그 예외를 `except`가 삼켜 **self._cache = {}** 로 초기화한다. 조용히.
+    #   → 캐시 JSON에 새 키를 넣을 땐 **반드시 여기에도 필드를 추가할 것.**
+    imported: bool = False
 
 
 # ── P4: 동적 학습 정책 상수 ───────────────────────────────────────
@@ -845,18 +852,63 @@ class CommandCache:
             print(f"[CommandCache] 저장 실패: {e}")
 
     def _load(self):
+        """캐시 파일을 읽는다.
+
+        ⚠️ **모르는 키 하나에 전부 날아가지 않게 한다.** 예전엔 `CacheEntry(**v)`를
+          그대로 불러서, 항목 하나에 낯선 키가 있으면 TypeError가 나고 그걸 `except`가
+          삼켜 **`self._cache = {}`** 로 초기화했다. 동적 학습분이 조용히 사라진다.
+
+          M6(내보내기/가져오기)가 **다른 버전이 쓴 캐시 파일을 들여오는 통로**라
+          이 위험이 커졌다. 이제 ① 모르는 키는 버리고 ② 한 항목이 깨져도
+          **나머지는 살리고** ③ 버린 게 있으면 **말한다.**
+        """
         if not os.path.exists(CACHE_FILE):
             return
         try:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            self._cache = {k: CacheEntry(**v) for k, v in data.items()}
-            user_entries = sum(1 for e in self._cache.values() if not e.is_seed)
-            print(f"[CommandCache] 로드 완료 — 전체 {len(self._cache)}개 "
-                  f"(시드 {len(self._cache)-user_entries}개, 동적 {user_entries}개)")
         except Exception as e:
-            print(f"[CommandCache] 로드 실패 (초기화): {e}")
+            print(f"[CommandCache] 파일을 읽지 못했습니다 (초기화): {e}")
             self._cache = {}
+            return
+
+        known = {f.name for f in fields(CacheEntry)}
+        loaded: dict = {}
+        dropped_keys: set = set()
+        broken: list = []
+        for k, v in (data or {}).items():
+            if not isinstance(v, dict):
+                broken.append(k)
+                continue
+            extra = set(v) - known
+            if extra:
+                dropped_keys |= extra
+            try:
+                loaded[k] = CacheEntry(**{kk: vv for kk, vv in v.items() if kk in known})
+            except Exception:
+                broken.append(k)        # 이 항목만 버린다. 나머지는 지킨다.
+
+        self._cache = loaded
+        user_entries = sum(1 for e in self._cache.values() if not e.is_seed)
+        print(f"[CommandCache] 로드 완료 — 전체 {len(self._cache)}개 "
+              f"(시드 {len(self._cache)-user_entries}개, 동적 {user_entries}개)")
+        if dropped_keys:
+            print(f"[CommandCache] ⚠️ 모르는 필드를 무시했습니다: "
+                  f"{', '.join(sorted(dropped_keys))}")
+        if broken:
+            print(f"[CommandCache] ⚠️ 읽지 못한 항목 {len(broken)}개를 건너뛰었습니다 "
+                  f"(나머지는 그대로 있습니다)")
+
+    def reload(self) -> None:
+        """파일에서 다시 읽는다. (M6 가져오기가 파일을 바꾼 뒤 부른다)
+
+        가져오기는 **파일을 직접** 고친다 — 프로세스 안 사본은 낡은 채로 남으므로
+        이걸 안 부르면 **가져온 명령이 다음 재시작까지 안 먹는다.**
+        """
+        self._cache = {}
+        self._load()
+        self._seed()
+        self._build_intent_index()
 
     def _seed(self):
         added = 0

@@ -398,7 +398,10 @@ async def clear_history():
 
 import json as _json_module
 
-_FAV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "favorites.json")
+# ⚠️ `PLUIZ_FAVORITES_FILE`을 존중한다 — 테스트가 사용자의 즐겨찾기를 고치지
+#    않게 하려고 `_testenv`가 이 변수를 임시 경로로 돌린다(BL-11 계열, 2026-09-10).
+_FAV_PATH = os.environ.get("PLUIZ_FAVORITES_FILE") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "cache", "favorites.json")
 
 
 def _load_favorites() -> list[dict]:
@@ -580,6 +583,86 @@ async def cache_delete_entry(pattern: str):
     from core.command_cache import get_cache
     ok = get_cache().delete_entry(pattern)
     return {"status": "ok" if ok else "not_found_or_seed", "pattern": pattern}
+
+
+# ── 내보내기 / 가져오기 (M6) ──────────────────────────────────────
+#
+# 클라우드를 «안 하기로» 한 것의 대안. → docs/design/M6_내보내기_가져오기.md
+#
+# ⚠️ **도구로 만들지 않았다.** 음성으로 부를 수 있게 하면 가져오기가 «되돌릴 수 없는
+#    상태 변경»인데 LLM이 부를 수 있게 되고, HITL 승인이 필요해진다. 사람이 파일을
+#    고르는 흐름이 맞다. (도구 사용 실측: 등록 40개 중 13개만 실사용 → 더 만들지 않는다)
+
+_MAX_IMPORT_BYTES = 50 * 1024 * 1024      # 50MB. 히스토리 db까지 담아도 남는다
+
+
+@app.get("/export")
+async def export_bundle(history: bool = False):
+    """캐시 + 즐겨찾기를 zip 하나로 내려준다. `?history=true`면 대화 기록까지.
+
+    ⚠️ 담기는 것은 `core/portable._EXPORTABLE`에 **적힌 것뿐이다**(allowlist).
+      `.env`·로그는 거르는 게 아니라 **목록에 없어서 담길 수 없다.**
+    """
+    from fastapi.responses import Response
+    from core import portable
+    data, manifest = portable.build_bundle(include_history=history)
+    fname = portable.suggested_filename()
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{fname}"',
+            "X-Pluiz-Items": _json_module.dumps(manifest["items"], ensure_ascii=False),
+        },
+    )
+
+
+@app.post("/import")
+async def import_bundle_api(
+    file: UploadFile = File(...),
+    mode: str = Form("merge"),
+    history: bool = Form(False),
+):
+    """번들 zip을 가져온다. 무엇을 몇 개 했는지 문장으로 돌려준다.
+
+    ⚠️ **`mode`·`history`에서 `Form(...)`을 빼지 말 것** — 절대규칙 8과 같은 함정이다.
+      빼면 FastAPI가 스칼라를 **쿼리 파라미터**로 해석해 FormData로 온 값을 통째로
+      무시하고, `mode=replace`를 보내도 조용히 merge로 돈다.
+      /voice에서 이것 때문에 음성과 텍스트가 다른 대화가 됐다(BL-16).
+    """
+    from core import portable
+    from core.command_cache import get_cache
+
+    raw = await file.read()
+    if len(raw) > _MAX_IMPORT_BYTES:
+        return JSONResponse(status_code=413, content={
+            "status": "too_large",
+            "message": f"파일이 너무 큽니다 ({len(raw) // (1024 * 1024)}MB). "
+                       f"{_MAX_IMPORT_BYTES // (1024 * 1024)}MB까지 받습니다.",
+        })
+
+    try:
+        report = portable.import_bundle(
+            raw, get_cache(), mode=mode, include_history=history)
+    except portable.BundleError as e:
+        # 우리 것이 아닌 파일. **아무것도 안 건드렸다** — 그렇게 말해 준다.
+        return JSONResponse(status_code=400, content={
+            "status": "rejected", "message": str(e),
+            "note": "아무것도 바꾸지 않았어요.",
+        })
+    except Exception as e:
+        return JSONResponse(status_code=500, content={
+            "status": "error", "message": f"가져오지 못했습니다: {e}"})
+
+    # 캐시는 파일에서 다시 읽어야 반영된다 (프로세스 안 사본이 낡았다)
+    try:
+        get_cache().reload()
+    except Exception:
+        pass
+
+    return {"status": "ok",
+            "message": portable.describe_report(report),
+            "report": report}
 
 
 # ── 화면 감시 → UI 푸시 ───────────────────────────────────────────

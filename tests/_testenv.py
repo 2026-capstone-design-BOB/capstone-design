@@ -47,3 +47,20 @@ os.environ.setdefault(
     "PLUIZ_CACHE_FILE",
     os.path.join(tempfile.gettempdir(), "pluiz_test_cache", "command_cache.json"),
 )
+
+# ## 왜 있나 ③ — 즐겨찾기·대화기록 오염 (2026-09-10, M6에서 드러났다)
+#
+# `core/portable.py`(내보내기/가져오기)가 이 둘을 만진다. 캐시만 막아 두면
+# **테스트가 사용자의 즐겨찾기와 대화 기록을 고친다.** 실제로 그렇게 됐고,
+# 백업 파일이 저장소에 생겨 커밋에 딸려 들어갔다.
+#
+# ⚠️ BL-11이 막아 둔 사고가 «새 모듈이 규약을 안 따라서» 되살아난 것이다.
+#    상태 파일을 새로 만들면 **여기에도 추가할 것.**
+os.environ.setdefault(
+    "PLUIZ_FAVORITES_FILE",
+    os.path.join(tempfile.gettempdir(), "pluiz_test_cache", "favorites.json"),
+)
+os.environ.setdefault(
+    "PLUIZ_SESSION_DB",
+    os.path.join(tempfile.gettempdir(), "pluiz_test_cache", "session.db"),
+)

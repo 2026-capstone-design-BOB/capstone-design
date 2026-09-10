@@ -62,7 +62,9 @@ models/
 # cache/ 는 command_cache.json 을 추적하므로 폴더 통째로 무시할 수 없다.
 cache/.auth_token
 # BL-27 마이그레이션 백업 — 사용자 데이터라 커밋하지 않는다
-cache/command_cache.backup-*.json
+# 백업은 전부 무시한다. 예전엔 command_cache만 적어 둬서
+# favorites 백업이 커밋에 딸려 들어갔다 (2026-09-10)
+cache/*.backup-*
 
 # 개인 작성용 문서 — 저장소가 public이라 올리지 않는다 (2026-09-08 결정).
 # 로컬에는 그대로 남아 있고, 다른 docs/ 문서에서 링크가 아니라 **경로 문자열로만**
