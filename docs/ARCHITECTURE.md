@@ -250,6 +250,29 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 
 [`core/tool_registry.py`](../core/tool_registry.py)에 단일 등록.
 
+> ### ⚠️ 도구가 **반환하는 문자열의 첫 글자는 계약이다** (BL-29)
+>
+> | 마커 | 뜻 | 읽는 쪽이 하는 일 |
+> |---|---|---|
+> | `✓` | 성공 | 학습 O · 응답 보정 X |
+> | `⚠️` | **부분 실패** — 도구는 돌았는데 목적 미달 | 학습 ✗ · 보정 O |
+> | `✗` | 실패 — 아무 일도 못 했다 | 학습 ✗ · 보정 O |
+>
+> 판정은 [`core/tool_result.py`](../core/tool_result.py)의 `tool_failed()`
+> **하나**가 한다. 세 곳이 이걸 부른다 —
+> `graph_agent._maybe_learn`(캐시 학습 금지) ·
+> `graph.verify_output`(T04 거짓성공 차단) ·
+> `graph._tool_reported_failure`(시각검증 스킵).
+>
+> **왜 한 곳인가.** 예전엔 셋이 각자 판정했고 **규칙이 서로 달랐다.**
+> `✗`(52곳, 가장 흔한 실패 표시)를 T04가 못 봐서 *"✗ 메모장을 찾을 수 없습니다"* 에도
+> LLM의 *"메모장 열었어요!"* 가 그대로 나갔다. `web.py` 넷은 `✗`가 아니라
+> **알파벳 `x`** 라 셋 다 빠져나가 **실패가 캐시에 학습될 수 있었다.**
+> → [ADR](design/BL-29_도구_결과_계약.md)
+>
+> 새 도구를 만들 때는 [WORKFLOW § 새 도구 추가](WORKFLOW.md#새-도구-추가)를 따른다.
+> 어기면 `tests/test_tool_result.py`가 **소스를 전수 스캔해 거기서 깨진다.**
+
 | 분류 | 개수 | 도구 |
 |---|---|---|
 | 앱 제어 | 5 | `open_app` `close_app` `maximize_window` `minimize_window` `show_desktop` |

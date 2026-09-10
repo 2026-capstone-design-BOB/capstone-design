@@ -41,6 +41,7 @@ from core.logger import get_logger
 # 복합 명령 감지는 fast_path에 이미 있다(BL-15 때 만든 것). 여기서 다시 쓰지 않는다 —
 # 두 벌이 되면 한쪽만 고쳐진다. (core.fast_path는 core.logger 외에 아무것도 끌어오지 않는다)
 from core.fast_path import has_negation, is_compound_command
+from core.tool_result import tool_failed
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode
@@ -464,12 +465,9 @@ def current_turn_messages(messages: list[AnyMessage]) -> list[AnyMessage]:
 
 
 # ── 출력 검증 (T04 + 빈응답 복구) — output_guard의 순수 로직 ─────────
-_TOOL_ERROR_RE = re.compile(
-    r'^\[(?:오류|error|[가-힣a-zA-Z_]+ 오류)\]'
-    r'|^오류\s*:'
-    r'|^Error\s*:',
-    re.IGNORECASE,
-)
+# ⚠️ 도구 실패 판정은 여기 있지 않다 → core/tool_result.py `tool_failed()`.
+#    예전엔 이 자리에 `_TOOL_ERROR_RE`가 있었는데, **`✗`가 빠져 있어**
+#    도구가 가장 많이 쓰는 실패 표시(52곳)를 T04가 통째로 놓쳤다(BL-29).
 _SUCCESS_LIKE_RE = re.compile(
     r'(?<!못)(?:했어요|켰어요|열었어요|닫았어요|실행했어요|설정했어요|만들었어요|저장했어요|됐어요|완료했어요|완료)[!.]?\s*$'
 )
@@ -512,7 +510,7 @@ def verify_output(messages: list[AnyMessage]) -> Optional[str]:
     for m in turn:
         if isinstance(m, ToolMessage):
             c = _msg_text(m).strip()
-            if _TOOL_ERROR_RE.match(c):
+            if tool_failed(c):        # BL-29: ✗ 52곳이 여기 안 걸리고 있었다
                 tool_errors.append(c)
 
     # 1) 빈 응답 → 이번 턴의 ToolMessage에서 복원
@@ -527,7 +525,9 @@ def verify_output(messages: list[AnyMessage]) -> Optional[str]:
 
     # 2) 도구 오류 + 성공처럼 보이는 응답 → 오류로 보정
     if tool_errors and _SUCCESS_LIKE_RE.search(response):
-        clean = re.sub(r'^\[[^\]]+\]\s*', '', tool_errors[0]).strip() or tool_errors[0]
+        # 마커를 벗기고 말만 남긴다. BL-29 전에는 `[…]`만 벗기면 됐지만, 이제
+        # `✗`·`⚠️`도 여기 들어온다 — 안 벗기면 "문제가 생겼어요: ✗ …"가 된다.
+        clean = re.sub(r'^(?:✗|❌|⚠️?|\[[^\]]+\])\s*', '', tool_errors[0]).strip() or tool_errors[0]
         return f"실행 중 문제가 생겼어요: {clean}"
 
     return None
@@ -722,7 +722,7 @@ def extract_response(state: dict) -> str:
 # ── 실행 결과 시각적 검증 (Phase 2) — visual_verify 노드의 순수 로직 ─
 #
 # **왜 이 층이 따로 필요한가.**
-# 바로 위 verify_output()은 "도구가 [오류]를 반환했는데 AI가 성공처럼 답하는" 경우를
+# 바로 위 verify_output()은 "도구가 실패를 반환했는데 AI가 성공처럼 답하는" 경우를
 # 잡는다. 즉 **도구의 자기보고를 믿는다.** 그런데 이 프로젝트가 반복해서 데인 건
 # 도구가 **거짓으로 ✓를 반환하는** 경우다(BL-12: 입력이 안 됐는데 "✓ 입력 완료").
 # 그건 텍스트로는 알 수 없고 화면을 봐야 안다.
@@ -764,9 +764,11 @@ def build_visual_question(tool_name: str, args: Optional[dict]) -> Optional[tupl
 
 
 def _tool_reported_failure(content: str) -> bool:
-    """도구가 이미 실패를 자백했는가. (그렇다면 화면을 볼 이유가 없다 — 8초를 아낀다)"""
-    c = str(content).strip()
-    return c.startswith("✗") or bool(_TOOL_ERROR_RE.match(c))
+    """도구가 이미 실패를 자백했는가. (그렇다면 화면을 볼 이유가 없다 — 8초를 아낀다)
+
+    판정은 core/tool_result.py에 있다 — 읽는 쪽이 셋인데 규칙이 서로 달랐다(BL-29).
+    """
+    return tool_failed(content)
 
 
 def last_tool_result(messages: list[AnyMessage]) -> Optional[tuple[str, dict, ToolMessage]]:

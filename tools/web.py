@@ -35,7 +35,7 @@ def open_url(url: str) -> str:
         _open_with_browser(url)
         return f"✓ {url} 열었습니다."
     except Exception as e:
-        return f"x URL 열기 실패: {e}"
+        return f"✗ URL 열기 실패: {e}"
 
 
 @tool
@@ -59,7 +59,7 @@ def web_search(query: str, engine: str = "google") -> str:
         _open_with_browser(url)
         return f"✓ {engine}에서 '{query}'를 검색했습니다."
     except Exception as e:
-        return f"x 검색 실패: {e}"
+        return f"✗ 검색 실패: {e}"
 
 
 @tool
@@ -102,7 +102,7 @@ def youtube_search(query: str) -> str:
         _open_with_browser(url)
         return f"✓ 유튜브에서 '{query}' 검색했어요."
     except Exception as e:
-        return f"x 유튜브 검색 실패: {e}"
+        return f"✗ 유튜브 검색 실패: {e}"
 
 
 @tool
@@ -123,7 +123,7 @@ def map_search(destination: str, origin: str = "") -> str:
         _open_with_browser(url)
         return f"✓ {label} 지도를 열었습니다."
     except Exception as e:
-        return f"x 지도 검색 실패: {e}"
+        return f"✗ 지도 검색 실패: {e}"
 
 
 @tool
@@ -183,7 +183,7 @@ def fetch_web_info(query: str) -> str:
     except Exception as e:
         print(f"[fetch_web_info] Instant Answer API 오류: {e}")
 
-    return f"'{query}' 검색 결과를 가져오지 못했습니다. 인터넷 연결을 확인하거나 브라우저에서 직접 검색해주세요."
+    return f"✗ '{query}' 검색 결과를 가져오지 못했습니다. 인터넷 연결을 확인하거나 브라우저에서 직접 검색해주세요."
 
 
 def _extract_text_from_html(html: str) -> str:

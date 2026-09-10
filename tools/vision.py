@@ -306,11 +306,11 @@ def describe_screen(window: str = "", question: str = "") -> str:
 
     except ImportError as e:
         log.exception("Vision 의존성 없음")
-        return f"[오류] 화면 분석에 필요한 패키지가 없습니다: {e}"
+        return f"✗ 화면 분석에 필요한 패키지가 없습니다: {e}"
     except Exception as e:
         # 네트워크·API 키·쿼터 등. 사용자에게는 짧게, 파일에는 스택트레이스까지.
         log.exception("Vision 호출 실패")
-        return f"[오류] 화면을 분석하지 못했습니다: {type(e).__name__}: {e}"
+        return f"✗ 화면을 분석하지 못했습니다: {type(e).__name__}: {e}"
     finally:
         if tmp_path and os.path.exists(tmp_path):
             try:

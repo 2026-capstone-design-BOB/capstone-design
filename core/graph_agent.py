@@ -37,6 +37,7 @@ from core.logger import get_logger
 # 도구가 돌았는지/응답이 비었는지만 알아도 원인이 갈린다.
 _log = get_logger("Agent")
 from core.fast_path import resolve_fast_path, is_compound_command
+from core.tool_result import tool_failed
 
 
 # ── 프로덕션 기본값 (lazy) ─────────────────────────────────────────
@@ -525,14 +526,13 @@ class PluizGraphAgent:
                         tool_calls.append({"name": getattr(c, "name", ""), "args": getattr(c, "args", {}) or {}})
             if not tool_calls:
                 return
-            # 도구 실행 실패 시 학습 금지
+            # 도구 실행 실패 시 학습 금지.
+            # 판정은 core/tool_result.py 하나가 한다 — 여기 규칙을 따로 두면
+            # 읽는 쪽 셋이 다시 어긋난다(BL-29). ⚠️ 는 «부분 실패»라 여기서도 막는다:
+            # 최대화가 안 된 턴을 학습하면 안 되는 상황과 함께 굳는다.
             for m in msgs:
-                if isinstance(m, ToolMessage):
-                    c = m.content
-                    if isinstance(c, list):
-                        c = " ".join(str(b) for b in c)
-                    if str(c).strip()[:1] in ("✗",) or str(c).strip().startswith(("[오류", "오류", "Error", "[error")):
-                        return
+                if isinstance(m, ToolMessage) and tool_failed(m.content):
+                    return
             cache.learn(user_input, tool_calls)
         except Exception as e:
             print(f"[PluizGraphAgent] 학습 시도 실패(무시): {e}")

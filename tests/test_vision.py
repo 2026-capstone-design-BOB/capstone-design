@@ -5,7 +5,9 @@ Vision(화면 이해) 도구 검증 — mock (LLM API 불필요)
 실제 화면 캡처와 Gemini Vision 호출은 라이브 영역이라 여기서 하지 않는다.
 여기서 보는 것은 **키 없이 확인 가능한 계약**이다:
   - 캡처 실패 시 성공처럼 답하지 않는가   ← 이 프로젝트가 반복해서 데인 지점
-  - LLM 호출 실패가 예외로 새지 않고 [오류] 문자열로 돌아오는가
+  - LLM 호출 실패가 예외로 새지 않고 **실패 문자열**로 돌아오는가
+    (BL-29로 계약이 [오류] → ✗ 로 바뀌었다. 문자열이 아니라 tool_failed()로 본다 —
+     마커를 문자열로 박아 두면 계약이 바뀔 때마다 여기가 낡는다)
   - 임시파일을 남기지 않는가
   - 프롬프트가 할루시네이션을 막는 지시를 담고 있는가
   - 개인정보 주의(OWASP LLM02)가 문서에 남아 있는가
@@ -124,8 +126,9 @@ if _win_ok and _pil_ok:
     L.build_llm = _boom
     try:
         r = V.describe_screen.invoke({"window": "", "question": ""})
-        check("LLM 실패 → [오류] 문자열 반환 (예외 전파 안 함)",
-              "[오류]" in r, f"→ {r[:70]}")
+        from core.tool_result import tool_failed
+        check("LLM 실패 → 실패 문자열 반환 (예외 전파 안 함)",
+              tool_failed(r), f"→ {r[:70]}")
         check("실패인데 화면 설명을 지어내지 않음",
               "보입니다" not in r and "열려" not in r, f"→ {r[:70]}")
     finally:

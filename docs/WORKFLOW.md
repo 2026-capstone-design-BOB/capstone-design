@@ -251,8 +251,24 @@ from langchain_core.tools import tool
 @tool
 def my_tool(param: str) -> str:
     """도구 설명 — LLM이 이 설명을 보고 언제 쓸지 판단한다. 구체적으로 쓸 것."""
-    return "✓ 완료"
+    return "✓ 완료"                     # 실패는 "✗ …" · 부분 실패는 "⚠️ …"
 ```
+
+> ## ⚠️ 반환 문자열의 **첫 글자는 계약이다** (BL-29)
+>
+> 말투가 아니다. `core/tool_result.py`의 `tool_failed()`가 이걸 읽어
+> **캐시에 학습할지 · 거짓 성공을 덮을지 · 화면을 볼지**를 정한다.
+>
+> | 마커 | 언제 |
+> |---|---|
+> | `✓` | 의도한 일이 **됐다** (권장이고 강제는 아니다) |
+> | `⚠️` | 도구는 돌았지만 **목적이 달성되지 않았다** |
+> | `✗` | **아무 일도 못 했다** (예외 포함) |
+>
+> 판정 기준은 «예외가 났는가»가 아니라 **«사용자가 원한 일이 일어났는가»** 다.
+> 🚫 `x`(알파벳)·`❌`·`[오류]`는 **쓰지 않는다** — `x`는 `✗`(U+2717)와
+> 눈으로 구별되지 않아 `web.py` 넷이 조용히 판정을 빠져나갔다.
+> `tests/test_tool_result.py`가 소스를 전수 스캔해 **어기면 거기서 깨진다.**
 
 ```
 2. core/tool_registry.py 의 get_all_tools()에 import + 리스트 추가
@@ -260,6 +276,7 @@ def my_tool(param: str) -> str:
 4. 파라미터 없는 고정어휘 제어 도구라면
    core/command_cache.py 의 LEARNABLE_TOOLS 추가 검토 (캐시 학습 대상)
 5. docs/ARCHITECTURE.md 의 도구 표 갱신
+6. 반환 문자열의 마커를 확인 → python tests/test_tool_result.py
 ```
 
 ---

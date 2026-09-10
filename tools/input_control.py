@@ -191,9 +191,9 @@ def type_text(text: str, target: str = "") -> str:
             return f"✓ '{title}' 창에 입력했습니다: '{preview}'"
         return f"✓ 텍스트 입력 완료: '{preview}'"
     except ImportError as e:
-        return f"[오류] {e}"
+        return f"✗ 글자를 입력하지 못했습니다: {e}"
     except Exception as e:
-        return f"[type_text 오류] {type(e).__name__}: {e}"
+        return f"✗ 글자를 입력하지 못했습니다: {type(e).__name__}: {e}"
 
 
 @tool
@@ -212,9 +212,9 @@ def get_clipboard_text() -> str:
         suffix = f"... (총 {len(content)}자)" if len(content) > 200 else ""
         return f"📋 클립보드 내용:\n{preview}{suffix}"
     except ImportError as e:
-        return f"[오류] {e}"
+        return f"✗ 클립보드를 읽지 못했습니다: {e}"
     except Exception as e:
-        return f"[get_clipboard_text 오류] {type(e).__name__}: {e}"
+        return f"✗ 클립보드를 읽지 못했습니다: {type(e).__name__}: {e}"
 
 
 @tool
@@ -247,9 +247,9 @@ def press_key(key: str) -> str:
 
         return f"✓ '{key}' 키 입력 완료"
     except ImportError as e:
-        return f"[오류] {e}"
+        return f"✗ 키를 누르지 못했습니다: {e}"
     except Exception as e:
-        return f"[press_key 오류] {type(e).__name__}: {e}"
+        return f"✗ 키를 누르지 못했습니다: {type(e).__name__}: {e}"
 
 
 # ── 좌표 기반 클릭 (Phase 2) ──────────────────────────────────────
@@ -318,12 +318,12 @@ def click_ui_element(target: str, window: str = "") -> str:
     try:
         pyautogui = _get_pyautogui()
     except ImportError as e:
-        return f"[오류] {e}"
+        return f"✗ 클릭하지 못했습니다: {e}"
 
     try:
         from tools.vision import locate_ui_element
     except Exception as e:
-        return f"[오류] 화면 분석 기능을 불러오지 못했습니다: {e}"
+        return f"✗ 화면 분석 기능을 불러오지 못해 클릭하지 않았습니다: {e}"
 
     loc = locate_ui_element(target, window)
     if not loc.get("found"):
@@ -343,7 +343,7 @@ def click_ui_element(target: str, window: str = "") -> str:
     try:
         pyautogui.click(x, y)
     except Exception as e:
-        return f"[click 오류] {type(e).__name__}: {e}"
+        return f"✗ 클릭하지 못했습니다: {type(e).__name__}: {e}"
     finally:
         # 마우스를 원래 자리로 돌려놓는다 — 사용자가 쓰던 위치를 뺏지 않는다
         if before is not None:
