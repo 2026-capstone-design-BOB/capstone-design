@@ -42,7 +42,7 @@
 | **계획 수립** | `planner` 노드 — 복합 명령을 **최대 2단계**로 나눠 순서대로 실행하고, **못 한 단계를 정직하게 말한다**(2026-09-05). replan 없음(LLM 왕복 턴당 1회). **기본 켜짐**(2026-09-07 라이브 확인 후) — 끄려면 `.env` `PLAN_ENABLED=false`. mock 37건 + 라이브 3경우(조용·보고·승인 완주) 확인 → [M3](design/M3_계획수립노드.md) · [M3-1](design/M3-1_단계완료판정.md) |
 | **도구 정직성** | `type_text`가 **입력 전에** 대상 창을 확인하고, 못 잡으면 입력하지 않는다(BL-12 해결). 캐시는 **해석 못 한 잔여 명령이 있으면 포기**한다(BL-15 해결) |
 | **보안** | **5층 방어** — 0 로컬 API 접근 제어(토큰) · 1 규칙 · 2 하이브리드 LLM 판정 · 3 HITL · 4 출력 마스킹 → [ARCHITECTURE](ARCHITECTURE.md#보안--5층-방어) |
-| **테스트** | mock **34파일 969개** + 라이브 3스위트. CI는 그중 33파일 935개 자동 실행 (`test_dependencies` **34개**는 로컬 전용 — 2026-09-08에 lock 대조 2건 추가) — **이 숫자의 출처는 이 표 하나다** |
+| **테스트** | mock **36파일 1071개** + 라이브 3스위트. CI는 그중 35파일 1037개 자동 실행 (`test_dependencies` **34개**는 로컬 전용) — **이 숫자의 출처는 이 표 하나다**<br>2026-09-10에 +102: `test_cache_learn` 15→38(BL-27) · `test_graph_agent` 17→30(BL-28) · `test_hitl_graph` 88→114(BL-24) · `test_embedder` 20 신설(M5) · `test_log_format` 20 신설 |
 | **라이브 실측** | `regression`에 **Vision 라이브 V-01~V-05 추가**(2026-09-04). **V-01~V-04 통과** — 실제 캡처 → Gemini 왕복 → 좌표 환산이 처음으로 자동 검증됐다. **V-05는 BL-19 때문에 구간에 따라 FAIL한다**(회귀 아님 — 실패해도 거짓말은 안 한다).<br>2026-09-03 기준 `commands` 40P/0F/15MANUAL · `sprint1_2` 55/55 → [DEVLOG](DEVLOG.md).<br>**2026-09-07 — Phase 2 다섯 기능 전부 실기 확인(종료).** 좌표 클릭·화면 감시 포함.<br>**2026-09-08 — 웨이크워드 전용 KWS 모델 실기 1·2차.** 실제 사람 목소리에 `prob=1.000`·`0.999`로 **깨어난다.** 오탐 없음(비발화 창 전부 0.015 이하). ⚠️ 다만 **부르는 만큼은 아니다** — 감지율 미측정 → [BL-23](BACKLOG.md).<br>⚠️ **미검증**: 웨이크워드 **감지율(분모 없음)** · **BL-13 설정 화면**(눌러 본 적 없다) → [TASKS.md](TASKS.md) ① |
 | **CI** | GitHub Actions 3잡 — mock · 문서링크 · 비밀정보 가드 |
 | **브랜치** | `main` = `develop` = 최신. 작업은 `feature/byeonsoyun`. 팀 브랜치 `feature/ohdayoung`은 **2026-09-09 원격 삭제** — 커밋은 태그 `backup/feature-ohdayoung-2026-09-09`에 원격까지 보존(복구법은 [TASKS.md](TASKS.md)) |
@@ -69,7 +69,7 @@
 
 | 하려는 작업 | 읽을 문서 |
 |---|---|
-| **새 도구 추가** | [ARCHITECTURE.md § 도구](ARCHITECTURE.md#도구-39개) → [WORKFLOW.md § 도구 추가 절차](WORKFLOW.md#새-도구-추가) |
+| **새 도구 추가** | [ARCHITECTURE.md § 도구](ARCHITECTURE.md#도구-40개) → [WORKFLOW.md § 도구 추가 절차](WORKFLOW.md#새-도구-추가) |
 | **버그 수정** | [BACKLOG.md](BACKLOG.md)에서 항목 확인 → [WORKFLOW.md § 작업 루프](WORKFLOW.md#작업-루프) |
 | **새 파일을 어디 둘지 모를 때** | [STRUCTURE.md § 배치 결정 트리](STRUCTURE.md#새-파일-배치-결정-트리) |
 | **에이전트 동작(그래프) 수정** | [ARCHITECTURE.md § 그래프](ARCHITECTURE.md#그래프-파이프라인) → [design/M1_아키텍처_설계.md](design/M1_아키텍처_설계.md) |
@@ -128,7 +128,8 @@
 - [research/README.md](research/README.md) — 고정 항목 · 기록 규율 · 주기(9월 말 · 10월 말 · 11월 중순)
 - [2026-09_동향점검.md](research/2026-09_동향점검.md) — **1회차 = 기준선.**
   `anthropic` 메이저 1개(안 올림 · 사유 기록) · computer use/Copilot Actions 공식 문서 기준선 ·
-  로그 485턴에서 **도구 39개 중 20종만 쓰였다**는 실측 미리보기
+  로그에서 도구 사용을 훑어본 **미리보기**(⚠️ 테스트 턴을 안 거른 숫자다)
+  → 제대로 잰 것은 [2026-09_도구사용_실측.md](research/2026-09_도구사용_실측.md)이다
 
 ### 테스트 문서 — [testing/](testing/)
 

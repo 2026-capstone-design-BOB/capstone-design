@@ -52,7 +52,7 @@ C:\pluiz_v2\
 ├── start.bat               # 서버만 실행
 │
 ├── .github/workflows/      # CI — mock 테스트 · 문서 링크 · 비밀정보 가드
-├── tests/                  # 테스트 22파일 (mock 19 + 서버 필요 3). 개수는 docs/README.md
+├── tests/                  # 테스트 39파일 (mock 36 + 서버 필요 3). 개수는 docs/README.md
 │
 ├── config/                 # pydantic-settings
 ├── core/                   # 에이전트 엔진 · 보안 · 캐시
