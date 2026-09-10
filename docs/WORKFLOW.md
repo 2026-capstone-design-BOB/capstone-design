@@ -70,7 +70,7 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 
 "$PY" tests/test_graph_agent.py       # 그래프 오케스트레이터 + 계측 17/17
 "$PY" tests/test_hitl_agent.py        # HITL 승인            8/8
-"$PY" tests/test_cache_learn.py       # 캐시 동적 학습        15/15
+"$PY" tests/test_cache_learn.py       # 캐시 동적 학습 + BL-27 38/38
 "$PY" tests/test_guardrail_hybrid.py  # 하이브리드 가드       8/8
 "$PY" tests/test_visual_verify.py     # 실행 결과 시각적 검증  46/46
 "$PY" tests/test_type_text_focus.py   # BL-12 사전 포커스 확인 21/21
@@ -95,8 +95,8 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_dependencies.py     # ★ requirements.txt 선언 = 실제 설치인지
 ```
 
-전체 mock 스위트는 **34파일 969개**([README 상태표](README.md)가 출처). 이 중 `test_dependencies.py`(34개)는 로컬 전용이라
-CI는 33파일 935개를 돌린다. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
+전체 mock 스위트는 **34파일 992개**([README 상태표](README.md)가 출처). 이 중 `test_dependencies.py`(34개)는 로컬 전용이라
+CI는 33파일 958개를 돌린다. **코드를 바꿨으면 관련 스위트 + 회귀로 최소 3종은 돌린다.**
 
 ### 테스트는 제품 로그를 건드리지 않는다
 
