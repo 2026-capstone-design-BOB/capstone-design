@@ -214,6 +214,31 @@ def run():
               _best_s2(t) >= CC.SIMILARITY_THRESHOLD)
         check(f"회귀: {t!r}는 캐시를 탄다", fresh.find(t) is not None)
 
+    # ── 🚨 밝기가 볼륨보다 먼저 와야 한다 (2026-09-11 3차 실기) ──
+    #
+    # *"밝기 줄여줘"* 가 **miss**였다. `volume_down`의 맨몸 트리거 「줄여」가 **먼저**
+    # 걸려 `(brightness, volume_down)` 이라는 **없는 조합**이 됐다.
+    # `_match_action`은 ACTION_PATTERNS를 위에서부터 훑어 **처음 맞는 것**을 쓴다.
+    #
+    # ⚠️ 맨몸 트리거를 볼륨에서 빼면 *"소리 좀 줄여"* 가 깨진다 — **빼지 않고 순서를 바꿨다.**
+    #   그래서 **양쪽을 같이 검사한다.** 순서를 되돌리면 여기서 걸린다.
+    print("=== 밝기 명령이 볼륨 트리거에 빼앗기지 않는다 ===")
+    for text, want in (("밝기 줄여줘", "brightness_down"),
+                       ("밝기 키워줘", "brightness_up"),
+                       ("밝기 작게 해줘", "brightness_down")):
+        f = fresh.find(text)
+        check(f"{text!r} → {want}",
+              f is not None and f[0].tool_calls[0]["name"] == want)
+    # 🚨 반대쪽 회귀 — 볼륨이 밝기에게 빼앗기지 않았는지
+    for text, want in (("소리 좀 줄여", "volume_down"),
+                       ("볼륨 줄여줘", "volume_down"),
+                       ("소리 키워줘", "volume_up"),
+                       ("볼륨 올려줘", "volume_up"),
+                       ("음소거해줘", "mute_toggle")):
+        f = fresh.find(text)
+        check(f"회귀: {text!r} → {want}",
+              f is not None and f[0].tool_calls[0]["name"] == want)
+
     # 🚨 회귀 — 「보여」를 open에 넣었으므로 이 둘을 빼앗지 않았는지 본다.
     #   ACTION_PATTERNS는 위에서부터 먼저 맞는 것을 쓰므로 show_desktop·recent_file이
     #   open보다 앞에 있어야 한다. 순서가 바뀌면 여기서 깨진다.
