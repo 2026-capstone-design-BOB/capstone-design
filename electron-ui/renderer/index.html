@@ -709,6 +709,21 @@
       color: var(--danger);
     }
 
+    /* BL-33 — 링이 «남은 8초»가 아니라 «내 말이 들어가고 있는가»를 보여준다.
+       남은 시간은 사용자가 알 필요가 없다. 알아야 하는 건 들리고 있는지다.
+       .idle = 아직 말이 시작되지 않음(회색) · 말이 잡히면 빨강으로 넘어간다 */
+    .cd-ring .pr {
+      transition: stroke-dashoffset .06s linear;
+    }
+
+    .cd-ring.idle .pr {
+      stroke: rgba(148, 163, 184, .5);
+    }
+
+    .cd-ring.idle .cd-num {
+      color: rgba(148, 163, 184, .85);
+    }
+
     .mic-btn {
       width: 44px;
       height: 44px;
@@ -1349,7 +1364,7 @@
               <circle class="tr" cx="22" cy="22" r="19" />
               <circle class="pr" cx="22" cy="22" r="19" id="cdprog" />
             </svg>
-            <div class="cd-num" id="cdnum">8</div>
+            <div class="cd-num" id="cdnum">🎤</div>
           </div>
           <button class="mic-btn" id="mic-btn" onclick="toggleMic()">🎙️</button>
         </div>
@@ -1456,10 +1471,62 @@
       openai: 'https://platform.openai.com/api-keys',
     };
 
-    // 카운트다운
-    const REC_SEC = 8;
+    // ── 발화 종료 감지 (VAD) — 2026-09-11 BL-33 ────────────────────
+    // 전에는 `REC_SEC = 8` 타이머 하나가 «사람이 말을 끝낸 시점»을 대신했다.
+    // 말이 길면 뒷말이 잘리고, 짧으면 남은 초를 멍하니 기다렸다.
+    // 이제 같은 MediaStream에 AnalyserNode를 붙여 프레임마다 RMS를 본다.
+    //
+    // 절대 규칙
+    //   ⚠️ MAX_MS(상한)를 없애지 말 것 — 무음 감지가 환경 소음에 속으면
+    //      상한이 «끝나지 않는 녹음»을 막는 유일한 방어선이다.
+    //   ⚠️ START_RMS와 KEEP_RMS를 하나로 합치지 말 것 — 히스테리시스다.
+    //      하나면 임계 근처에서 말이 «시작·끝·시작»으로 튄다.
+    //
+    // 임계 출발점은 services/wakeword.py의 에너지 관문(RMS 0.006)이다 —
+    // 같은 마이크·같은 샘플레이트를 본다. 실제 목소리로 재보고 맞춘다
+    // (콘솔에 [VAD] 줄로 잡음 바닥과 최대 RMS가 찍힌다).
+    const VAD = {
+      START_RMS: 0.020,    // 이 위로 오르면 «말이 시작됐다»
+      KEEP_RMS: 0.012,     // 이 아래로 내려가면 «무음»(히스테리시스)
+      SILENCE_MS: 1200,    // 말 시작 후 이만큼 조용하면 종료
+      NOSPEECH_MS: 6000,   // 한 마디도 없으면 접는다 — STT를 부르지 않는다
+      MAX_MS: 30000,       // ⚠️ 상한. 지우지 말 것
+      FLOOR_MS: 400,       // 시작 직후 이 구간의 잡음을 «바닥»으로 잰다
+      FLOOR_MULT: 3,       // 조용한 방이면 START_RMS가, 시끄러우면 바닥x3이 이긴다
+      FLOOR_MAX: 0.06,     // 바닥이 터무니없이 높아도 여기서 멈춘다(마이크가 죽지 않게)
+      TICK_MS: 50,         // requestAnimationFrame을 쓰지 않는다 — 창이 뒤로 가면
+                           //   프레임이 throttle돼 «무음»을 영영 못 본다
+      // 웨이크워드가 **자동으로** 연 녹음은 더 빨리 접는다. 헛깨어남이면
+      // 오버레이가 떠 있는 시간이 그만큼 짧아진다(BL-23 완화).
+      // ⚠️ 너무 줄이면 «플루이즈» 하고 숨 고르는 사람을 자른다. 4초로 둔다.
+      NOSPEECH_AUTO_MS: 4000,
+    };
     const CIRCUM = 2 * Math.PI * 19;
-    let cdInterval = null, cdRemain = REC_SEC;
+    let vadTimer = null, vadMaxTimer = null, vadCtx = null, vadPeak = 0;
+
+    // ── 헛깨어남을 조용히 닫는다 (2026-09-11, BL-23 완화) ─────────
+    // 웨이크워드 오탐은 **모델 문제**라 10월 재구축 전에는 못 줄인다
+    // (→ docs/design/M7_웨이크워드_재구축.md). 대신 **보이는 증상**은 지운다.
+    //
+    // 실기 2026-09-11: 헛깨어남 → 오버레이가 열림 → 주변 말소리를 녹음 →
+    // STT가 해독 실패 → *«⚠️ 음성을 인식하지 못했습니다»* 가 채팅에 남았다.
+    // **사용자가 시킨 적이 없는 턴이다.** 오류를 보여 줄 이유가 없다.
+    //
+    // ⚠️ 마이크 버튼·Alt+Space로 **사람이 직접 연 녹음은 그대로 오류를 보여준다** —
+    //    그건 사용자가 결과를 기다리는 턴이라 조용히 삼키면 그게 더 나쁘다.
+    //    («조용히 끝나지 않는다»는 BL-22·BL-19의 규칙이 거기에 적용된다)
+    let micAuto = false;      // 다음 녹음을 웨이크워드가 시작하는가
+    let recAuto = false;      // **지금 도는** 녹음이 그렇게 시작됐나
+    let wakeOpened = false;   // 그 웨이크워드가 오버레이를 «열었나»(이미 떠 있었으면 false)
+
+    // 🚨 2026-09-11 — `stopMic(false)`로 chunks를 비워도 **보내졌다.**
+    //    `mr.stop()`이 마지막 `dataavailable`을 **flush**하는데, 그게 방금 비운
+    //    배열에 다시 들어가고 `onstop`이 그걸 보낸다. 실기 로그:
+    //      10:11:00 WAKE → 10:11:06 [STT] 956 bytes → "인식하지 못했습니다"
+    //    6초는 정확히 VAD.NOSPEECH_MS다 — «말이 없으면 STT를 안 부른다»는 약속이
+    //    MediaRecorder의 flush 한 번에 깨져 있었다.
+    //    ⚠️ 배열을 비우는 것으로는 못 막는다. **플래그로 막는다.**
+    let micDiscard = false;
 
 
 
@@ -1983,7 +2050,8 @@
     }
 
     function deactivate() {
-      stopCd();
+      stopVad();
+      hideLevel();
       if (isRec) stopMic(false);
       if (historyOpen) hideHistory();
       if (favOpen) hideFavorites();
@@ -2006,30 +2074,118 @@
     function showTyping(v) { document.getElementById('typing').className = 'typing' + (v ? ' show' : ''); }
     function scrollChat() { const c = document.getElementById('chat'); c.scrollTop = c.scrollHeight; }
 
-    // ── 카운트다운 링 ──────────────────────────────────────────────
-    function startCd() {
-      cdRemain = REC_SEC;
+    // ── 입력 레벨 링 ───────────────────────────────────────────────
+    function showLevel() {
       const ring = document.getElementById('cdring');
-      const prog = document.getElementById('cdprog');
-      const num = document.getElementById('cdnum');
-      ring.classList.add('show');
-      prog.style.strokeDashoffset = '0';
-      num.textContent = cdRemain;
-      cdInterval = setInterval(() => {
-        cdRemain -= 0.1;
-        prog.style.strokeDashoffset = String(CIRCUM * (1 - cdRemain / REC_SEC));
-        num.textContent = Math.ceil(cdRemain);
-        if (cdRemain <= 0) { stopCd(); stopMic(true); }
-      }, 100);
+      ring.classList.add('show', 'idle');
+      document.getElementById('cdprog').style.strokeDashoffset = String(CIRCUM);
     }
-    function stopCd() {
-      clearInterval(cdInterval); cdInterval = null;
+    function setLevel(rms, live) {
+      const prog = document.getElementById('cdprog');
+      if (!prog) return;
+      // 0.12 RMS를 «가득»으로 본다. 말소리는 대개 그 아래에서 논다.
+      const f = Math.max(0, Math.min(1, rms / 0.12));
+      prog.style.strokeDashoffset = String(CIRCUM * (1 - f));
+      document.getElementById('cdring').classList.toggle('idle', !live);
+    }
+    function hideLevel() {
       document.getElementById('cdring').classList.remove('show');
+    }
+
+    // ── 발화 종료 감지 (BL-33) ─────────────────────────────────────
+    // 서버는 손대지 않는다 — 렌더러 안에서 끝나는 변경이다.
+    function startVad(stream) {
+      stopVad();
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) {
+        // 폴백: 분석기가 없으면 상한만으로 끊는다. 예전(8초)보다 낫다.
+        vadMaxTimer = setTimeout(() => stopMic(true), VAD.MAX_MS);
+        return;
+      }
+      let an, buf;
+      try {
+        vadCtx = new Ctx();
+        const src = vadCtx.createMediaStreamSource(stream);
+        an = vadCtx.createAnalyser();
+        an.fftSize = 1024;
+        src.connect(an);                     // ⚠️ destination에 잇지 않는다 —
+        buf = new Float32Array(an.fftSize);  //    이으면 자기 목소리가 스피커로 나간다
+      } catch (e) {
+        console.error('[VAD] 분석기 실패, 상한만 씁니다', e);
+        vadMaxTimer = setTimeout(() => stopMic(true), VAD.MAX_MS);
+        return;
+      }
+
+      const t0 = Date.now();
+      let speechAt = 0, quietAt = 0, floorSum = 0, floorN = 0, startRms = 0;
+      vadPeak = 0;
+
+      // ⚠️ 인터벌과 별개로 상한을 하나 더 건다. 인터벌이 throttle돼도 끊긴다.
+      vadMaxTimer = setTimeout(() => endVad('max'), VAD.MAX_MS);
+
+      vadTimer = setInterval(() => {
+        an.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        const rms = Math.sqrt(sum / buf.length);
+        if (rms > vadPeak) vadPeak = rms;
+        const now = Date.now(), age = now - t0;
+        setLevel(rms, !!speechAt);
+
+        if (!speechAt) {
+          if (age < VAD.FLOOR_MS) { floorSum += rms; floorN++; return; }
+          if (!startRms) {
+            const floor = floorN ? floorSum / floorN : 0;
+            startRms = Math.min(VAD.FLOOR_MAX,
+                                Math.max(VAD.START_RMS, floor * VAD.FLOOR_MULT));
+            console.log('[VAD] 잡음 바닥', floor.toFixed(4), 'ㅡ> 시작임계', startRms.toFixed(4));
+          }
+          if (rms >= startRms) { speechAt = now; quietAt = 0; setState('recording'); }
+          else if (age >= (recAuto ? VAD.NOSPEECH_AUTO_MS : VAD.NOSPEECH_MS))
+            endVad('nospeech');
+          return;
+        }
+
+        if (rms >= VAD.KEEP_RMS) quietAt = 0;
+        else if (!quietAt) quietAt = now;
+        if (quietAt && now - quietAt >= VAD.SILENCE_MS) endVad('endpoint');
+      }, VAD.TICK_MS);
+    }
+
+    function endVad(reason) {
+      console.log('[VAD] 종료 사유=' + reason + ' 최대RMS=' + vadPeak.toFixed(4));
+      stopVad();
+      if (reason === 'nospeech') {
+        // 말이 한 번도 없었다 → STT를 부르지 않는다(빈 요청을 막는다)
+        const auto = recAuto;
+        stopMic(false);
+        if (auto) { closeIfSpurious(); return; }   // 헛깨어남 — 말없이 닫는다
+        const el = document.getElementById('slbl');
+        if (el) { el.textContent = '말이 없어서 그만 들었어요'; el.className = 'state-lbl'; }
+        setTimeout(() => { if (!isRec && !busy) setState('ready'); }, 1800);
+        return;
+      }
+      stopMic(true);
+    }
+
+    function closeIfSpurious() {
+      // 웨이크워드가 **열었고** 대화가 하나도 안 생겼으면 없던 일로 한다.
+      // ⚠️ busy면 손대지 않는다 — 서버가 답하는 중이면 그건 진짜 턴이다.
+      if (!recAuto || !wakeOpened || busy) return;
+      recAuto = false; wakeOpened = false;
+      deactivate();
+    }
+
+    function stopVad() {
+      clearInterval(vadTimer); vadTimer = null;
+      clearTimeout(vadMaxTimer); vadMaxTimer = null;
+      if (vadCtx) { try { vadCtx.close(); } catch (e) {} vadCtx = null; }
     }
 
     // ── 음성 녹음 ─────────────────────────────────────────────────
     function toggleMic() {
       if (busy) return;
+      micAuto = false; wakeOpened = false;   // 사람이 눌렀다 — 오류를 숨기지 않는다
       if (isRec) stopMic(true);
       else startMic();
     }
@@ -2066,19 +2222,25 @@
         chunks = [];
         // ⚠️ `mr`이 아니라 **자기 자신(rec)** 을 본다. 전역이 바뀌어도
         //    남의 chunks에 쓰지 않는다.
-        rec.ondataavailable = e => { if (mr === rec && e.data.size > 0) chunks.push(e.data); };
+        rec.ondataavailable = e => {
+          if (mr === rec && !micDiscard && e.data.size > 0) chunks.push(e.data);
+        };
         rec.onstop = async () => {
           stream.getTracks().forEach(t => t.stop());
           if (mr !== rec) return;         // 이미 다른 녹음으로 넘어갔으면 버린다
+          if (micDiscard) { chunks = []; return; }   // 버리기로 한 녹음이다
           const parts = chunks; chunks = [];
           if (parts.length > 0) await sendVoice(new Blob(parts, { type: 'audio/webm' }));
         };
         rec.start(100);
         isRec = true;
-        setState('recording'); setWf('rec');
+        micDiscard = false;             // 새 녹음은 버리지 않는다(이전 값이 남지 않게)
+        recAuto = micAuto; micAuto = false;   // 출처를 **이 녹음에** 고정한다
+        setState('ready'); setWf('rec');   // 말이 잡히기 전까진 '말씀하세요...'
         document.getElementById('mic-btn').classList.add('rec');
         document.getElementById('mic-btn').textContent = '⏹️';
-        startCd();
+        showLevel();
+        startVad(stream);
       } catch (err) {
         if (stream) stream.getTracks().forEach(t => t.stop());
         addMsg('a', '⚠️ 마이크 접근 실패: ' + err.message);
@@ -2088,7 +2250,11 @@
     }
 
     function stopMic(send = true) {
-      stopCd();
+      stopVad();
+      hideLevel();
+      // ★ `mr.stop()`의 마지막 flush까지 막으려면 **플래그가 먼저** 서야 한다.
+      //   배열을 비우는 것만으로는 못 막는다(위 micDiscard 주석).
+      micDiscard = !send;
       if (!send) chunks = [];
       // ⚠️ `isRec`만 보지 않는다 — 레코더가 살아 있는데 플래그만 내려가면
       //    고아가 되어 다음 녹음의 chunks를 오염시킨다(위 주석의 그 사고다).
@@ -2097,6 +2263,7 @@
       document.getElementById('mic-btn').classList.remove('rec');
       document.getElementById('mic-btn').textContent = '🎙️';
       setWf('');
+      flushPendingAudio();   // 녹음 때문에 미뤄 둔 TTS가 있으면 지금 내보낸다
     }
 
     async function sendVoice(blob) {
@@ -2110,7 +2277,10 @@
         const res = await fetch(`${API}/voice`, { method: 'POST', body: fd });
         const data = await res.json();
         if (data.error) {
-          addMsg('a', '⚠️ ' + data.error);
+          // 🚨 웨이크워드가 연 녹음이면 **말없이 닫는다.** 사용자가 시킨 적 없는
+          //    턴의 오류를 보여 주면, 헛깨어남이 «고장»처럼 보인다(BL-23 완화).
+          if (recAuto) { closeIfSpurious(); }
+          else { addMsg('a', '⚠️ ' + data.error); }
         } else {
           if (data.text) addMsg('u', '🎤 ' + data.text);
           addMsg('a', data.response);
@@ -2154,8 +2324,10 @@
 
     // ── TTS 재생 ──────────────────────────────────────────────────
     let currentAudio = null;
+    let pendingAudio = null;
 
     function stopCurrentAudio() {
+      pendingAudio = null;   // 새 녹음이 시작되면 밀어 둔 TTS는 버린다(낡았다)
       if (currentAudio) {
         currentAudio.pause();
         currentAudio.src = '';
@@ -2163,7 +2335,19 @@
       }
     }
 
+    function flushPendingAudio() {
+      if (!pendingAudio) return;
+      const b64 = pendingAudio; pendingAudio = null;
+      setTimeout(() => playAudio(b64), 200);
+    }
+
     function playAudio(b64) {
+      // 🚨 BL-33 — 녹음 중에 TTS를 틀면 자기 목소리가 마이크로 되먹임돼
+      //    «무음이 오지 않는» 끝나지 않는 녹음이 된다. 화면 감시 알림
+      //    (onWatchNotify)은 아무 때나 들어오므로 여기서 막는다.
+      //    ⚠️ 알림을 삼키지는 않는다 — 글은 이미 채팅에 나갔고, 소리는
+      //    녹음이 끝나는 즉시 흘려보낸다(flushPendingAudio).
+      if (isRec) { pendingAudio = b64; return; }
       try {
         stopCurrentAudio(); // 기존 TTS 중단 후 새 TTS 재생
         const raw = atob(b64);
@@ -2203,6 +2387,9 @@
         ring.classList.remove('awake');
         if (!isActive) ring.classList.add('listening');
       }, { once: true });
+      // 이 녹음은 **사람이 시킨 것이 아니다.** 실패하면 조용히 닫는다.
+      micAuto = true;
+      wakeOpened = !isActive;    // 이미 떠 있었으면 닫지 않는다
       activate(true);
     });
 
@@ -2213,6 +2400,7 @@
     });
 
     window.pluiz.onToggleActive(() => {
+      micAuto = false; wakeOpened = false;   // Alt+Space는 **사람**이다
       if (isActive) deactivate();
       else activate(true);
     });

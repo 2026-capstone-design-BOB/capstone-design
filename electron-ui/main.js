@@ -36,6 +36,11 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // 🚨 BL-33 — 발화 종료 감지가 렌더러의 setInterval(50ms)로 돈다.
+      //    창이 뒤로 가면 Chromium이 타이머를 1초에 한 번으로 줄이는데,
+      //    그러면 «무음 1.2초»를 제때 못 봐서 녹음이 상한(30초)까지 간다.
+      //    사용자가 말하면서 다른 창을 누르는 건 흔한 일이다.
+      backgroundThrottling: false,
     },
   });
 
