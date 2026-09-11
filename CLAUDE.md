@@ -122,7 +122,7 @@ python main.py              # 서버만
 python tests/test_graph_agent.py  # 30/30
 python tests/test_cache_learn.py  # 38/38
 python tests/test_hitl_agent.py   # 8/8
-python tests/test_hitl_graph.py   # 114/114  ← 승인 경로 전체(BL-20·24)
+python tests/test_hitl_graph.py   # 136/136  ← 승인 경로 전체(BL-20·24·38)
 ```
 
 상세: [docs/WORKFLOW.md](docs/WORKFLOW.md)
