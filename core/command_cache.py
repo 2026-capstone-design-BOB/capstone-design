@@ -43,7 +43,29 @@ _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #            PLUIZ_CACHE_FILE=/tmp/pluiz_live.json python main.py
 CACHE_FILE = (os.environ.get("PLUIZ_CACHE_FILE")
               or os.path.join(_BASE_DIR, "cache", "command_cache.json"))
-SIMILARITY_THRESHOLD = 0.80
+# Stage 2(퍼지) 임계. **2026-09-11 2차 실기로 0.80 → 0.83으로 올렸다.**
+#
+# 🚨 왜 올렸나: 사용자가 *"메모장 만들어줘"* 라고 했는데 **«메모장 창을 앞으로
+#   가져왔습니다»** 가 나왔다. difflib가 `'메모장 열어줘'`와 **정확히 0.800** —
+#   임계에 딱 걸려 통과했다. 「만들어」와 「열어」는 다른 뜻이다.
+#
+# 🔬 올려도 되는 근거(실측 17문장). 경계가 비어 있다:
+#     되어야 하는 것 중 S2에 의존하는 최저값 : 0.857  ('볼륨 좀 올려줘'·'밝기 좀 올려줘')
+#     되면 안 되는 것 중 최고값             : 0.800  ('메모장 만들어줘')
+#   → 둘 사이 **0.83**을 고른다. 0.85는 0.857과 0.007밖에 안 떠서 빡빡하다.
+#
+# 🔑 그리고 **S1(intent)이 같은 날 훨씬 넓어졌다** — 앱 5개와 동작 어휘가 늘어
+#   예전에 S2로 흘렀던 것들이 이제 S1에서 잡힌다. 퍼지는 «마지막 수단»이므로
+#   S1이 강해진 만큼 조일 수 있다.
+#
+# ⚠️ 올려서 빗나가는 명령은 **사라지지 않는다** — 오프라인이면 M5가
+#   *"혹시 '메모장 열어줘' 말씀이신가요?"* 로 되묻고, 「네」면 실행된다.
+#   **틀린 것을 말없이 실행하는 것보다 한 번 묻는 것이 낫다.**
+#
+# ⏸️ 더 나은 해법은 임계가 아니라 **S1을 군말에 강하게 만드는 것**이다
+#   ('볼륨 좀 올려줘'가 S1=X인 이유는 트리거 "볼륨 올"이 「좀」 때문에 안 걸리는 것이다).
+#   그건 `has_uncovered_command`의 커버 계산과 엮여 있어 따로 다룬다 → BACKLOG BL-43
+SIMILARITY_THRESHOLD = 0.83
 
 # Stage 1(intent) 히트에서 **커버되지 않은 실질 어절**의 허용 상한.
 # 이보다 많으면 «명령어를 스쳐 지나가는 긴 문장»으로 보고 캐시를 쓰지 않는다.
@@ -185,6 +207,20 @@ APP_ENTITIES: list[tuple[str, str, str]] = [
     ("터미널",        "terminal",    "터미널"),
     ("윈도우 설정",   "settings",    "설정"),
     ("설정",          "settings",    "설정"),
+    # 🆕 2026-09-11 — 오프라인 실기에서 «그림판 열어줘»가 네 번 실패했다.
+    #   `_build_intent_index`가 여기 있는 앱마다 (key,'open')·(key,'close')를
+    #   **자동 합성**하므로, 한 줄 추가가 곧 «LLM 없이 도는 명령» 두 개다.
+    #   오프라인이 이 제품의 차별점이라면 **이 표의 길이가 차별점의 크기**다.
+    #   ⚠️ `tools/app_control.py`의 APP_ALIASES·APP_PROCESS_MAP과 **짝이 맞아야 한다** —
+    #      여기만 넣으면 캐시는 히트하는데 실행이 실패한다(거짓 약속이 된다).
+    ("그림판",        "paint",       "그림판"),
+    ("페인트",        "paint",       "그림판"),
+    ("작업 관리자",   "taskmgr",     "작업 관리자"),
+    ("작업관리자",    "taskmgr",     "작업 관리자"),
+    ("제어판",        "control",     "제어판"),
+    ("캡처 도구",     "snippingtool", "캡처 도구"),
+    ("캡처도구",      "snippingtool", "캡처 도구"),
+    ("돋보기",        "magnify",     "돋보기"),
 ]
 
 # 앱 키 집합 (open/close 합성에 사용)
@@ -237,10 +273,22 @@ ACTION_PATTERNS: list[tuple[str, list[str]]] = [
     ("minimize",         ["최소화"]),
     # close는 open보다 먼저 (꺼줘/종료가 열어줘 포함 시 오인식 방지)
     ("close",            ["꺼줘", "닫아줘", "종료해줘", "닫줘", "꺼 줘", "종료 해줘",
-                          "꺼", "닫아", "종료"]),
+                          # 🆕 2026-09-11 — 실기 말투. 「끄」는 「꺼」와 달리
+                          #   '끄고'·'끄자'·'끌래'를 잡는다.
+                          "종료시켜", "닫기", "끄고", "끌래", "끄자", "닫자",
+                          "꺼", "닫아", "종료", "닫", "끄"]),
     ("open",             ["열어줘", "켜줘", "실행해줘", "시작해줘", "띄워줘",
                           "열어 줘", "켜 줘", "실행 해줘", "열어", "켜", "실행", "시작",
-                          "띄워", "오픈", "열기"]),                     # P4-4 동의어
+                          # 🆕 2026-09-11 — 실기에서 빗나간 말투들.
+                          #   «그림판 열어달라고»·«메모장을 띄어 보도록 하여라»가
+                          #   miss였다(BL-37 오제안의 절반이 여기서 나왔다).
+                          #   ⚠️ 「보여」는 show_desktop·recent_file보다 **뒤에** 있어
+                          #     '바탕화면 보여줘'·'최근 파일 보여줘'를 빼앗지 않는다
+                          #     (ACTION_PATTERNS는 위에서부터 먼저 맞는 것을 쓴다).
+                          "열어달라", "열어 달라", "띄어", "띄우", "띄워봐", "띄워 봐",
+                          "불러와", "불러 와", "보여줘", "보여 줘", "보여",
+                          "실행시켜", "실행 시켜", "열어봐", "열어 봐", "켜봐", "켜 봐",
+                          "띄워", "오픈", "열기", "열"]),                # P4-4 동의어
     ("recent_file",      ["최근에 열었던", "최근 파일", "최근에 열"]),
 ]
 
@@ -738,7 +786,12 @@ class CommandCache:
         #    짧은 문장의 임베딩은 이런 잡음에 약하다 — 그래서 **문지기(낱말 겹침)를
         #    먼저 통과시키고, 살아남은 것들 사이에서만 순위를 쓴다.**
         #    임베딩의 역할이 «후보 고르기»에서 «살아남은 것 줄 세우기»로 좁아진다.
-        cand = [i for i in range(len(keys)) if self._shares_token(text, keys[i])]
+        def _tool_of(i: int) -> Optional[str]:
+            calls = entries[i].tool_calls or []
+            return calls[0].get("name") if calls else None
+
+        cand = [i for i in range(len(keys))
+                if self._shares_token(text, keys[i], _tool_of(i))]
         if not cand:
             return None
         i = max(cand, key=lambda j: sims[j])
@@ -760,11 +813,29 @@ class CommandCache:
     #     그게 이 설계의 안전망이고, 되돌리기 싼 것까지 막을 이유가 없는 이유다.
     _AMBIGUOUS_ACTIONS = frozenset({"open", "close"})
 
-    def _shares_token(self, text: str, pattern: str) -> bool:
+    #: 되돌리기 비싼 **도구** — 위 `_AMBIGUOUS_ACTIONS`의 도구판. (BL-37)
+    #
+    #  🚨 **왜 도구 이름으로 다시 적는가.** 예전에는 낱말 어휘(`_extract_action`)로만
+    #     판정했는데 **어휘에 없는 말이 그대로 새어나갔다.** 실측:
+    #       _extract_action('메모장 불러와줘') → None   ← 「불러와」가 어휘에 없었다
+    #     그래서 *"메모장에 회의록이라고 적어줘"* 에 **`open_app` 후보가 제안됐고**,
+    #     「네」 하면 메모장만 열리고 **적으려던 글이 사라진다.**
+    #     mock 37건이 `'메모장 꺼줘'`(「꺼」는 어휘에 있다)로만 확인해 못 잡았다.
+    #
+    #  🔑 **캐시 엔트리는 도구 이름을 정확히 알고 있다.** 추측할 필요가 없는 것을
+    #     추측하고 있었다 — 어휘는 넓히면 또 빠지지만 도구 이름은 빠질 수 없다.
+    _AMBIGUOUS_TOOLS = frozenset({"open_app", "close_app"})
+
+    def _shares_token(self, text: str, pattern: str,
+                      tool_name: Optional[str] = None) -> bool:
         """발화와 후보가 **같은 것을 가리키는가** — 임베딩이 못 하는 판정.
 
         이게 `'뻥카 치냐' → '소리 내려줘'`(코사인 0.965)를 막는 **유일한 장치**다.
         점수는 순위 말고 아무 뜻이 없으므로 문지기는 여기다.
+
+        `tool_name`: 후보가 실제로 부르는 도구. 주면 **어휘 대신 이것으로**
+          «되돌리기 비싼 동작인가»를 판정한다(BL-37). 안 주면 예전처럼 어휘로 본다 —
+          테스트가 이 함수를 2인자로 직접 부르기 때문에 기본값을 둔다.
         """
         a1, a2 = self._extract_action(text), self._extract_action(pattern)
 
@@ -772,12 +843,21 @@ class CommandCache:
         #   「켜」가 잡혔는데 후보가 close_app이면 그건 반대 동작이다.
         if a1 and a2 and a1 != a2:
             return False
-        if a1 and a1 == a2:
-            return True
 
+        # 🚨 **2026-09-11 실기 — 여기서 «그림 반 열어줘»에 «크롬 열어줘»를 제안했다.**
+        #   예전에는 `if a1 and a1 == a2: return True` 로 **동작이 같으면 바로 통과**시켰다.
+        #   그러면 「열어줘」 하나만 겹쳐도 **세상의 모든 «X 열어줘»가 후보**가 되고,
+        #   대상은 임베딩 순위가 고르는데 그게 못 믿을 신호다(ADR §6-3).
+        #   사용자가 본 것: *"그림 반 열어줘"* → *"혹시 '크롬 열어줘' 말씀이신가요?"*
+        #
+        # 🔑 **그래서 대상(entity) 합의를 «항상» 요구한다.** 동작이 같다는 건
+        #   «무엇을» 할지 정해 주지 않는다 — 제안의 값은 대상을 맞히는 데 있다.
+        #   대상을 모르면 **제안하지 않는 것이 정직하다**(틀린 앱을 열게 하는 것보다).
         e1, e2 = self._extract_entity(text), self._extract_entity(pattern)
         if not (e1 and e1 == e2):
             return False
+        if a1 and a1 == a2:
+            return True
 
         # 대상만 같고 **동작을 모르는** 경우 — 동작은 임베딩 순위가 고른 셈이 된다.
         #
@@ -790,9 +870,12 @@ class CommandCache:
         #    그래서 **동작을 모를 땐 반대 동작이 있는 부류를 제안하지 않는다.**
         #    볼륨·밝기처럼 대상만으로도 뜻이 좁혀지는 것은 그대로 통과한다
         #    (`'소리 조금만 더 크게'` → `'소리 올려줘'` 는 이 경로로 산다).
-        if a2 in self._AMBIGUOUS_ACTIONS:
-            return False
-        return True
+        # 대상만 같고 **동작을 모르는** 경우 — 동작을 임베딩 순위가 고른 셈이 된다.
+        #   그래서 **되돌리기 비싼 부류는 제안하지 않는다.**
+        #   🔑 판정 근거는 **도구 이름이 먼저**다(BL-37) — 어휘는 빠지는 말이 생긴다.
+        if tool_name is not None:
+            return tool_name not in self._AMBIGUOUS_TOOLS
+        return a2 not in self._AMBIGUOUS_ACTIONS
 
     # ── 도구 직접 실행 ────────────────────────────────────────────
 

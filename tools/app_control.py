@@ -31,6 +31,16 @@ APP_ALIASES: dict[str, str] = {
     "터미널": "terminal", "cmd": "terminal",
     # 설정
     "설정": "settings", "윈도우설정": "settings", "windows설정": "settings",
+    # 🆕 2026-09-11 — 오프라인 실기에서 «그림판 열어줘»가 네 번 실패했다.
+    #   원인은 모델이 아니라 **사전이 얇은 것**이었다. 오프라인 차별점은
+    #   «LLM 없이 도는 범위»가 곧 제품의 크기다 — 여기를 넓히는 것이 가장 싸다.
+    #   ⚠️ **이 PC에 실제로 있는지 확인한 것만 넣었다**(없는 앱을 넣으면 또 거짓 약속이다).
+    #      워드패드는 Windows 11에서 제거돼 넣지 않았다.
+    "그림판": "paint", "페인트": "paint", "mspaint": "paint",
+    "작업관리자": "taskmgr", "작업 관리자": "taskmgr", "태스크매니저": "taskmgr",
+    "제어판": "control",
+    "캡처도구": "snippingtool", "캡처 도구": "snippingtool", "화면캡처도구": "snippingtool",
+    "돋보기": "magnify", "확대기": "magnify",
 }
 
 # ── 한국어 표시 이름 ──────────────────────────────────────────────
@@ -49,6 +59,11 @@ APP_DISPLAY_NAMES: dict[str, str] = {
     "kakaotalk":  "카카오톡",
     "terminal":   "터미널",
     "settings":   "설정",
+    "paint":         "그림판",
+    "taskmgr":       "작업 관리자",
+    "control":       "제어판",
+    "snippingtool":  "캡처 도구",
+    "magnify":       "돋보기",
 }
 
 
@@ -150,6 +165,13 @@ APP_PROCESS_MAP: dict[str, list[str]] = {
     #   `WindowsTerminal.exe`다. 2026-09-07 실기에서 확인했다 — 이게 없으면
     #   get_running_apps가 못 보고 close_app("터미널")도 못 찾는다.
     "terminal":   ["wt.exe", "windowsterminal.exe", "cmd.exe", "powershell.exe"],
+    # ⚠️ 프로세스 이름이 실행 이름과 다른 것들이 있다 — get_running_apps와
+    #   close_app이 **이 이름으로** 창을 찾으므로 추측하지 말고 실제 이름을 적는다.
+    "paint":        ["mspaint.exe", "paintstudio.view.exe"],   # Win11 그림판은 후자로 뜬다
+    "taskmgr":      ["taskmgr.exe"],
+    "control":      ["control.exe", "systemsettings.exe"],
+    "snippingtool": ["snippingtool.exe"],
+    "magnify":      ["magnify.exe"],
 }
 
 APP_FALLBACK_PATHS: dict[str, list[str]] = {
@@ -190,6 +212,16 @@ APP_FALLBACK_PATHS: dict[str, list[str]] = {
         os.path.join(os.environ.get("PROGRAMFILES", ""), "WindowsApps/Microsoft.WindowsCalculator*/Calculator.exe"),
     ],
     "explorer": ["C:/Windows/explorer.exe"],
+    "paint": [
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft/WindowsApps/mspaint.exe"),
+        "C:/Windows/System32/mspaint.exe",
+    ],
+    "taskmgr":      ["C:/Windows/System32/Taskmgr.exe"],
+    "control":      ["C:/Windows/System32/control.exe"],
+    "snippingtool": [
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft/WindowsApps/SnippingTool.exe"),
+    ],
+    "magnify":      ["C:/Windows/System32/Magnify.exe"],
 }
 
 
