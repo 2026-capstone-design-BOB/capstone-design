@@ -56,7 +56,7 @@ C:\pluiz_v2\
 │
 ├── config/                 # pydantic-settings
 ├── core/                   # 에이전트 엔진 · 보안 · 캐시
-├── tools/                  # LLM이 호출하는 도구 (앱/시스템/파일/웹/입력/캘린더)
+├── tools/                  # LLM이 호출하는 도구 (앱/시스템/파일/웹/날씨/입력/캘린더)
 ├── services/               # STT · TTS · 웨이크워드
 ├── memory/                 # SQLite 세션 기록
 ├── cache/                  # 커맨드 캐시 · 즐겨찾기 (런타임 생성)

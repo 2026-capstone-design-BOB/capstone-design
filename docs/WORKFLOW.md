@@ -109,7 +109,9 @@ PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 "$PY" tests/test_dependencies.py     # ★ requirements.txt 선언 = 실제 설치인지
 ```
 
-전체 mock 스위트는 **40파일 1228개**. **숫자는 기억으로 적지 않는다** — 세는 방식을 스크립트로 고정해 뒀다:
+전체 mock 스위트의 **숫자는 [README 상태표](README.md)에만 적는다** — 여기에도 적었더니
+한쪽만 갱신돼 낡았다(2026-09-11에 «40파일 1228개»로 굳어 있던 걸 걷어냈다).
+**숫자는 기억으로 적지 않는다** — 세는 방식을 스크립트로 고정해 뒀다:
 
 ```bash
 python scripts/run_mock_suite.py        # 전부 돌리고 파일 수·건수를 센다

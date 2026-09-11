@@ -246,7 +246,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 
 ---
 
-## 도구 (40개)
+## 도구 (41개)
 
 [`core/tool_registry.py`](../core/tool_registry.py)에 단일 등록.
 
@@ -277,6 +277,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 |---|---|---|
 | 앱 제어 | 5 | `open_app` `close_app` `maximize_window` `minimize_window` `show_desktop` |
 | 웹 | 6 | `open_url` `web_search` `youtube_search` `map_search` `fetch_web_info` `crawl_page` |
+| **날씨** | **1** | **`get_weather`** — 검색이 아니라 **실제 기상 자료**(open-meteo)로 답한다. 어제·오늘·내일 · **출처를 밝힌다** (BL-34) |
 | 파일 | 7 | `create_file` `create_folder` `find_file` **`list_directory`** `open_recent_file` `open_file` `write_excel` |
 | 시스템 | 10 | `volume_up/down/set` `mute_toggle` `brightness_up/down` `take_screenshot` `get_battery_status` `get_current_time` `get_running_apps` |
 | 입력 | 3 | `type_text` `press_key` `get_clipboard_text` |
