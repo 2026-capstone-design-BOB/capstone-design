@@ -113,6 +113,26 @@ def mute_toggle() -> str:
 
 # ── 밝기 ─────────────────────────────────────────────────────────
 
+#: 우리가 **마지막으로 설정한** 밝기. WMI 읽기가 안 되는 PC를 위한 기억이다.
+#
+# 🚨 **왜 필요한가 (2026-09-11 3차 실기).** 사용자 지적:
+#   *"밝기 조절은 세기가 되게 확확 바뀌어서 조금 불편해."*
+#   이 PC에서 `_get_brightness()`가 **-1**(읽기 실패)이다. 그러면 예전 코드는
+#   상대 조절을 포기하고 **절대값으로 점프**했다 — 올리면 70, 내리면 30.
+#   즉 «올려/내려»를 번갈아 하면 **70 ↔ 30을 왕복**한다. **한 번에 40%**다.
+#   사용자가 본 응답이 `✓ 밝기를 올렸습니다.`(퍼센트가 없다)인 것이 그 증거다 —
+#   읽기가 됐다면 `✓ 밝기: 50% → 60%`가 나왔을 것이다.
+#
+# 🔑 **읽을 수 없으면 «우리가 쓴 값»을 기억하면 된다.** 처음 한 번만 중앙값에서
+#   출발하고, 그 뒤로는 10%씩 움직인다 — 읽기가 되는 PC와 같은 체감이 된다.
+# ⚠️ 사용자가 키보드 밝기 키로 직접 바꾸면 이 기억은 어긋난다. 그건 받아들인다 —
+#   **40% 점프보다는 낫고**, 읽기가 되는 PC에서는 애초에 이 경로를 타지 않는다.
+_last_brightness: "int | None" = None
+
+#: 읽지도 못하고 기억도 없을 때의 출발점. 양쪽으로 움직일 여지를 남긴다.
+_BRIGHTNESS_FALLBACK_START = 50
+
+
 def _get_brightness() -> int:
     """현재 밝기(0-100) 반환. WMI 사용."""
     try:
@@ -124,9 +144,21 @@ def _get_brightness() -> int:
         return -1
 
 
+def _brightness_base() -> int:
+    """조절의 기준값 — 읽을 수 있으면 실제값, 아니면 **마지막으로 쓴 값**."""
+    current = _get_brightness()
+    if current >= 0:
+        return current
+    if _last_brightness is not None:
+        return _last_brightness
+    return _BRIGHTNESS_FALLBACK_START
+
+
 def _set_brightness(level: int):
     """밝기 설정. WMI 사용."""
+    global _last_brightness
     level = max(0, min(100, level))
+    _last_brightness = level          # 읽기가 안 되는 PC를 위해 기억해 둔다
     try:
         import wmi
         c = wmi.WMI(namespace="wmi")
@@ -147,11 +179,10 @@ def brightness_up(amount: int = 10) -> str:
     화면 밝기를 올립니다.
     amount: 올릴 양 (1-100, 기본 10)
     """
-    current = _get_brightness()
-    if current < 0:
-        _set_brightness(70)
-        return "✓ 밝기를 올렸습니다."
+    current = _brightness_base()
     new_level = min(100, current + amount)
+    if new_level == current:
+        return f"⚠️ 이미 가장 밝아요 ({current}%)."
     _set_brightness(new_level)
     return f"✓ 밝기: {current}% → {new_level}%"
 
@@ -162,11 +193,10 @@ def brightness_down(amount: int = 10) -> str:
     화면 밝기를 내립니다.
     amount: 내릴 양 (1-100, 기본 10)
     """
-    current = _get_brightness()
-    if current < 0:
-        _set_brightness(30)
-        return "✓ 밝기를 내렸습니다."
+    current = _brightness_base()
     new_level = max(0, current - amount)
+    if new_level == current:
+        return f"⚠️ 이미 가장 어두워요 ({current}%)."
     _set_brightness(new_level)
     return f"✓ 밝기: {current}% → {new_level}%"
 
