@@ -686,6 +686,68 @@ _WATCH_RETRY_DIRECTIVE = (
 )
 
 
+# ── «앞으로 하겠다»고 말하고 안 하는 것 (BL-35) ─────────────────────
+#
+# 2026-09-11 실기:
+#     👤 그래 빨리 좀 해 봐
+#     🤖 오늘 날씨를 다시 확인하고 있어요. 어제 날씨도 바로 이어서 찾아볼게요!
+#     로그: 턴 완료 | 도구=없음 | 사유=잡담 | LLM 1회
+# 확인하고 있지 않았다. 사용자는 한 번 더 말해야 했다.
+#
+# 이 저장소가 반복해서 데인 계열의 **세 번째 얼굴**이다:
+#   BL-12·19·26  «안 한 걸 했다고» 말한다
+#   BL-32        «한 걸 말하지 않는다»
+#   BL-35        «앞으로 하겠다고 말하고 안 한다»   ← 여기
+# 셋 다 뿌리가 같다 — **말과 실제가 어긋나는데 사용자는 말만 본다.**
+#
+# 고치는 방식은 BL-19와 **같은 기계**를 쓴다(새 구조를 만들지 않는다):
+# 한 번만 재시도하고, 재시도도 실패하면 **오늘과 똑같이** 둔다.
+# ⚠️ 응답을 고쳐 쓰지 않는다 — 오탐했을 때 멀쩡한 답을 망치는 쪽이 더 나쁘다.
+#    이 그물의 최악은 «LLM 호출 1회 낭비»여야 한다.
+#
+# 정규식은 **판정하지 않고 범위만 좁힌다**(BL-19 주석과 같은 방침). 결정적인 사실은
+# «이번 턴에 도구가 0개 돌았다» 하나다. 그래서 어미만 보지 않고 **도구가 필요한
+# 동작 낱말**(찾다·검색·확인·가져오다…)을 함께 요구한다 — "더 궁금하면 알려드릴게요"
+# 같은 **평범한 인사말**에 그물이 걸리면 안 된다.
+_PROMISE_NOW_RE = re.compile(
+    # ① 즉시 부사 + 도구가 필요한 동작 + 미래/진행 어미
+    r'(지금|바로|이어서|곧|다시|먼저|이제)[^.!?\n]{0,15}'
+    r'(찾아|검색|확인|알아|가져|조회|살펴|읽어)[^.!?\n]{0,10}'
+    r'(볼게요|볼게|할게요|드릴게요|하겠습니다|겠습니다|고 있어요|는 중)'
+    # ② 부사 없이도 진행형이면 «지금 하고 있다»는 주장이다
+    r'|(찾고|검색하고|확인하고|알아보고|가져오고|조회하고)\s*있(어요|습니다)'
+)
+# 이미 «못 했다»고 말하고 있으면 거짓말이 아니다 — 정직한 보고다. 건드리지 않는다.
+_HONEST_FAIL_RE = re.compile(r'못\s|못했|못 했|없어요|없습니다|실패|어려워요|안 돼|안돼')
+
+_PROMISE_RETRY_DIRECTIVE = (
+    "\n\n[중요] 방금 답변에서 «지금 ~하겠다»고 말했지만 도구를 하나도 부르지 "
+    "않았습니다. 말로만 답하면 **실제로는 아무 일도 일어나지 않고**, 사용자는 "
+    "기다리다가 다시 물어봐야 합니다. 지금 필요한 도구를 **반드시 호출**하세요. "
+    "할 수 없는 일이라면 «할 수 없다»고 분명히 말하세요 — 하겠다고만 하지 마세요."
+)
+
+
+def needs_promise_retry(response: Any, *, in_plan: bool = False) -> bool:
+    """«지금 ~하겠다»고 말해 놓고 도구를 안 불렀는가. (BL-35)
+
+    ⚠️ **계획 실행 중(`in_plan`)에는 걸지 않는다.** 거기서 «도구 0개»는 «이 단계는
+       더 할 일이 없다»는 뜻이고 커서가 전진한다(M3). 도구를 강제하면 이미 끝난
+       단계를 **한 번 더 실행**할 수 있고, 그건 되돌릴 수 없는 동작에서 최악이다.
+       계획 턴의 «못 한 단계»는 M3-1의 `unfinished_notice`가 정직하게 보고한다.
+    """
+    if in_plan:
+        return False
+    if getattr(response, "tool_calls", None):
+        return False
+    text = _msg_text(response)
+    if not text.strip():
+        return False
+    if _HONEST_FAIL_RE.search(text):
+        return False
+    return bool(_PROMISE_NOW_RE.search(text))
+
+
 def needs_watch_retry(user_text: str, response: Any, *, watching: bool) -> bool:
     """감시 요청인데 도구를 안 불렀는가 — 한 번 더 물어볼 자리인지 판단한다.
 
@@ -714,6 +776,21 @@ def with_watch_directive(msgs: list[AnyMessage]) -> list[AnyMessage]:
             out[i] = SystemMessage(content=_msg_text(m) + _WATCH_RETRY_DIRECTIVE)
             return out
     return [SystemMessage(content=_WATCH_RETRY_DIRECTIVE.strip())] + out
+
+
+def with_promise_directive(msgs: list[AnyMessage]) -> list[AnyMessage]:
+    """BL-35 재시도용 메시지. `with_watch_directive`와 **같은 규칙**이다.
+
+    ⚠️ 지시를 `HumanMessage`로 **뒤에 붙이지 않는다.** 사용자가 말한 적 없는 문장이
+      히스토리에 사람 발언으로 남고, 다음 턴의 `_last_human_text`가 그걸 읽는다.
+      시스템 지시는 시스템 자리에 둔다.
+    """
+    out = list(msgs)
+    for i, m in enumerate(out):
+        if isinstance(m, SystemMessage):
+            out[i] = SystemMessage(content=_msg_text(m) + _PROMISE_RETRY_DIRECTIVE)
+            return out
+    return [SystemMessage(content=_PROMISE_RETRY_DIRECTIVE.strip())] + out
 
 
 def detect_watch_lie(messages: list[AnyMessage], *, watching: bool) -> Optional[str]:
@@ -1330,6 +1407,36 @@ def build_pluiz_graph(
                 response = retried
             else:
                 _log.warning("[BL-19] 재시도에도 도구 미호출 — 정직하게 보고한다")
+
+        # BL-35: «지금 ~하겠다»고 말해 놓고 도구를 안 불렀으면 **한 번만** 다시 묻는다.
+        # BL-19과 같은 기계다 — 다른 점은 «어떤 도구인지 모른다»는 것뿐이라
+        # 이름 대신 `any`로 묶는다(못 묶는 provider면 설득 재시도로 내려간다).
+        # ⚠️ 재시도도 도구를 안 부르면 **응답을 그대로 둔다.** 고쳐 쓰지 않는다 —
+        #    오탐했을 때 멀쩡한 답을 망치는 쪽이 더 나쁘다.
+        elif needs_promise_retry(response, in_plan=in_plan):
+            _log.info("[BL-35] «하겠다»고만 하고 도구 미호출 → 1회 재시도 | 입력=%r",
+                      user_text)
+            retried = None
+            forced = _forced_llm("any")
+            msgs2 = with_promise_directive(msgs)
+            if forced is not None:
+                try:
+                    retried = forced.invoke(msgs2)
+                except Exception as e:
+                    _log.warning("[BL-35] 강제 호출 실패(%s: %s) → 설득 재시도로 폴백",
+                                 type(e).__name__, e)
+                    retried = None
+            if retried is None:
+                try:
+                    retried = llm_with_tools.invoke(msgs2)
+                except Exception as e:
+                    _log.warning("[BL-35] 재시도 실패(%s) — 원래 응답을 쓴다",
+                                 type(e).__name__)
+                    retried = None
+            if retried is not None and getattr(retried, "tool_calls", None):
+                response = retried
+            else:
+                _log.warning("[BL-35] 재시도에도 도구 미호출 — 원래 응답을 그대로 둔다")
 
         out: dict = {"messages": [response]}
         # 도구를 안 불렀다 = 이 단계에서 더 할 일이 없다 → 다음 단계로 넘어간다.
