@@ -125,6 +125,39 @@ def _is_network_error(e: Exception) -> bool:
 _HITL_NODE = "hitl"
 
 
+#: `_looks_offline()` 결과를 이 초만큼 재사용한다. (ts, offline)
+#  매 턴 소켓을 여는 것을 막으려는 것이고, 10초면 «방금 Wi-Fi를 켰다»도 곧 반영된다.
+_OFFLINE_TTL = 10.0
+_offline_probe: tuple[float, bool] = (0.0, False)
+
+
+def _offline_now(ttl: float = _OFFLINE_TTL) -> bool:
+    """지금 오프라인인가 — **TTL 캐시를 쓴다.** 턴 시작마다 불러도 싸다.
+
+    🚨 **왜 이게 필요한가 (2026-09-11 2차 실기).** 오프라인 판정을 «타임아웃이 난 뒤»에만
+    했더니 **응답이 여전히 45초**였다. 사용자 지적: *"오프라인 응답시간 너무 길다."*
+    맞는 지적이다 — 문구만 고쳤고 **기다리는 시간은 그대로**였다.
+
+    그래서 **턴이 시작될 때** 한 번 보고, 오프라인이면 LLM 타임아웃을 짧게 잡는다
+    (`_timeout()` 참조). 캐시 실행은 그 안에 넉넉히 들어가고,
+    LLM이 필요한 턴은 **45초가 아니라 8초에** 정직한 답으로 끝난다.
+    """
+    global _offline_probe
+    ts, val = _offline_probe
+    now = time.monotonic()
+    if now - ts < ttl:
+        return val
+    val = _looks_offline(timeout=0.8)
+    _offline_probe = (now, val)
+    return val
+
+
+def _reset_offline_probe():
+    """테스트용 — TTL 캐시를 비운다."""
+    global _offline_probe
+    _offline_probe = (0.0, False)
+
+
 def _looks_offline(timeout: float = 1.5) -> bool:
     """지금 인터넷이 끊겨 있나. **추측이 아니라 한 번 찔러 본다.**
 
@@ -165,7 +198,10 @@ _OFFLINE_MSG = ("인터넷이 연결되지 않아서 이 명령은 처리하지 
                 "'메모장 열어줘'처럼 짧고 평소 쓰는 말투로 다시 말씀해 주시겠어요?")
 
 
-def _offline_reply(cache: Any, user_input: str) -> str:
+_NO_HIT = object()      # «아직 안 구했다»와 «없다(None)»를 구분하는 센티넬
+
+
+def _offline_reply(cache: Any, user_input: str, hit: Any = _NO_HIT) -> str:
     """네트워크가 끊겼을 때의 답. **거절 대신 제안을 먼저 시도한다.** (M5 §5-2)
 
     임베딩 검색은 «실행»을 결정하기엔 못 믿는다(ADR §6-3 — 오매칭 0인 임계가
@@ -180,7 +216,8 @@ def _offline_reply(cache: Any, user_input: str) -> str:
     try:
         if cache is None:
             return _OFFLINE_MSG
-        hit = cache.suggest(user_input)
+        if hit is _NO_HIT:
+            hit = cache.suggest(user_input)      # 2인자로 부르면 예전과 같다
         if not hit:
             return _OFFLINE_MSG
         entry, score = hit
@@ -244,6 +281,17 @@ class PluizGraphAgent:
         # `_pending_interrupt`가 «질문 없는 next»(= 타임아웃이 남긴 시체)를 발견하면
         # 여기에 thread_id를 적어 두고, `run_async`가 그 상태를 버린다.
         self._stale_thread: Optional[str] = None
+
+        # 🚨 **오프라인 제안을 들고 있는 곳. (2026-09-11 2차 실기)**
+        #   M5 설계 문서는 *"다음 턴의 「네」가 캐시 경로를 타고 실행한다"* 고 적어 놨는데
+        #   **그 장치가 없었다.** 「네」·「응」·「그래」는 캐시에 없으므로 빗나가고,
+        #   오프라인이라 LLM도 못 불러 **또 거절**로 끝났다. 사용자가 본 그대로다:
+        #     🤖 혹시 '크롬 열어줘' 말씀이신가요? 맞으면 '네'라고 해주세요.
+        #     👤 네
+        #     🤖 인터넷이 연결되지 않아서 이 명령은 처리하지 못했어요. …
+        #   **제안 문구 자체가 거짓 약속이었다** — `_OFFLINE_MSG`의 거짓 약속을 고치면서
+        #   이건 놓쳤다. {thread_id: (CacheEntry, 만료시각)}
+        self._pending_suggest: dict = {}
 
         self.graph = self._build()
         print(f"[PluizGraphAgent] 초기화 완료 | tools={len(self.tools)}개 | "
@@ -366,8 +414,85 @@ class PluizGraphAgent:
         for k in [k for k in list(storage.keys()) if k[0] == thread_id]:
             del storage[k]
 
+    #: 오프라인일 때 쓰는 짧은 상한(초). (2026-09-11 2차 실기)
+    #
+    #  왜 0이 아니라 8인가 — **오프라인에서도 도는 일이 있다.** 캐시 히트는 LLM을
+    #  거치지 않고 도구를 바로 실행하는데, `open_app`은 앱이 뜨기까지 1~3초가 걸린다.
+    #  너무 짧게 잡으면 **멀쩡히 되던 오프라인 명령을 타임아웃으로 죽인다.**
+    #  8초면 캐시 실행은 넉넉히 들어가고, LLM이 필요한 턴은 45초가 아니라 8초에 끝난다.
+    OFFLINE_TIMEOUT = 8
+
     def _timeout(self) -> int:
-        return getattr(self.settings, "agent_timeout", 30) or 30
+        base = getattr(self.settings, "agent_timeout", 30) or 30
+        # 🚨 오프라인이면 LLM을 기다려 줄 이유가 없다. 어차피 실패한다 —
+        #    45초를 태우고 «너무 오래 걸려서 중단했어요»를 내놓던 것이
+        #    2차 실기에서 사용자가 지적한 «응답시간 너무 길다»의 정체다.
+        if base > self.OFFLINE_TIMEOUT and _offline_now():
+            return self.OFFLINE_TIMEOUT
+        return base
+
+    #: 제안을 들고 있는 시간(초). 이 뒤의 「네」는 그 제안과 무관하다고 본다.
+    #  짧게 두는 이유 — 「네」는 **아무 맥락에서나 나오는 말**이다. 오래 들고 있으면
+    #  한참 뒤의 「네」가 엉뚱한 명령을 실행한다. BL-27(캐시가 「그래」를 학습해
+    #  시킨 적 없는 앱 종료가 실행된 사고)과 **같은 모양의 위험**이다.
+    SUGGEST_TTL = 90.0
+
+    def _remember_suggestion(self, thread_id: str, entry: Any) -> None:
+        """오프라인 제안을 다음 턴까지 들고 있는다."""
+        self._pending_suggest[thread_id] = (entry, time.monotonic() + self.SUGGEST_TTL)
+
+    def _take_suggestion(self, thread_id: str) -> Optional[Any]:
+        """들고 있던 제안을 **꺼내면서 지운다**(한 번만 쓴다). 만료됐으면 None."""
+        item = self._pending_suggest.pop(thread_id, None)
+        if item is None:
+            return None
+        entry, expires = item
+        return entry if time.monotonic() < expires else None
+
+    def _accept_suggestion(self, thread_id: str, user_input: str) -> Optional[str]:
+        """«혹시 이거 말씀이신가요?» 에 「네」라고 했으면 **실제로 실행한다.**
+
+        🚨 **왜 이 함수가 생겼나 (2026-09-11 2차 실기).** M5는 제안을 내놓고
+        *"맞으면 '네'라고 해주세요"* 라고 했지만, **「네」를 받아 줄 곳이 없었다.**
+        「네」는 캐시에 없어 빗나가고, 오프라인이라 LLM도 못 불러 또 거절했다.
+        **제안 문구가 지키지 못할 약속을 하고 있었다** — `_OFFLINE_MSG`의 거짓 약속을
+        고치면서 정작 제안 쪽은 놓쳤다.
+
+        판정은 `classify_confirmation`을 **그대로 빌려 쓴다**(HITL 승인과 같은 함수).
+        말버릇을 두 곳에서 따로 읽으면 한쪽만 고쳐진다 — BL-29의 교훈이다.
+
+        ⚠️ **승인 대기보다 늦게 본다.** `_pending_interrupt`가 먼저 처리하므로
+          삭제 승인의 「네」가 여기로 올 일은 없다.
+        ⚠️ 제안은 **`LEARNABLE_TOOLS`의 안전한 도구 한 개**만 담긴다(`suggest()`의 V5).
+          그래서 여기서 바로 실행해도 되돌릴 수 없는 일은 일어나지 않는다.
+        Returns: 실행 결과 문장, 또는 None(제안이 없거나 「네」가 아니었다).
+        """
+        entry = self._take_suggestion(thread_id)
+        if entry is None:
+            return None
+        try:
+            from core.graph import classify_confirmation
+            verdict = classify_confirmation(user_input)
+        except Exception:
+            return None
+        if verdict != "approve":
+            # 「아니」든 다른 명령이든 **제안은 버린다**(이미 pop 했다).
+            # 되살려 두면 한참 뒤의 「네」가 이걸 실행한다.
+            _log.info("[M5] 제안 취소 | 답변=%r → %s | %r",
+                      user_input, verdict, getattr(entry, "pattern", "?"))
+            return None
+        cache = getattr(self, "cache", None)
+        if cache is None:
+            return None
+        try:
+            result = cache.execute_sync(entry)
+        except Exception as e:
+            _log.warning("[M5] 제안 실행 실패 | %r | %s: %s",
+                         getattr(entry, "pattern", "?"), type(e).__name__, e)
+            return "제안한 명령을 실행하지 못했어요. 직접 다시 말씀해 주시겠어요?"
+        _log.info("[M5] 제안 실행 | 답변=%r | %r | 결과 %d자",
+                  user_input, getattr(entry, "pattern", "?"), len(result or ""))
+        return result
 
     def _dead_end(self, thread_id: str, user_input: str, started: float,
                   kind: str, exc: Optional[Exception] = None) -> str:
@@ -393,10 +518,19 @@ class PluizGraphAgent:
         self._stale_thread = thread_id
 
         elapsed = time.perf_counter() - started
-        if kind == "timeout" and _looks_offline():
+        if kind == "timeout" and _offline_now():
             kind = "network"                      # 45초를 태운 진짜 이유
         if kind == "network":
-            reply = _offline_reply(getattr(self, "cache", None), user_input)
+            cache = getattr(self, "cache", None)
+            hit = None
+            try:
+                hit = cache.suggest(user_input) if cache is not None else None
+            except Exception:
+                hit = None
+            # 제안을 했으면 **들고 있는다** — 다음 턴의 「네」가 이걸 실행한다.
+            if hit:
+                self._remember_suggestion(thread_id, hit[0])
+            reply = _offline_reply(cache, user_input, hit)
         elif kind == "timeout":
             reply = _TIMEOUT_MSG
         else:
@@ -445,6 +579,16 @@ class PluizGraphAgent:
                 self._stale_thread = None
                 _log.info("중단 상태 버림 | thread=%s | 이 입력은 새 명령으로 처리한다",
                           thread_id)
+
+            # 🔑 오프라인 제안에 「네」라고 했으면 **여기서 실행한다.** (2026-09-11)
+            #   승인 대기(`_pending_interrupt`)보다 **뒤**에 둔다 — 삭제 승인의 「네」를
+            #   가로채면 안 된다. 제안이 없거나 「네」가 아니면 None이라 그냥 지나간다.
+            accepted = self._accept_suggestion(thread_id, user_input)
+            if accepted is not None:
+                _log.info("턴 완료 | 입력=%r | 도구=[제안수락] | 응답 %d자 | 소요 %.2fs "
+                          "| LLM 0회(캐시)", user_input, len(accepted),
+                          time.perf_counter() - started)
+                return accepted
 
             # 하이브리드 가드(P3-4): 규칙 통과했지만 의심스러운 신규 입력만 LLM 판정.
             # 스레드+타임아웃, 실패 시 skip(규칙 결과만 사용).
