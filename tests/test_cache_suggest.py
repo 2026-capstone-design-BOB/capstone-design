@@ -111,8 +111,23 @@ if _EMB_OK:
               == cache.suggest("어 밝기 좀 낮춰봐")[0].tool_calls[0]["name"],
           "패턴은 달라도 **도구는 같아야** 한다")
 
+# 2026-09-11: `_shares_token`이 후보의 **도구 이름**도 받게 되어(BL-37) 호출이 3인자가 됐다.
+#   검사의 의도는 «순서»다 — 걸러낸 뒤(cand)에 순위를 본다(max).
 check("걸러낸 뒤에 순위를 본다(반대로 하면 군말에 흔들린다)",
-      "_shares_token(text, keys[i])" in src and "max(cand" in src)
+      "self._shares_token(text, keys[i], _tool_of(i))" in src and "max(cand" in src)
+# 🚨 BL-37 — 문지기는 «어휘»가 아니라 «도구 이름»이 먼저다.
+#   _extract_action('메모장 불러와줘') → None 이라 어휘로는 open_app이 새어나갔다.
+check("되돌리기 비싼 판정은 도구 이름으로 한다 (BL-37)",
+      "_AMBIGUOUS_TOOLS" in src and "tool_name not in self._AMBIGUOUS_TOOLS" in src,
+      "어휘는 빠지는 말이 생기지만 도구 이름은 빠질 수 없다")
+# ⚠️ 주석에 예전 코드가 인용돼 있으므로 **코드 형태**(들여쓰기+다음 줄)로 찾는다.
+_NL = chr(10)
+_ENTITY_GATE = _NL + "        if not (e1 and e1 == e2):" + _NL + "            return False"
+_ACTION_OK = _NL + "        if a1 and a1 == a2:" + _NL + "            return True"
+check("🚨 대상(entity) 합의를 «항상» 요구한다",
+      _ENTITY_GATE in src and _ACTION_OK in src
+      and src.index(_ENTITY_GATE) < src.index(_ACTION_OK),
+      "동작만 같으면 통과시키면 «그림 반 열어줘»에 «크롬 열어줘»가 제안된다(실기)")
 # 🔖 2026-09-11 — 뜻 없는 바닥값이 멀쩡한 명령을 갈랐다
 # ('소리 좀 키워줘' 0.14는 막히고 '어 소리 좀 키워봐' 0.16은 통과했다).
 check("🚨 점수 임계를 두지 않는다", "SUGGEST_MIN_COS" not in src,
@@ -195,7 +210,7 @@ check("네트워크 오류일 때만 제안한다",
       agent_src.count('"network" if _is_network_error(') == 2,
       "두 분기(재시도 전/후) 모두 _dead_end에 network 여부를 넘겨야 한다")
 check("제안은 network 판정일 때만 나간다",
-      '_offline_reply(getattr(self, "cache", None), user_input)' in agent_src
+      "_offline_reply(cache, user_input, hit)" in agent_src
       and 'if kind == "network":' in agent_src)
 check("네트워크 오류가 아니면 그대로 오류를 말한다",
       "명령 처리 중 오류가 발생했어요" in agent_src)
@@ -205,8 +220,25 @@ check("네트워크 오류가 아니면 그대로 오류를 말한다",
 check("실패한 턴은 반드시 로그를 남긴다", '"턴 실패 | 입력=%r | 사유=%s' in agent_src,
       "ERROR 0건인데 턴이 사라지는 일이 다시 생기면 안 된다")
 check("타임아웃이면 오프라인인지 확인한다",
-      'if kind == "timeout" and _looks_offline():' in agent_src,
+      'if kind == "timeout" and _offline_now():' in agent_src,
       "오프라인에서는 네트워크 오류보다 타임아웃이 먼저 난다 — 그래서 타임아웃은 최종 판정이 아니다")
+
+# 🚨 2026-09-11 2차 실기 — «응답시간 너무 길다». 문구만 고치고 **기다리는 시간은
+#   그대로**였다(45초). 오프라인이면 LLM 상한을 짧게 잡는 것이 그 답이다.
+check("오프라인이면 LLM 상한을 짧게 잡는다",
+      "OFFLINE_TIMEOUT = 8" in agent_src
+      and "if base > self.OFFLINE_TIMEOUT and _offline_now():" in agent_src,
+      "0이 아니라 8인 이유 — 캐시 히트는 오프라인에서도 돌고 open_app이 1~3초 걸린다")
+
+# 🚨 «맞으면 «네»라고 해주세요»가 지키지 못할 약속이었다 — 「네」를 받아 줄 곳이 없었다.
+check("제안에 「네」하면 실제로 실행한다",
+      "_accept_suggestion" in agent_src and "cache.execute_sync(entry)" in agent_src)
+check("승인 판정을 HITL과 같은 함수로 한다",
+      "from core.graph import classify_confirmation" in agent_src,
+      "말버릇을 두 곳에서 따로 읽으면 한쪽만 고쳐진다 (BL-29의 교훈)")
+check("제안은 한 번만 쓰고 만료된다",
+      "SUGGEST_TTL" in agent_src and "_pending_suggest.pop" in agent_src,
+      "오래 들고 있으면 한참 뒤의 「네」가 엉뚱한 명령을 실행한다 (BL-27과 같은 모양)")
 
 # 🚨 거짓 약속 금지: 예전 문구는 «앱 실행은 오프라인에서도 쓸 수 있어요!» 라고
 #   약속했는데 캐시가 빗나가면 안 됐다(실기에서 «메모장 열어달라»가 실패).

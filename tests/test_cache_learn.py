@@ -127,6 +127,102 @@ def run():
     check("정상 동적은 남는다('스크린샷')", c.find("스크린샷") is not None)
     check("clear_dynamic과 다르다(전부 지우지 않음)", c.stats()["dynamic"] > 0)
 
+    # ── 🚨 캐시 사전 ↔ 실행 사전이 어긋나지 않는가 (2026-09-11 2차 실기) ──
+    #
+    # **사용자 지적**: *"대충 키워드 메모장/그림판 이런 것들이랑 열어줘/띄워봐/보여줘
+    # 같은 것들은 패턴 매칭이라도 해야되는 거 아닌가. 너무 멍청해서 오프라인 이점이
+    # 너무 부족함."*
+    #
+    # 맞는 지적이었다. 구조는 이미 있었고(`_build_intent_index`가 앱마다 open/close를
+    # 자동 합성한다) **사전이 얇았다.** 실기에서 «그림판 열어줘»가 네 번 실패한 이유가
+    # 그것이다 — 모델이 멍청한 게 아니라 표에 그림판이 없었다.
+    #
+    # 🚨 **그래서 이 검사가 필요하다.** 캐시에만 앱을 넣으면 **캐시는 히트하는데
+    #   실행이 실패한다** — 사용자에게는 «된다고 해놓고 안 되는» 것으로 보이고,
+    #   그게 이 저장소가 가장 싫어하는 결함 유형이다(BL-12·19·26·35).
+    #   오프라인이 차별점이라면 **이 표의 길이가 차별점의 크기**이므로 앞으로도
+    #   계속 늘어날 것이다. 늘릴 때마다 짝을 맞췄는지 여기서 걸린다.
+    print("=== 캐시가 아는 앱은 실행 사전도 알아야 한다 ===")
+    import core.command_cache as CC
+    from tools.app_control import APP_ALIASES, APP_PROCESS_MAP, APP_DISPLAY_NAMES
+
+    # 🔑 **검사할 불변식을 정확히 고른다.** 표면형(«노트패드»)은 캐시가 *알아듣는* 말이고
+    #   실행과 무관하다 — 합성 엔트리는 `open_app(app=표시명)`을 부르므로
+    #   **«표시명»이 실행 사전에서 같은 키로 풀리는지**만 맞으면 된다.
+    #   (이 구분을 틀리면 멀쩡한 동의어가 실패로 잡힌다 — 처음에 그랬다)
+    missing_alias, missing_proc, missing_disp = [], [], []
+    for _surface, key, display in CC.APP_ENTITIES:
+        norm = display.lower().replace(" ", "")
+        if APP_ALIASES.get(norm) != key and norm != key:
+            missing_alias.append((display, key, APP_ALIASES.get(norm)))
+        if key not in APP_PROCESS_MAP:
+            missing_proc.append(key)
+        if key not in APP_DISPLAY_NAMES:
+            missing_disp.append(key)
+
+    check(f"합성에 쓰이는 표시명이 실행 사전에서 같은 키로 풀린다 (어긋난 것: {missing_alias})",
+          not missing_alias)
+    check(f"앱 키가 전부 APP_PROCESS_MAP에 있다 (빠진 것: {sorted(set(missing_proc))})",
+          not missing_proc)
+    check(f"앱 키가 전부 APP_DISPLAY_NAMES에 있다 (빠진 것: {sorted(set(missing_disp))})",
+          not missing_disp)
+
+    # 실기에서 죽었던 말투가 이제 캐시를 타는가 — 사전 확장의 본체다.
+    fresh = CC.CommandCache()
+    LIVE = {
+        "그림판 열어줘":     "open_app",
+        "그림판 열어달라고":  "open_app",
+        "그림판 띄워봐":     "open_app",
+        "그림판 보여줘":     "open_app",
+        "작업관리자 열어줘":  "open_app",
+        "제어판 켜줘":       "open_app",
+        "돋보기 실행시켜":    "open_app",
+        "그림판 꺼줘":       "close_app",
+        "메모장을 띄어 보도록 하여라": "open_app",
+    }
+    for text, want in LIVE.items():
+        f = fresh.find(text)
+        check(f"{text!r} → {want} (LLM 없이)",
+              f is not None and f[0].tool_calls[0]["name"] == want)
+
+    # ── 🚨 S2 퍼지 임계 — 실측으로 0.80 → 0.83 (2026-09-11 2차 실기) ──
+    #
+    # 사용자가 *"메모장 만들어줘"* 라고 했는데 **«메모장 창을 앞으로 가져왔습니다»**.
+    # difflib가 `'메모장 열어줘'`와 **정확히 0.800**이라 임계에 딱 걸려 통과했다.
+    # 「만들어」와 「열어」는 다른 뜻이다.
+    #
+    # 경계가 비어 있어 올릴 수 있었다(실측 17문장):
+    #   되어야 하는 것 중 S2 의존 최저 : 0.857  ('볼륨 좀 올려줘')
+    #   되면 안 되는 것 중 최고       : 0.800  ('메모장 만들어줘')
+    # **이 두 숫자를 여기에 못 박는다** — 한쪽이 움직이면 임계를 다시 정해야 한다.
+    print("=== S2 퍼지 임계는 «되는 것»과 «안 되는 것» 사이에 있다 ===")
+    import difflib as _dl
+
+    def _best_s2(text):
+        n = c._normalize(text)
+        return max((_dl.SequenceMatcher(None, n, k).ratio() for k in fresh._cache),
+                   default=0.0)
+
+    check(f"임계가 0.83이다 (현재 {CC.SIMILARITY_THRESHOLD})",
+          CC.SIMILARITY_THRESHOLD == 0.83)
+    check("🚩 원문 재현: '메모장 만들어줘'가 임계 아래다",
+          _best_s2("메모장 만들어줘") < CC.SIMILARITY_THRESHOLD)
+    check("'메모장 만들어줘' → 캐시가 집지 않는다 (LLM/제안으로 간다)",
+          fresh.find("메모장 만들어줘") is None)
+    for t in ("볼륨 좀 올려줘", "밝기 좀 올려줘"):
+        check(f"회귀: {t!r}는 여전히 임계 위다 ({_best_s2(t):.3f})",
+              _best_s2(t) >= CC.SIMILARITY_THRESHOLD)
+        check(f"회귀: {t!r}는 캐시를 탄다", fresh.find(t) is not None)
+
+    # 🚨 회귀 — 「보여」를 open에 넣었으므로 이 둘을 빼앗지 않았는지 본다.
+    #   ACTION_PATTERNS는 위에서부터 먼저 맞는 것을 쓰므로 show_desktop·recent_file이
+    #   open보다 앞에 있어야 한다. 순서가 바뀌면 여기서 깨진다.
+    for text, want in (("바탕화면 보여줘", "show_desktop"),
+                       ("최근에 열었던 파일 보여줘", "open_recent_file")):
+        f = fresh.find(text)
+        check(f"회귀: {text!r} → {want} (open이 빼앗지 않는다)",
+              f is not None and f[0].tool_calls[0]["name"] == want)
+
     print(f"\n결과: {passed}/{total} 통과")
     return passed == total
 
