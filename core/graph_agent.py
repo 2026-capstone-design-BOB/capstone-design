@@ -120,9 +120,49 @@ def _is_network_error(e: Exception) -> bool:
     ])
 
 
+#: 승인 대기를 만드는 **유일한** 노드. `next`가 이것일 때만 «묻는 중»이다.
+#  (2026-09-11 실기: 타임아웃이 `next=('agent',)`를 남겨 놓고 죽었다 → 아래 참조)
+_HITL_NODE = "hitl"
+
+
+def _looks_offline(timeout: float = 1.5) -> bool:
+    """지금 인터넷이 끊겨 있나. **추측이 아니라 한 번 찔러 본다.**
+
+    🚨 **왜 필요한가 (2026-09-11 실기).** 오프라인에서 LLM을 부르면 SDK가 내부
+    재시도를 돌다가 **네트워크 오류를 던지기 전에 `agent_timeout`(45초)이 먼저**
+    터졌다. 그래서 `_is_network_error()` 분기가 한 번도 타지 않고, 사용자는
+    *"처리가 너무 오래 걸려서 중단했어요"* 를 받았다 — **끊긴 걸 알려주지도,
+    캐시 제안을 내지도 못했다.** 실기에서 오프라인 턴 6개가 전부 이렇게 죽었다.
+
+    ⚠️ **정상 경로에서는 부르지 않는다.** 타임아웃·예외가 난 뒤에만 본다 —
+      매 턴 소켓을 열면 온라인일 때 공짜로 수 ms를 버린다.
+    ⚠️ 실패는 «온라인»으로 읽는다. 판정 실패로 «오프라인 문구»를 내보내면
+      **멀쩡한 네트워크에 거짓말을 하는 셈**이라 더 나쁘다.
+    """
+    import socket
+    for host, port in (("8.8.8.8", 53), ("1.1.1.1", 53)):
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return False                      # 한 곳이라도 닿으면 온라인
+        except Exception:
+            continue
+    return True
+
+
 _TIMEOUT_MSG = "처리가 너무 오래 걸려서 중단했어요. 조금 더 간단하게 말씀해 주시겠어요?"
-_OFFLINE_MSG = ("인터넷 연결이 없어서 이 명령은 처리하기 어려워요. "
-                "앱 실행, 볼륨 조절 같은 기본 명령은 오프라인에서도 쓸 수 있어요!")
+
+# 🚨 **이 문구가 거짓 약속을 하고 있었다 (2026-09-11 실기).** 예전 문구는
+#   *"앱 실행, 볼륨 조절 같은 기본 명령은 오프라인에서도 쓸 수 있어요!"* 였는데,
+#   사용자가 곧바로 *"메모장 열어줘"* 를 했더니 **안 됐다.**
+#   오프라인에서 실제로 도는 것은 **캐시가 알아듣는 표현**뿐이다 —
+#   `'메모장 열어줘'`·`'메모장 켜줘'`·`'메모장 띄워봐'` 는 히트하지만
+#   `'메모장을 띄어 보도록 하여라'`·`'택스트 파일 열어줘'` 는 빗나간다(실측).
+#   **되는 범위를 넘겨 약속하면 BL-12·19·26·35(«안 한 걸 했다고 말하기»)의
+#   오프라인 버전이 된다.** 그래서 «무엇이 되는지»를 예시로만 말하고,
+#   이 명령이 될 거라고는 말하지 않는다.
+_OFFLINE_MSG = ("인터넷이 연결되지 않아서 이 명령은 처리하지 못했어요. "
+                "인터넷 없이 되는 건 이미 익혀 둔 명령뿐이에요 — "
+                "'메모장 열어줘'처럼 짧고 평소 쓰는 말투로 다시 말씀해 주시겠어요?")
 
 
 def _offline_reply(cache: Any, user_input: str) -> str:
@@ -201,6 +241,10 @@ class PluizGraphAgent:
         else:
             self.plan_decompose = None
 
+        # `_pending_interrupt`가 «질문 없는 next»(= 타임아웃이 남긴 시체)를 발견하면
+        # 여기에 thread_id를 적어 두고, `run_async`가 그 상태를 버린다.
+        self._stale_thread: Optional[str] = None
+
         self.graph = self._build()
         print(f"[PluizGraphAgent] 초기화 완료 | tools={len(self.tools)}개 | "
               f"화면검증={'on' if self.visual_check else 'off'} | "
@@ -255,10 +299,42 @@ class PluizGraphAgent:
             st = self.graph.get_state(config)
             nxt = tuple(getattr(st, "next", ()) or ())
             n_itr = self._count_interrupts(st)
+            thread_id = config.get("configurable", {}).get("thread_id")
             _log.debug("승인 대기 확인 | thread=%s | next=%s | 대기 중인 질문=%d",
-                       config.get("configurable", {}).get("thread_id"),
-                       nxt or "없음", n_itr)
-            return bool(nxt) or n_itr > 0
+                       thread_id, nxt or "없음", n_itr)
+
+            # 질문이 실제로 있으면 승인 대기다 — 1차 질문이든 재질문이든 여기서 잡힌다
+            # (위 표: 둘 다 interrupts ≥ 1).
+            if n_itr > 0:
+                return True
+
+            # `next`가 hitl이면 질문을 막 내려는 중이다. 버전에 따라 interrupts가
+            # 아직 안 보일 수 있어 **이 경우만** next를 신호로 인정한다.
+            if nxt and _HITL_NODE in nxt:
+                return True
+
+            # 🚨 **여기가 2026-09-11 실기에서 세션을 죽인 자리다.**
+            #   예전 코드는 `bool(nxt) or n_itr > 0` 이었다. 그런데 `agent_timeout`(45초)이
+            #   터지면 **실행 중간에 멈춘 그래프**가 체크포인트에 남는다:
+            #
+            #       next=('agent',) | 대기 중인 질문=0      ← 승인 대기가 아니다. 시체다
+            #
+            #   `bool(nxt)`가 이걸 «승인 대기»로 읽어 **그 뒤 모든 입력이
+            #   `Command(resume=...)`로 소비**됐다. resume는 `input_guard`·`fast_path`를
+            #   거치지 않으므로 **캐시에 있는 명령조차 실행되지 않고**, 재개 대상이
+            #   죽은 노드라 또 45초 타임아웃이 나 **영구 고장**이 된다.
+            #   실기에서 17:32:51 이후 5분간 입력 8개가 전부 침묵했다.
+            #
+            #   그래서 «질문 없는 next»는 승인 대기로 보지 않고, **버릴 상태로 표시**한다
+            #   (실제 삭제는 run_async가 한다 — 이 함수는 테스트가 직접 부르므로
+            #    부수효과를 두지 않는다).
+            if nxt:
+                _log.warning(
+                    "중단된 그래프 발견 | thread=%s | next=%s | 질문=0 "
+                    "→ 승인 대기가 아니다. 상태를 버리고 새 명령으로 처리한다",
+                    thread_id, nxt)
+                self._stale_thread = thread_id
+            return False
         except Exception as e:
             _log.warning("승인 대기 확인 실패(새 명령으로 처리됨): %s: %s",
                          type(e).__name__, e)
@@ -293,6 +369,45 @@ class PluizGraphAgent:
     def _timeout(self) -> int:
         return getattr(self.settings, "agent_timeout", 30) or 30
 
+    def _dead_end(self, thread_id: str, user_input: str, started: float,
+                  kind: str, exc: Optional[Exception] = None) -> str:
+        """응답을 못 만들고 끝나는 턴. **반드시 로그를 남기고, 상태를 버린다.**
+
+        🚨 **왜 이 함수가 생겼나 (2026-09-11 실기).** 예전에는 타임아웃·네트워크·
+        기타 예외 **세 경로가 전부 `return`만** 했다. `턴 완료`도 `_log` 호출도
+        없어서 — **로그에 ERROR가 0건인데 턴 6개가 사라졌다.** 원인을 찾는 데
+        로그가 아니라 «입력과 턴 완료를 짝지어 빈 자리를 세는» 스크립트가 필요했다.
+        BL-28이 «도구를 안 부른 턴의 사유»를 메웠지만 **«응답조차 못 한 턴»은
+        구멍으로 남아 있었다.** 여기가 그 구멍이다.
+
+        🔑 **타임아웃이면 오프라인인지 확인한다.** 오프라인에서 LLM을 부르면
+        SDK 내부 재시도 때문에 **네트워크 오류보다 타임아웃이 먼저** 난다
+        (`_looks_offline` 주석 참조). 그래서 `kind="timeout"`은 최종 판정이 아니다 —
+        한 번 찔러 보고 끊겨 있으면 **오프라인 답(캐시 제안 포함)** 으로 바꾼다.
+        이걸 안 하면 사용자는 *"너무 오래 걸려서 중단했어요"* 를 받고,
+        **왜 안 되는지도 무엇이 되는지도 모른 채** 같은 말을 반복한다.
+        """
+        # 지금 한 번 지우고(최선), **다음 턴에 한 번 더** 지운다 —
+        # 좀비 워커가 이 뒤에 체크포인트를 다시 쓸 수 있다(run_async의 주석 참조).
+        self._clear_thread(thread_id)
+        self._stale_thread = thread_id
+
+        elapsed = time.perf_counter() - started
+        if kind == "timeout" and _looks_offline():
+            kind = "network"                      # 45초를 태운 진짜 이유
+        if kind == "network":
+            reply = _offline_reply(getattr(self, "cache", None), user_input)
+        elif kind == "timeout":
+            reply = _TIMEOUT_MSG
+        else:
+            reply = f"명령 처리 중 오류가 발생했어요: {exc}"
+
+        _log.warning(
+            "턴 실패 | 입력=%r | 사유=%s | 소요 %.2fs | 응답 %d자%s",
+            user_input, kind, elapsed, len(reply),
+            f" | 예외={type(exc).__name__}: {exc}" if exc is not None else "")
+        return reply
+
     async def run_async(self, user_input: str, thread_id: str = "default") -> str:
         """비동기 실행 (기존 PluizAgent.run_async와 동일 시그니처).
 
@@ -320,6 +435,17 @@ class PluizGraphAgent:
             _log.info("승인 재개 | thread=%s | 답변=%r", thread_id, user_input)
             payload = Command(resume=user_input)
         else:
+            # 타임아웃이 남긴 중단 상태를 **여기서** 버린다. 왜 «다음 턴»인가 —
+            # `asyncio.wait_for`는 `asyncio.to_thread`의 워커를 **취소하지 못한다.**
+            # 타임아웃 직후에 지우면 좀비 워커가 그 뒤에 체크포인트를 다시 써서
+            # 시체가 되살아난다(실기에서 45초 주기로 8번 반복됐다).
+            # 다음 입력이 올 때쯤엔 워커가 끝나 있으므로 이 자리가 안전하다.
+            if self._stale_thread == thread_id:
+                self._clear_thread(thread_id)
+                self._stale_thread = None
+                _log.info("중단 상태 버림 | thread=%s | 이 입력은 새 명령으로 처리한다",
+                          thread_id)
+
             # 하이브리드 가드(P3-4): 규칙 통과했지만 의심스러운 신규 입력만 LLM 판정.
             # 스레드+타임아웃, 실패 시 skip(규칙 결과만 사용).
             try:
@@ -328,6 +454,10 @@ class PluizGraphAgent:
                     asyncio.to_thread(hybrid_guard_check, user_input, self.llm),
                     timeout=8)
                 if blocked:
+                    # 이 경로도 «턴 완료»를 찍지 않는다 — 안 남기면 보안 차단이
+                    # 통계에서 통째로 빠지고, 오탐을 세어 볼 수도 없다.
+                    _log.warning("턴 차단 | 입력=%r | 사유=하이브리드가드 | 소요 %.2fs",
+                                 user_input, time.perf_counter() - started)
                     return reason
             except Exception as e:
                 print(f"[PluizGraphAgent] 하이브리드 가드 skip(무시): {e}")
@@ -338,12 +468,12 @@ class PluizGraphAgent:
                 asyncio.to_thread(self._invoke_sync, payload, config),
                 timeout=self._timeout())
         except (asyncio.TimeoutError, TimeoutError):
-            self._clear_thread(thread_id)
-            return _TIMEOUT_MSG
+            return self._dead_end(thread_id, user_input, started, "timeout")
         except Exception as e:
             err = str(e)
             if "tool_calls that do not have a corresponding ToolMessage" in err:
                 # 히스토리 오염 → 초기화 후 새 입력으로 1회 재시도
+                _log.warning("히스토리 오염 → 초기화 후 1회 재시도 | 입력=%r", user_input)
                 self._clear_thread(thread_id)
                 fresh = {"messages": [HumanMessage(content=user_input)]}
                 try:
@@ -351,17 +481,15 @@ class PluizGraphAgent:
                         asyncio.to_thread(self._invoke_sync, fresh, config),
                         timeout=self._timeout())
                 except (asyncio.TimeoutError, TimeoutError):
-                    self._clear_thread(thread_id); return _TIMEOUT_MSG
+                    return self._dead_end(thread_id, user_input, started, "timeout")
                 except Exception as e2:
-                    self._clear_thread(thread_id)
-                    return (_offline_reply(getattr(self, 'cache', None), user_input)
-                            if _is_network_error(e2)
-                            else f"명령 처리 중 오류가 발생했어요: {e2}")
+                    return self._dead_end(
+                        thread_id, user_input, started,
+                        "network" if _is_network_error(e2) else "error", e2)
             else:
-                self._clear_thread(thread_id)
-                return (_offline_reply(getattr(self, 'cache', None), user_input)
-                        if _is_network_error(e)
-                        else f"명령 처리 중 오류가 발생했어요: {e}")
+                return self._dead_end(
+                    thread_id, user_input, started,
+                    "network" if _is_network_error(e) else "error", e)
 
         # 승인 대기(interrupt) 발생 → 질문을 반환하고 대기 (다음 발화가 승인/거부)
         itr = result.get("__interrupt__") if isinstance(result, dict) else None
@@ -573,11 +701,36 @@ class PluizGraphAgent:
         # 읽는 쪽에서 *"잔여 명령이 있으면 캐시를 포기한다"* 고 정한 BL-15의 쓰기 쪽 짝이다.
         # (`is_compound_command`는 부정어까지 넓게 잡는데, 여기서는 넓은 게 안전하다 —
         #  학습을 덜 할 뿐이고, 부정어 학습 거부는 BL-02가 바라던 것이다.)
+        # 🚨 **BL-41 — 읽기와 쓰기가 같은 질문에 다르게 답하고 있었다 (2026-09-11 실기).**
+        #   위 주석이 *"BL-15의 쓰기 쪽 짝"* 이라고 적어 놨는데 **짝이 아니었다.**
+        #   읽는 쪽은 `has_uncovered_command`를 쓰고 쓰는 쪽은 `is_compound_command`만
+        #   썼는데, 후자가 더 좁다. 실기에서 이것이 캐시에 박혔다:
+        #
+        #       "어 그 pc 밝기 올려 주고 오늘 저녁 메뉴 좀 추천해 주라 소윤이 배고파"
+        #         → [brightness_up]          ← «메뉴 추천»이 통째로 사라진 채 학습됐다
+        #
+        #       has_uncovered_command(...) → True   ← 읽기는 막았다 (로그에 [BL-15])
+        #       is_compound_command(...)   → False  ← 쓰기는 통과시켰다 ([BL-21] 줄이 없다)
+        #
+        #   읽기 쪽이 막아 주므로 **당장 실행 사고는 없다.** 그래서 조용히 쌓인다 —
+        #   그리고 쓰레기 패턴이 **M5 제안 후보 풀에 들어간다**(`brightness_up`은
+        #   `LEARNABLE_TOOLS`이고 호출이 1개라 자격을 통과한다).
+        #
+        # 🔑 **그래서 둘 다 본다.** 한쪽이 다른 쪽을 포함하지 않는다 —
+        #   `is_compound_command`는 **부정어·접속**을 넓게 잡고(BL-02가 바라던 것),
+        #   `has_uncovered_command`는 **«한 문장인데 캐시가 일부만 이해한» 경우**를 잡는다.
+        #   BL-29가 *"읽는 쪽 셋이 서로 다르게 읽어서 결함이 됐다"* 며 판정을 한 곳으로
+        #   모은 것과 같은 교훈이고, 여기서는 **읽기 관문을 쓰기에서도 그대로 부른다.**
         try:
             planned = len(result.get("plan") or [])
-            if planned or is_compound_command(user_input):
-                _log.info("[BL-21] 복합 명령은 학습하지 않는다 | 입력=%r | 계획 %d단계",
-                          user_input, planned)
+            uncovered = False
+            try:
+                uncovered = bool(cache.has_uncovered_command(user_input))
+            except Exception:
+                pass                  # 캐시 구현이 달라도(테스트 더블) 학습을 막지는 않는다
+            if planned or is_compound_command(user_input) or uncovered:
+                _log.info("[BL-21] 복합 명령은 학습하지 않는다 | 입력=%r | 계획 %d단계 | "
+                          "잔여명령=%s", user_input, planned, uncovered)
                 return
         except Exception as e:                    # 학습은 부가 기능이다 — 턴을 죽이지 않는다
             print(f"[PluizGraphAgent] 복합 판정 실패(학습 계속): {e}")
