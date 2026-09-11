@@ -126,6 +126,39 @@ def map_search(destination: str, origin: str = "") -> str:
         return f"✗ 지도 검색 실패: {e}"
 
 
+def _quick_read(url: str, limit: int = 2000) -> str:
+    """페이지 본문을 **빠르게만** 읽는다. 못 읽으면 빈 문자열.
+
+    ⚠️ `crawl_page`와 일부러 다르다 — playwright 폴백이 **없다.**
+       이건 `fetch_web_info` 안에서 매번 도는 곁다리라, 20초짜리 브라우저
+       폴백이 붙으면 «날씨 알려줘» 한 마디가 `agent_timeout`(45초)을 먹는다.
+       읽히면 덤이고 안 읽히면 검색 결과로 간다 — **실패해도 조용하다.**
+    """
+    if not url or not url.startswith(("http://", "https://")):
+        return ""
+    try:
+        import httpx
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "ko-KR,ko;q=0.9",
+        }
+        resp = httpx.get(url, headers=headers, timeout=6, follow_redirects=True)
+        resp.raise_for_status()
+        text = _extract_text_from_html(resp.text)
+    except Exception as e:
+        print(f"[_quick_read] 실패({url}): {e}")
+        return ""
+    text = text.strip()
+    # 300자 미만은 JS 렌더링 껍데기다. 붙여 봐야 답이 안 나오고 토큰만 쓴다.
+    if len(text) < 300:
+        return ""
+    return text[:limit] + ("\n...(이하 생략)" if len(text) > limit else "")
+
+
 @tool
 def fetch_web_info(query: str) -> str:
     """
@@ -138,8 +171,10 @@ def fetch_web_info(query: str) -> str:
     - "비교해줘", "요약해줘" — 내용을 읽고 정리해야 할 때
 
     ※ 사용자가 "검색해줘", "찾아줘"라고만 하면 web_search로 브라우저를 여세요.
+    ※ **날씨는 get_weather를 쓰세요.** 이 도구로 날씨를 찾으면 기상 사이트 링크만
+      나오고 실제 기온이 안 나옵니다(2026-09-11 실측).
 
-    query: 검색어 (한국어 가능), 예: '오늘 날씨', '파이썬 최신 버전', '삼성 에어컨 가격'
+    query: 검색어 (한국어 가능), 예: '파이썬 최신 버전', '삼성 에어컨 가격'
     """
     try:
         try:
@@ -147,6 +182,7 @@ def fetch_web_info(query: str) -> str:
         except ImportError:
             from duckduckgo_search import DDGS
         results = []
+        top_url = ""
         with DDGS() as ddgs:
             for r in ddgs.text(query, region="kr-kr", max_results=8):
                 title = r.get("title", "")
@@ -154,8 +190,27 @@ def fetch_web_info(query: str) -> str:
                 href  = r.get("href", "")
                 if body:
                     results.append(f"[{title}] ({href})\n{body}")
+                    if not top_url and href:
+                        top_url = href
         if results:
-            return f"'{query}' 검색 결과:\n\n" + "\n\n".join(results[:5])
+            # 🚨 2026-09-11 (BL-34) — 여기서 그냥 돌려주면 **링크 목록이
+            #    «검색 결과»라는 이름으로 답인 척** 나간다. 날씨를 물었을 때
+            #    실제로 그랬다: 반환값에 숫자가 한 개도 없었고(AccuWeather·기상청
+            #    **사이트 소개문**뿐이었다) 모델은 *"링크만 나오네요"* 로 끝냈다.
+            #    모델이 crawl_page를 스스로 부를 거라고 기대했지만 **안 불렀다** —
+            #    설득은 확률을 올릴 뿐이고 보장하는 건 구조다(BL-19의 교훈).
+            #    그래서 **여기서 한 페이지를 읽어 붙인다.**
+            body = _quick_read(top_url) if top_url else ""
+            head = f"✓ '{query}' 검색 결과:\n\n" + "\n\n".join(results[:5])
+            if body:
+                return (head + f"\n\n─── 첫 번째 결과 본문 ({top_url}) ───\n" + body
+                        + "\n\n(위 본문이 실제 내용이다. 링크만 전달하지 말고 "
+                          "이 내용을 근거로 답한다.)")
+            # 본문을 못 읽었으면 **못 읽었다고 말한다.** 링크 목록을 답으로
+            # 쓰지 않도록 읽는 쪽(LLM)에게 남은 수단을 알려 준다.
+            return (head + "\n\n⚠️ 위는 검색 결과 **목록**이고 페이지 본문이 아니다. "
+                    "여기에 답이 없으면 crawl_page(url)로 직접 읽거나, "
+                    "모르는 것은 모른다고 말한다. **링크를 답으로 제시하지 않는다.**")
     except ImportError:
         pass
     except Exception as e:
@@ -179,7 +234,7 @@ def fetch_web_info(query: str) -> str:
             if isinstance(topic, dict) and topic.get("Text"):
                 parts.append(topic["Text"])
         if parts:
-            return f"'{query}' 검색 결과:\n\n" + "\n\n".join(parts)
+            return f"✓ '{query}' 검색 결과:\n\n" + "\n\n".join(parts)
     except Exception as e:
         print(f"[fetch_web_info] Instant Answer API 오류: {e}")
 

@@ -26,6 +26,9 @@ def get_all_tools() -> List[BaseTool]:
         fetch_web_info,
         crawl_page,
     )
+    from tools.weather import (
+        get_weather,
+    )
     from tools.filesystem import (
         create_file,
         create_folder,
@@ -80,6 +83,8 @@ def get_all_tools() -> List[BaseTool]:
         map_search,
         fetch_web_info,
         crawl_page,
+        # 날씨 — 검색이 아니라 실제 기상 자료로 답한다 (BL-34)
+        get_weather,
         # 파일시스템
         create_file,
         create_folder,
