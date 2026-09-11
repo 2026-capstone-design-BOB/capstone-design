@@ -202,6 +202,64 @@ async def run():
     check("부정어가 든 발화도 학습하지 않는다",
           "크롬 말고 메모장 열어줘" not in learn_attempt("크롬 말고 메모장 열어줘", one))
 
+    print("=== 8. 🚨 BL-41 — 읽기가 막은 것을 쓰기도 막는가 ===")
+    # **2026-09-11 실기에서 캐시가 실제로 오염됐다.** `git status`에 `cache/` 가 떠서
+    # 열어 보니 테스트 오염(BL-11)이 아니라 **잘못 학습된 항목**이었다:
+    #
+    #     "어 그 pc 밝기 올려 주고 오늘 저녁 메뉴 좀 추천해 주라 소윤이 배고파"
+    #       → [brightness_up]          ← «메뉴 추천»이 통째로 사라진 채 학습됐다
+    #
+    # 읽는 쪽은 막았다(로그에 `[FastPath] [BL-15] 잔여 명령 감지 → 캐시 포기`).
+    # 그런데 그 턴에 **`[BL-21]` 줄이 없다** — 쓰는 쪽이 통과시킨 것이다. 실측:
+    #
+    #     has_uncovered_command(...) → True    ← 읽기 (BL-15)
+    #     is_compound_command(...)   → False   ← 쓰기 (BL-21)
+    #
+    # graph_agent.py 주석이 *"BL-15의 쓰기 쪽 짝"* 이라고 적어 놨는데 **짝이 아니라
+    # 더 좁은 함수**였다. BL-29(«읽는 쪽 셋이 서로 다르게 읽어서 결함이 됐다»)와 같은 모양.
+    #
+    # ⚠️ 읽기 쪽이 막아 주므로 **실행 사고는 없다.** 그래서 조용히 쌓인다 —
+    #   그리고 쓰레기 패턴이 **M5 제안 후보 풀에 들어간다**(`brightness_up`은
+    #   LEARNABLE_TOOLS이고 호출이 1개라 자격을 통과한다).
+
+    class _UncoveredCache(MockCache):
+        """읽는 쪽이 «잔여 명령이 있다»고 판정하는 캐시."""
+        def has_uncovered_command(self, text):
+            return True
+
+    class _CoveredCache(MockCache):
+        """읽는 쪽이 «다 이해했다»고 판정하는 캐시."""
+        def has_uncovered_command(self, text):
+            return False
+
+    def learn_with(cache_obj, text, tool_calls):
+        """cache를 갈아 끼워 `_maybe_learn`을 부른다."""
+        st = types.SimpleNamespace(cache=cache_obj)
+        calls = [dict(c, id=f"c{i}", type="tool_call") for i, c in enumerate(tool_calls)]
+        msgs = [HumanMessage(content=text),
+                AIMessage(content="", tool_calls=calls),
+                ToolMessage(content="✓ 실행했습니다.", tool_call_id="c0")]
+        GA.PluizGraphAgent._maybe_learn(
+            st, text, {"messages": msgs, "plan": [], "plan_cursor": 0})
+        return cache_obj.learned
+
+    # 🚩 실기에서 실제로 박힌 문장이다. `is_compound_command`는 이걸 False로 읽는다 —
+    #    그래서 **읽기 쪽 관문이 쓰기에서도 불려야** 막힌다.
+    live = "어 그 pc 밝기 올려 주고 오늘 저녁 메뉴 좀 추천해 주라 소윤이 배고파"
+    vol = [{"name": "volume_up", "args": {"amount": "10"}}]
+
+    # (is_compound_command만 보면 통과해 캐시가 오염된다)
+    check("🚩 원문 재현: 읽기가 «잔여 명령»이라 한 발화는 학습되지 않는다",
+          live not in learn_with(_UncoveredCache(), live, vol))
+
+    # (관문을 더하면서 정상 학습까지 막으면 캐시 기능 자체가 죽는다)
+    check("읽기가 «다 이해했다»고 하면 평범한 단일 명령은 그대로 학습된다(회귀)",
+          "소리 키워줘" in learn_with(_CoveredCache(), "소리 키워줘", vol))
+
+    # 캐시 구현이 그 메서드를 안 가진 경우(테스트 더블·구버전)에도 학습이 죽지 않아야 한다.
+    check("has_uncovered_command가 없는 캐시여도 학습은 계속된다",
+          "소리 키워줘" in learn_with(MockCache(), "소리 키워줘", vol))
+
     print(f"\n결과: {passed}/{total} 통과")
     return passed == total
 

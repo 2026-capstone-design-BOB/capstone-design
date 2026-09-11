@@ -188,10 +188,58 @@ check("🚨 제안이 없으면 오늘과 똑같다",
 
 agent_src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                               "core", "graph_agent.py"), encoding="utf-8").read()
-check("네트워크 오류일 때만 제안한다", agent_src.count("_offline_reply(getattr(self, 'cache', None)") == 2,
-      "두 분기(재시도 전/후) 모두")
+# 2026-09-11: 두 분기가 각자 `_offline_reply`를 부르던 것을 `_dead_end` 하나로 합쳤다
+# (실패 턴이 로그를 안 남기던 것을 고치면서 — 아래 «턴 실패» 검사 참조).
+# 그래서 «호출이 2개인가»가 아니라 **«두 분기가 모두 네트워크 여부를 판정해 넘기는가»** 를 본다.
+check("네트워크 오류일 때만 제안한다",
+      agent_src.count('"network" if _is_network_error(') == 2,
+      "두 분기(재시도 전/후) 모두 _dead_end에 network 여부를 넘겨야 한다")
+check("제안은 network 판정일 때만 나간다",
+      '_offline_reply(getattr(self, "cache", None), user_input)' in agent_src
+      and 'if kind == "network":' in agent_src)
 check("네트워크 오류가 아니면 그대로 오류를 말한다",
       "명령 처리 중 오류가 발생했어요" in agent_src)
+
+# 🚨 2026-09-11 실기: 오프라인 턴 6개가 **로그 한 줄 없이** 사라졌다.
+#   세 경로(타임아웃·네트워크·기타)가 전부 `return`만 했기 때문이다.
+check("실패한 턴은 반드시 로그를 남긴다", '"턴 실패 | 입력=%r | 사유=%s' in agent_src,
+      "ERROR 0건인데 턴이 사라지는 일이 다시 생기면 안 된다")
+check("타임아웃이면 오프라인인지 확인한다",
+      'if kind == "timeout" and _looks_offline():' in agent_src,
+      "오프라인에서는 네트워크 오류보다 타임아웃이 먼저 난다 — 그래서 타임아웃은 최종 판정이 아니다")
+
+# 🚨 거짓 약속 금지: 예전 문구는 «앱 실행은 오프라인에서도 쓸 수 있어요!» 라고
+#   약속했는데 캐시가 빗나가면 안 됐다(실기에서 «메모장 열어달라»가 실패).
+check("오프라인 문구가 되는 범위를 넘겨 약속하지 않는다",
+      "오프라인에서도 쓸 수 있어요" not in _OFFLINE_MSG
+      and "이미 익혀 둔 명령" in _OFFLINE_MSG,
+      "BL-12·19·26·35(«안 한 걸 했다고 말하기»)의 오프라인 버전이 된다")
+
+
+# ── 🚨 BL-41 — 읽기 관문이 실제로 이 문장을 잡는가 ──────────────────
+#
+# 2026-09-11 실기에서 **이 문장이 캐시에 박혔다**(«메뉴 추천»이 사라진 채):
+#     "어 그 pc 밝기 올려 주고 오늘 저녁 메뉴 좀 추천해 주라 소윤이 배고파" → [brightness_up]
+#
+# 쓰기 관문이 `has_uncovered_command`를 부르도록 고쳤는데(BL-41),
+# **그 전제는 이 함수가 이 문장을 True로 읽는다는 것**이다. 전제를 여기서 못 박는다 —
+# 배선은 `test_cache_wire.py` §8이 보고, **판정 자체는 여기가 본다.**
+print("")
+print("=== 🚨 BL-41 — 실기에서 오염시킨 그 문장을 읽기 관문이 잡는가 ===")
+_live = "어 그 pc 밝기 올려 주고 오늘 저녁 메뉴 좀 추천해 주라 소윤이 배고파"
+check("🚩 원문 재현: 읽기 관문이 «잔여 명령 있음»으로 읽는다",
+      cache.has_uncovered_command(cache._normalize(_live)) is True,
+      "이게 False가 되면 BL-41 수정이 무력화되고 같은 오염이 다시 쌓인다")
+
+# 🔖 **왜 `is_compound_command` 하나로는 부족했는지**도 같이 남긴다 —
+#    이 사실이 바뀌면(넓어지면) BL-41의 근거가 사라지므로 알고 싶다.
+from core.fast_path import is_compound_command as _icc
+check("참고: is_compound_command는 이 문장을 놓친다 (BL-41의 근거)",
+      _icc(cache._normalize(_live)) is False,
+      "이게 True로 바뀌면 두 관문 중 하나로 충분해진 것 — 주석을 갱신할 때다")
+
+check("정상 단일 명령은 읽기 관문을 통과한다(회귀)",
+      cache.has_uncovered_command(cache._normalize("소리 키워줘")) is False)
 
 
 print("")

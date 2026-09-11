@@ -256,6 +256,94 @@ def run():
     check("interrupts 속성이 없으면 tasks[]로 폴백한다",
           PluizGraphAgent._count_interrupts(_NoDirect()) == 2)
 
+    # ── 🚨 «질문 없는 next» — 타임아웃이 남긴 시체를 승인 대기로 읽지 않는가 ──
+    #
+    # **2026-09-11 실기에서 세션이 영구 고장났다.** 오프라인 턴이 `agent_timeout`(45초)에
+    # 걸리면 **실행 중간에 멈춘 그래프**가 체크포인트에 남는다:
+    #
+    #     next=('agent',) | 대기 중인 질문=0      ← 승인 대기가 아니다
+    #
+    # 예전 판정은 `bool(nxt) or n_itr > 0` 이라 이걸 «승인 대기»로 읽었고,
+    # 그 뒤 **모든 입력이 `Command(resume=...)`로 소비**됐다. resume는
+    # `input_guard`·`fast_path`를 거치지 않으므로 **캐시에 있는 명령조차 실행되지 않고**,
+    # 재개 대상이 죽은 노드라 또 45초 타임아웃이 난다 → 17:32:51 이후 입력 8개가 침묵.
+    print("=== 질문 없는 next는 승인 대기가 아니다 (타임아웃 시체) ===")
+
+    def _shim_with(state):
+        """`get_state`가 주어진 스냅샷을 돌려주는 최소 shim."""
+        return type("S", (), {
+            "graph": type("G", (), {"get_state": staticmethod(lambda cfg: state)})(),
+            "_count_interrupts": staticmethod(PluizGraphAgent._count_interrupts),
+            "_pending_interrupt": PluizGraphAgent._pending_interrupt,
+            "_stale_thread": None,
+        })()
+
+    cfg_dead = {"configurable": {"thread_id": "dead"}}
+
+    corpse = type("St", (), {"next": ("agent",), "interrupts": None, "tasks": ()})()
+    s_corpse = _shim_with(corpse)
+    check("🚨 next=('agent',)·질문 0은 승인 대기가 아니다",
+          s_corpse._pending_interrupt(cfg_dead) is False,
+          "여기서 True면 사용자 명령이 승인 답변으로 소비돼 세션이 죽는다")
+    check("버릴 상태로 표시된다", s_corpse._stale_thread == "dead",
+          "run_async가 이 표시를 보고 중단 상태를 지운다")
+
+    # 반대로 hitl에 멈춘 것은 **질문이 아직 안 보여도** 승인 대기로 인정한다 —
+    # langgraph 버전에 따라 interrupts가 늦게 채워질 수 있다.
+    at_hitl = type("St", (), {"next": ("hitl",), "interrupts": None, "tasks": ()})()
+    s_hitl = _shim_with(at_hitl)
+    check("next=('hitl',)는 질문이 0이어도 승인 대기다",
+          s_hitl._pending_interrupt(cfg_dead) is True)
+    check("승인 대기는 버릴 상태로 표시하지 않는다", s_hitl._stale_thread is None)
+
+    # 질문이 있으면 next가 비어 있어도 승인 대기다 (= BL-17 재질문). 시체 판정이
+    # 이 경로를 가리면 BL-17이 그대로 재발하므로 **같이 못 박는다.**
+    requiz = type("St", (), {"next": (), "interrupts": None,
+                             "tasks": (type("T", (), {"interrupts": (1,)})(),)})()
+    s_requiz = _shim_with(requiz)
+    check("질문이 있으면 next가 비어도 승인 대기다 (BL-17 회귀 방지)",
+          s_requiz._pending_interrupt(cfg_dead) is True)
+    check("그 경우도 버릴 상태로 표시하지 않는다", s_requiz._stale_thread is None)
+
+    # 완전히 끝난 스냅샷 — 아무것도 아니다
+    clean = type("St", (), {"next": (), "interrupts": None, "tasks": ()})()
+    s_clean = _shim_with(clean)
+    check("끝난 그래프는 승인 대기도 시체도 아니다",
+          s_clean._pending_interrupt(cfg_dead) is False
+          and s_clean._stale_thread is None)
+
+    # ── 🆕 BL-40 — 승인을 N번 묻지 않게 «한 배치로 모으라»고 지시하는가 ──
+    #
+    # **2026-09-11 사용자 지적**: *"a, b 텍스트 파일 한꺼번에 지워달라고 하면 하나씩
+    # 처리해줘. 복합 명령을 하나씩 처리하면 너무 번거로운 HITL 아니야?"*
+    #
+    # 🚨 **BL-24의 버그가 아니다.** BL-24는 «**한 배치**에 위험 호출이 둘일 때» 하나의
+    # 질문으로 묶는 장치다. 실기에서는 **모델이 삭제를 두 개의 agent 턴으로 쪼갰고**
+    # (로그: 첫 질문 `out=82` → 승인 → 두 번째 질문 `LLM 2회 out=103`), 한 배치에
+    # 둘이 아니니 BL-24가 개입할 자리가 없었다. **BL-24를 고쳐도 이건 그대로다.**
+    #
+    # 왜 답답함을 넘어 안전 문제인가 — 같은 질문이 N번 반복되면 사용자는 **읽지 않고
+    # 「그래」를 말한다.** 실기 로그에 그게 남아 있다(17:23~17:24의 '오'·'음'·'그래라는 뜻이야').
+    # **승인 피로는 승인을 무력화시킨다.**
+    #
+    # A안(프롬프트 유도)은 **확률만 올린다.** 그래서 ① 지시가 있는지와
+    # ② **먹었는지 사후에 셀 수 있는지**를 둘 다 못 박는다 — ②가 없으면 다음 실기에서도
+    # «쪼개졌다»를 로그에서 **추론**해야 한다(이번에 그랬다).
+    print("=== BL-40 — 위험 호출을 한 배치로 모으게 하고, 셀 수 있게 남기는가 ===")
+    sp = G.build_system_prompt()
+    check("시스템 프롬프트가 «같은 응답에 한꺼번에» 호출하라고 지시한다",
+          "한꺼번에" in sp and "delete_file" in sp)
+    check("왜 그래야 하는지(확인 한 번)를 같이 말한다", "한 번만" in sp)
+    # ⚠️ BL-19의 교훈 — 금지문을 앞에 두면 모델이 «아무것도 안 하는 쪽»으로 기운다.
+    #   그래서 «하나씩 나눠 부르면…»(제약)은 «한꺼번에 호출하세요»(지시) **뒤**에 와야 한다.
+    check("🚨 지시가 제약보다 앞에 온다 (BL-19의 교훈)",
+          sp.index("한꺼번에") < sp.index("하나씩 나눠"))
+
+    graph_src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                 "core", "graph.py"), encoding="utf-8").read()
+    check("승인 질문이 «위험 n개»를 로그로 남긴다 (A안이 먹었는지 세는 근거)",
+          '"승인 질문 | 위험 %d개' in graph_src)
+
     print("=== 끝까지 애매 → 취소(안전 기본값) ===")
     executed.clear()
     g4 = build()
