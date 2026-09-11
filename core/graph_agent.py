@@ -125,6 +125,33 @@ _OFFLINE_MSG = ("인터넷 연결이 없어서 이 명령은 처리하기 어려
                 "앱 실행, 볼륨 조절 같은 기본 명령은 오프라인에서도 쓸 수 있어요!")
 
 
+def _offline_reply(cache: Any, user_input: str) -> str:
+    """네트워크가 끊겼을 때의 답. **거절 대신 제안을 먼저 시도한다.** (M5 §5-2)
+
+    임베딩 검색은 «실행»을 결정하기엔 못 믿는다(ADR §6-3 — 오매칭 0인 임계가
+    존재하지 않는다). 그런데 **여기서는 대안이 «거절»** 이라 셈이 다르다:
+    틀린 제안은 사용자가 무시하면 그만이고, 맞으면 **오프라인에서 명령이 돈다.**
+    이 프로젝트가 내세우는 차별점이 정확히 그것이다.
+
+    ⚠️ **아무것도 실행하지 않는다.** 되묻기만 한다 — 다음 턴의 「네」가 캐시
+       경로(fast_path)를 타고 실행한다.
+    ⚠️ 제안이 없으면 **오늘과 똑같이** `_OFFLINE_MSG`다.
+    """
+    try:
+        if cache is None:
+            return _OFFLINE_MSG
+        hit = cache.suggest(user_input)
+        if not hit:
+            return _OFFLINE_MSG
+        entry, score = hit
+        _log.info("[M5] 오프라인 제안 | cos=%.3f | %r", score, entry.pattern)
+        return (f"인터넷이 끊겨서 지금은 처리하지 못했어요. "
+                f"혹시 '{entry.pattern}' 말씀이신가요? 맞으면 '네'라고 해주세요.")
+    except Exception as e:                      # 제안이 턴을 죽이지 않는다
+        _log.debug("[M5] 제안 생략(%s)", type(e).__name__)
+        return _OFFLINE_MSG
+
+
 class PluizGraphAgent:
     def __init__(
         self, *,
@@ -327,10 +354,14 @@ class PluizGraphAgent:
                     self._clear_thread(thread_id); return _TIMEOUT_MSG
                 except Exception as e2:
                     self._clear_thread(thread_id)
-                    return _OFFLINE_MSG if _is_network_error(e2) else f"명령 처리 중 오류가 발생했어요: {e2}"
+                    return (_offline_reply(getattr(self, 'cache', None), user_input)
+                            if _is_network_error(e2)
+                            else f"명령 처리 중 오류가 발생했어요: {e2}")
             else:
                 self._clear_thread(thread_id)
-                return _OFFLINE_MSG if _is_network_error(e) else f"명령 처리 중 오류가 발생했어요: {e}"
+                return (_offline_reply(getattr(self, 'cache', None), user_input)
+                        if _is_network_error(e)
+                        else f"명령 처리 중 오류가 발생했어요: {e}")
 
         # 승인 대기(interrupt) 발생 → 질문을 반환하고 대기 (다음 발화가 승인/거부)
         itr = result.get("__interrupt__") if isinstance(result, dict) else None

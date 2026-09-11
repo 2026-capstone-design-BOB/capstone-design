@@ -613,13 +613,186 @@ class CommandCache:
         return None
 
     def _similarity(self, a: str, b: str) -> float:
-        """Stage-2 의미 유사도 (0~1). 교체 지점(swap point).
+        """Stage-2 의미 유사도 (0~1).
 
-        현재: 경량(글자 유사도 SequenceMatcher). 오프라인·무설치.
-        후속(P4-A): 이 메서드만 로컬 임베딩 코사인 유사도로 교체하면 의미매칭이 강화됨.
-        (find() 등 나머지 로직은 그대로 재사용)
+        경량(글자 유사도 SequenceMatcher). 오프라인·무설치.
+
+        ⚠️ **«이 메서드만 임베딩 코사인으로 교체하면 된다»고 오래 적혀 있었는데,
+           2026-09-10에 재 보니 틀렸다.** 자를 더 좋은 것으로 바꾸면 맞는 것도 늘고
+           **틀린 것도 는다.** 캐시는 승인 없이 도구를 실행하므로 팔 수 있는 정밀도가
+           없다 → 임베딩은 `suggest()`(제안 전용)로 갔다.
+           → [M5 §5-2](../docs/design/M5_임베딩_캐시.md)
         """
         return SequenceMatcher(None, a, b).ratio()
+
+    # ── 임베딩 «제안» (M5 §5-2) ───────────────────────────────────
+    #
+    # 🔒 **이 경로는 아무것도 실행하지 않는다.** 후보 하나를 돌려줄 뿐이고,
+    #    실행 여부는 **사용자의 「네」** 가 정한다.
+    #
+    # 왜 이렇게 됐나: 임베딩으로 «실행»을 결정하려고 τ·δ 격자를 다 훑었는데
+    # **오매칭 0인 임계가 존재하지 않았다**(마진이 어느 설정에서도 음수).
+    # 지금 배선하면 캐시가 `뻥카 치냐`를 실행한다(코사인 0.910).
+    # 그런데 **제안**으로 쓰면 그 전제가 통째로 사라진다 — 틀려도 사고가 아니고,
+    # 지표가 마진에서 **top-1(12/17)** 로 바뀐다. → M5 §6-3-C
+    #
+    # ⚠️ 느슨해도 되는 것(τ·δ)과 **절대 느슨하면 안 되는 것**을 가른다.
+    #    사용자가 「네」라고 하면 **실제로 실행되므로** 아래 셋은 그대로 건다:
+    #      ① 안전 도구만 (V5)  ② 복합 명령 제외 (BL-15)  ③ 대조 게이트 (BL-27)
+    # 🚨 **절대 임계를 쓰지 않는다.** 2026-09-11에 구현하면서 재 봤더니
+    #    `'뻥카 치냐'` → `'소리 내려줘'` 가 **코사인 0.965**, `'오늘 저녁 뭐 먹지'` →
+    #    `'바탕화면 보여줘'` 가 **0.983**이었다. 정상 매칭(`'메모장 하나 띄워봐'`)이
+    #    0.969다 — **임계를 어디에 둬도 갈리지 않는다.** ADR §6-3이 «마진이 음수»라고
+    #    적은 것이 이 모양이고, 구현 중에 **같은 자리를 다시 밟아 확인했다.**
+    #
+    #    그래서 임베딩은 **순위만** 낸다(측정된 강점: top-1 12/17).
+    #    «말이 되는가»는 **낱말 겹침**이 판정한다 — 사전은 일반화 못 하지만
+    #    **오매칭이 0**이다(§6-3-D). 둘은 경쟁이 아니라 보완이다(ADR §6-3-C).
+    #    ⚠️ **중심화한 코사인은 0.3~0.55대**다(원본 0.9대와 다르다). 그리고
+    #    `'뻥카 치냐'`가 **0.552**로 정상 매칭(0.388)보다 높다 — 다시 말해
+    #    **이 숫자는 순위 말고는 아무 뜻이 없다.**
+    #
+    # 🔖 **그래서 바닥값(임계)을 아예 두지 않는다.** 처음엔 «완전한 쓰레기만 자르는»
+    #    용도로 0.15를 뒀는데, 2026-09-11 실기에서 그게 **멀쩡한 명령을 갈랐다** —
+    #    `'소리 좀 키워줘'`(0.14)는 막히고 `'어 소리 좀 키워봐'`(0.16)는 통과했다.
+    #    뜻 없는 숫자를 문지기로 쓰면 **갈림만 생긴다.** 빼고 재니 정상 6/6이
+    #    살아나고 오제안은 10개 중 1개뿐이었다(`'소리 소문도 없이'` — 「소리」가
+    #    글자로 들어 있는 경우. 바닥값으로는 어차피 못 막는 종류다).
+    #
+    #    문지기는 **오직 `_shares_token()`** 이다.
+
+    def suggest(self, user_input: str) -> Optional[tuple["CacheEntry", float]]:
+        """*"혹시 이걸 말씀하신 건가요?"* 후보. **실행하지 않는다.**
+
+        Returns: (CacheEntry, 코사인) 또는 None.
+        모델이 없거나 어떤 이유로든 실패하면 **조용히 None** — 이 기능이 없어도
+        오늘과 똑같이 동작해야 한다(캐시는 핵심 경로다).
+        """
+        text = self._normalize(user_input)
+        if not text:
+            return None
+
+        # ③ 대조 게이트 — `find()`와 같은 판정을 받는다 (BL-27)
+        if self.has_contrast_marker(text):
+            return None
+
+        # ② 복합 명령이면 제안하지 않는다. 「네」 했는데 절반만 실행되면 그게 사고다
+        try:
+            from core.fast_path import is_compound_command
+            if is_compound_command(text):
+                return None
+        except Exception:
+            pass                     # 판정을 못 하면 제안도 안 한다는 쪽이 안전하지만,
+                                     # import 실패로 기능을 죽이지는 않는다
+
+        # ②-b **V4 / BL-15 — 문장의 «일부만» 이해한 것도 제안하지 않는다.**
+        #
+        # 🔖 2026-09-11에 테스트가 이걸 잡았다. 처음엔 `is_compound_command`만 걸었는데
+        #    *"메모장에 회의록이라고 적어줘"* 가 통과해 `'메모장 열어줘'` 를 제안했다.
+        #    복합 명령이 아니라 **한 문장인데 캐시가 앞부분만 아는** 경우다.
+        #    「네」 하면 메모장만 열리고 **입력은 사라진다** — BL-15가 읽기 쪽에서
+        #    *"잔여 명령이 있으면 캐시를 포기한다"* 고 정한 바로 그 상황이다.
+        if self.has_uncovered_command(text):
+            return None
+
+        try:
+            from core.embedder import get_embedder
+            emb = get_embedder()
+            if not emb.available:          # ⚠️ 메서드가 아니라 프로퍼티다(지연 로딩)
+                return None
+            # ① 안전 도구만 남긴다 (V5 — 협상 대상이 아니다)
+            keys, entries = [], []
+            for key, entry in self._cache.items():
+                calls = entry.tool_calls or []
+                if len(calls) != 1:
+                    continue
+                if calls[0].get("name", "") not in LEARNABLE_TOOLS:
+                    continue
+                keys.append(key)
+                entries.append(entry)
+            if not keys:
+                return None
+
+            mat = emb.encode_many(keys)
+            vec = emb.encode(text)
+            if mat is None or vec is None:
+                return None
+            import numpy as _np
+            # 중심화 — 임베딩 공간이 한쪽으로 쏠려 있어(anisotropy) 아무 두 문장이나
+            # 0.9를 넘는다. 평균을 빼면 **순위**가 좋아진다(ADR §6-3: top-1 9 → 12).
+            # ⚠️ 점수의 절대값은 여전히 못 믿는다 — 그래서 아래 낱말 겹침이 있다.
+            mu = mat.mean(axis=0)
+            mat_c = mat - mu
+            vec_c = vec - mu
+            n_mat = _np.linalg.norm(mat_c, axis=1) + 1e-9
+            n_vec = float(_np.linalg.norm(vec_c)) + 1e-9
+            sims = (mat_c @ vec_c) / (n_mat * n_vec)
+        except Exception as e:
+            print(f"[CommandCache] 제안 생략({type(e).__name__}: {e})")
+            return None
+
+        # 🔖 **걸러낸 뒤에 순위를 본다.** 반대로 하지 말 것 —
+        #    2026-09-11 실기에서 `'밝기 좀 낮춰봐'` 는 제안이 나오는데
+        #    **`'어 밝기 좀 낮춰봐'` 는 안 나왔다.** 「어」 한 글자가 전역 순위를
+        #    흔들어 맞는 후보를 top-3 **밖으로** 밀어낸 것이다.
+        #    짧은 문장의 임베딩은 이런 잡음에 약하다 — 그래서 **문지기(낱말 겹침)를
+        #    먼저 통과시키고, 살아남은 것들 사이에서만 순위를 쓴다.**
+        #    임베딩의 역할이 «후보 고르기»에서 «살아남은 것 줄 세우기»로 좁아진다.
+        cand = [i for i in range(len(keys)) if self._shares_token(text, keys[i])]
+        if not cand:
+            return None
+        i = max(cand, key=lambda j: sims[j])
+        score = float(sims[i])
+        print(f"[CommandCache] [S2-embed] cos={score:.3f} "
+              f"후보={len(cand)}개 → {entries[i].pattern!r} (제안)")
+        return entries[i], score
+
+    #: 반대 동작이 있고 **틀리면 되돌리기 비싼** 행동. (V3)
+    #
+    #  ⚠️ **«반대가 있는 모든 동작»이 아니다.** 밝기·볼륨도 올리/내리가 짝이지만
+    #     여기 넣지 않는다 — 틀려도 *"다시 올려줘"* 한 마디면 끝이고, 넣으면
+    #     제안이 가장 값진 자리(대상만 알고 동작을 모를 때)가 통째로 죽는다.
+    #     기준은 «반대인가»가 아니라 **«되돌리는 비용»** 이다.
+    #     `close_app`은 **쓰던 글이 날아갈 수 있어** 되돌릴 수 없다.
+    #
+    #  🔑 그리고 제안은 **후보를 문장으로 보여 준다** — 사용자가
+    #     *"'밝기 올려줘' 말씀이신가요?"* 를 읽고 아니라고 할 수 있다.
+    #     그게 이 설계의 안전망이고, 되돌리기 싼 것까지 막을 이유가 없는 이유다.
+    _AMBIGUOUS_ACTIONS = frozenset({"open", "close"})
+
+    def _shares_token(self, text: str, pattern: str) -> bool:
+        """발화와 후보가 **같은 것을 가리키는가** — 임베딩이 못 하는 판정.
+
+        이게 `'뻥카 치냐' → '소리 내려줘'`(코사인 0.965)를 막는 **유일한 장치**다.
+        점수는 순위 말고 아무 뜻이 없으므로 문지기는 여기다.
+        """
+        a1, a2 = self._extract_action(text), self._extract_action(pattern)
+
+        # V3 — 둘 다 동작이 잡혔는데 **어긋나면** 거절한다.
+        #   「켜」가 잡혔는데 후보가 close_app이면 그건 반대 동작이다.
+        if a1 and a2 and a1 != a2:
+            return False
+        if a1 and a1 == a2:
+            return True
+
+        e1, e2 = self._extract_entity(text), self._extract_entity(pattern)
+        if not (e1 and e1 == e2):
+            return False
+
+        # 대상만 같고 **동작을 모르는** 경우 — 동작은 임베딩 순위가 고른 셈이 된다.
+        #
+        # 🔖 2026-09-11에 테스트가 여기서 사고를 잡았다:
+        #    *"메모장에 회의록이라고 적어줘"* (entity=메모장 · action 없음) 에
+        #    `'메모장 꺼줘'`(**close_app**)가 1등으로 올라왔다. 「네」 했으면
+        #    **메모장이 닫히고 쓰던 글이 날아간다.**
+        #    ⚠️ 임베딩의 약점이 정확히 여기다 — 「켜/꺼」를 잘 못 가른다.
+        #
+        #    그래서 **동작을 모를 땐 반대 동작이 있는 부류를 제안하지 않는다.**
+        #    볼륨·밝기처럼 대상만으로도 뜻이 좁혀지는 것은 그대로 통과한다
+        #    (`'소리 조금만 더 크게'` → `'소리 올려줘'` 는 이 경로로 산다).
+        if a2 in self._AMBIGUOUS_ACTIONS:
+            return False
+        return True
 
     # ── 도구 직접 실행 ────────────────────────────────────────────
 
