@@ -45,7 +45,10 @@ ddgs>=7.0.0                  # fetch_web_info - LLM에게 검색 결과 텍스�
 
 # ── 선택적 (도구 기능 강화) ───────────────────────────────────────
 # pycaw>=20181226          # 볼륨 정밀 제어 (없으면 키보드 시뮬레이션 fallback)
-# wmi                      # 밝기 제어 (없으면 PowerShell fallback)
+wmi>=1.5.1                 # 밝기 제어. 🚨 «선택»이 아니다 — 없으면 BL-47이 재발한다:
+                           #   읽기가 -1이 돼 밝기가 40% 점프하고(BL-45), 쓰기가
+                           #   PowerShell 폴백을 띄워 **명령 하나에 4.5초**가 붙는다(실측).
+                           #   있으면 0.03초. → docs/BACKLOG.md BL-47
 Pillow>=10.0.0            # 스크린샷 (전체/창별 캡처)
 httpx>=0.27.0             # crawl_page — 웹 페이지 본문 크롤링
 beautifulsoup4>=4.12.0    # crawl_page — HTML 파싱
