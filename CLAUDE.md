@@ -119,13 +119,13 @@ export PYTHONIOENCODING=utf-8
 launch.bat                  # 서버 + Electron UI
 python main.py              # 서버만
 
-python tests/test_graph_agent.py  # 30/30
-python tests/test_cache_learn.py  # 67/67
+python tests/test_graph_agent.py  # 32/32
+python tests/test_cache_learn.py  # 88/88
 python tests/test_hitl_agent.py   # 8/8
 python tests/test_hitl_graph.py   # 140/140  ← 승인 경로 전체(BL-20·24·38·40)
 python tests/test_offline_skip.py # 11/11   ← 오프라인이면 LLM을 안 부른다(BL-46)
 
-python scripts/run_mock_suite.py  # 46파일 1601/1601  ← 합계는 항상 이걸로 센다
+python scripts/run_mock_suite.py  # 46파일 1641/1641  ← 합계는 항상 이걸로 센다
 ```
 
 상세: [docs/WORKFLOW.md](docs/WORKFLOW.md)

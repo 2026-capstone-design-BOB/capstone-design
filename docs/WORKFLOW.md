@@ -68,7 +68,7 @@ start.bat      # 서버만
 export PYTHONIOENCODING=utf-8
 PY="C:/Users/byeonsoyun/anaconda3/envs/pluiz/python.exe"
 
-"$PY" tests/test_graph_agent.py       # 그래프 + 계측 + 사유태그  30/30
+"$PY" tests/test_graph_agent.py       # 그래프 + 계측 + 사유태그  32/32
 "$PY" tests/test_hitl_agent.py        # HITL 승인            8/8
 "$PY" tests/test_hitl_graph.py        # HITL 그래프(BL-20·24) 114/114
 "$PY" tests/test_cache_learn.py       # 캐시 동적 학습 + BL-27 38/38
