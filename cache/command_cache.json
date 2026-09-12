@@ -10,11 +10,11 @@
       }
     ],
     "response_template": "✓ 메모장을 실행했습니다.",
-    "hit_count": 104,
+    "hit_count": 113,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-10T10:20:26",
+    "last_used": "2026-09-12T12:39:13",
     "imported": false
   },
   "메모장 켜줘": {
@@ -368,11 +368,11 @@
       }
     ],
     "response_template": "✓ 화면 밝기를 높였습니다.",
-    "hit_count": 0,
+    "hit_count": 1,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "",
+    "last_used": "2026-09-12T12:35:45",
     "imported": false
   },
   "화면 밝게 해줘": {
@@ -400,11 +400,11 @@
       }
     ],
     "response_template": "✓ 화면 밝기를 낮췄습니다.",
-    "hit_count": 0,
+    "hit_count": 1,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "",
+    "last_used": "2026-09-12T12:35:39",
     "imported": false
   },
   "화면 어둡게 해줘": {
@@ -689,6 +689,22 @@
     "source": "dynamic",
     "learned_at": "2026-09-10T16:18:32",
     "last_used": "2026-09-10T16:18:32",
+    "imported": false
+  },
+  "지금 켜져있는 앱 알려줘": {
+    "pattern": "지금 켜져있는 앱 알려줘",
+    "tool_calls": [
+      {
+        "name": "get_running_apps",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 실행했어요.",
+    "hit_count": 1,
+    "is_seed": false,
+    "source": "dynamic",
+    "learned_at": "2026-09-12T12:29:07",
+    "last_used": "2026-09-12T12:29:07",
     "imported": false
   }
 }
