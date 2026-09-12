@@ -117,6 +117,41 @@ def run():
     check("옛 줄은 사유가 None", o[0]["reason"] is None)
     check("옛 줄은 thread 미상", o[0]["thread"] is None and not is_real(o[0]))
 
+    print("=== 6. BL-52 — 「요청」과 「실행」이 갈라졌다 (2026-09-12~) ===")
+    #
+    # 🚨 옛 `도구=`는 이름과 달리 «LLM이 **요청**한 것»이었다. 승인을 **거부**한 턴에도
+    #   `도구=['delete_file','delete_file']`이 찍혀 실제로 오판을 만들었다.
+    #   여기서 고정하는 것은 둘이다:
+    #     ① 새 줄에서 **실행이 요청과 따로** 읽힌다
+    #     ② 옛 줄(`도구=`)이 **여전히** 읽힌다 — 안 그러면 09-12 이전이 통째로 빠진다
+    P52 = [
+        "2026-09-12 12:00:00 DEBUG   [Agent] 승인 대기 확인 | thread=pluiz_9 | next=없음",
+        # 거부한 턴 — 요청은 둘, 실행은 **0개**다
+        "2026-09-12 12:00:00 INFO    [Agent] 턴 완료 | 입력='아니' | "
+        "요청=['delete_file', 'delete_file'] | 실행=없음 | 응답 11자"
+        " | 사유=승인거부 | 소요 0.06s | LLM 0회 | 토큰 0",
+        "2026-09-12 12:00:10 DEBUG   [Agent] 승인 대기 확인 | thread=pluiz_9 | next=없음",
+        # 승인한 턴 — 요청은 둘(원본+재발행), 실행은 **하나**다
+        "2026-09-12 12:00:10 INFO    [Agent] 턴 완료 | 입력='어' | "
+        "요청=['delete_file', 'delete_file'] | 실행=['delete_file'] | 응답 20자"
+        " | 소요 0.40s | LLM 1회 | 토큰 in=100 out=9",
+    ]
+    p52 = os.path.join(tmp, "bl52.log")
+    io.open(p52, "w", encoding="utf-8", newline=NL).write(NL.join(P52) + NL)
+    b = parse(p52)
+    check("턴 2개", len(b) == 2)
+    check("🚨 거부 턴: 요청은 둘인데 실행은 0개", b[0]["tools"] == ["delete_file"] * 2
+          and b[0]["ran"] == [])
+    check("🚨 승인 턴: 한 번 실행을 둘로 세지 않는다", b[1]["ran"] == ["delete_file"])
+    check("새 형식은 실행 칸이 있다고 표시된다", all(x["ran_logged"] for x in b))
+    check("뒤따르는 칸(사유·소요·토큰)이 여전히 읽힌다",
+          b[0]["reason"] == "승인거부" and b[0]["sec"] == 0.06 and b[1]["tok"] == "in=100 out=9")
+    # ⚠️ 옛 줄은 실행 칸이 없으므로 «요청을 실행으로 친다» — 그리고 그렇다고 표시한다
+    check("옛 줄은 요청을 실행으로 친다", o[0]["ran"] == ["open_app"])
+    check("🚨 옛 줄은 «추정»이라고 표시된다(리포트가 그렇게 말한다)",
+          not o[0]["ran_logged"] and not o[1]["ran_logged"])
+    check("새 형식 NEW 줄도 여전히 옛 이름으로 읽힌다", t[4]["tools"] == ["open_app"])
+
     print(f"{NL}결과: {passed}/{total} 통과")
     return passed == total
 

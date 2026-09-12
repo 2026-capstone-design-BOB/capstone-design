@@ -259,7 +259,11 @@ async def run():
         await agentR.run_async("메모장 켜줘", "g1")
     lr = spyR.last()
     check("캐시 턴 로그에 사유=캐시가 실린다", "| 사유=캐시" in lr)
-    check("사유는 도구 칸 뒤에 온다", lr.index("도구=") < lr.index("사유="))
+    check("사유는 도구 칸 뒤에 온다", lr.index("요청=") < lr.index("사유="))
+    # 🚨 BL-52 — «요청»과 «실행»은 다른 것이다. 한 칸으로 찍던 시절에 실제로 오판했다.
+    check("[BL-52] 요청과 실행을 따로 찍는다", "| 요청=" in lr and "| 실행=" in lr)
+    check("[BL-52] 캐시 턴은 «실행=없음»이 아니다 (도구는 그래프 밖에서 돌았다)",
+          "| 실행=['캐시']" in lr)
 
     agentS, _ = make_agent(UsageLLM())
     with LogSpy() as spyS:

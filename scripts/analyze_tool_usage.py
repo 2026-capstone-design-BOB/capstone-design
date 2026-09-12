@@ -36,7 +36,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # 도구 집계가 **최근 이틀치만** 보게 된다(처음 돌렸을 때 623턴 중 138턴만 잡혔다).
 _TURN = re.compile(
     r"^(?P<ts>[\d-]{10} [\d:]{8}).*?\[Agent\] 턴 완료 \| 입력=(?P<q>'[^']*'|\"[^\"]*\")"
-    r" \| 도구=(?P<tools>없음|\[[^\]]*\])"
+    # 🚨 **BL-52 — 이 칸이 2026-09-12에 둘로 갈라졌다.**
+    #   옛 `도구=`는 이름과 달리 «LLM이 **요청**한 것»이었다. 승인을 거부한 턴에도
+    #   `도구=['delete_file','delete_file']`이 찍혀 실제로 오판을 만들었다.
+    #   그래서 `요청=`(옛 `도구=`와 같은 값)과 `실행=`(ToolMessage 기준)으로 나눴다.
+    #   ⚠️ **옛 이름도 계속 읽는다** — 09-12 이전 로그가 이미 쌓여 있다.
+    #      여기를 «새 이름만»으로 바꾸면 그 구간이 통째로 빠진다(2026-09-10에 겪었다).
+    r" \| (?:도구|요청)=(?P<tools>없음|\[[^\]]*\])"
+    r"(?: \| 실행=(?P<ran>없음|\[[^\]]*\]))?"      # BL-52 (2026-09-12~)
     r"(?: \| 응답 (?P<rlen>\d+)자)?"
     r"(?: \| 사유=(?P<reason>[가-힣]+))?"          # BL-28 (2026-09-10~)
     r"(?: \| 계획 (?P<plan>\d+/\d+))?"
@@ -73,10 +80,18 @@ def parse(path):
                 continue
             raw = m.group("tools")
             tools = [] if raw == "없음" else re.findall(r"'([^']+)'", raw)
+            # BL-52 — `실행=`이 있으면 **그쪽이 사실**이다. 없는 로그(09-12 이전)는
+            # 옛날처럼 요청을 실행으로 친다. ⚠️ 그 구간의 «도구 호출 횟수»는
+            # 승인이 낀 턴만큼 부풀어 있다 — 리포트가 그렇게 말한다(§①).
+            rawr = m.group("ran")
+            ran = (tools if rawr is None
+                   else [] if rawr == "없음" else re.findall(r"'([^']+)'", rawr))
             turns.append({
                 "ts": m.group("ts"),
                 "q": m.group("q")[1:-1],
                 "tools": tools,
+                "ran": ran,
+                "ran_logged": m.group("ran") is not None,
                 "sec": float(m.group("sec")) if m.group("sec") else None,
                 "llm": m.group("llm"),
                 "cached": bool(m.group("cached")),
@@ -138,9 +153,13 @@ def main():
     # ── ① 도구 사용 빈도 ─────────────────────────────────────────
     used = Counter()
     cache_used = Counter()
+    # BL-52 — **실행을 센다.** 예전엔 요청을 세고 «실측»이라고 불렀다.
+    stale = 0          # `실행=` 칸이 없던 구간(09-12 이전)의 턴 수
     for t in use:
-        used.update(t["tools"])
+        used.update(t["ran"])
         cache_used.update(t["cache_tools"])
+        if not t["ran_logged"]:
+            stale += 1
     print()
     print("=" * 78)
     print("■ ① 어떤 도구가 실제로 쓰였나")
@@ -153,7 +172,12 @@ def main():
         if unknown_names:
             print(f"  ⚠️ 등록에 없는 이름이 로그에 있다(테스트 mock 오염): "
                   f"{sorted(unknown_names)}")
-    print(f"  도구 호출 총 {sum(used.values())}회 · 서로 다른 도구 {len(used)}종")
+    print(f"  도구 실행 총 {sum(used.values())}회 · 서로 다른 도구 {len(used)}종")
+    if stale:
+        # 🚨 숫자를 말할 때 **어디까지가 추정인지 같이 말한다.** 이 칸이 없던 구간은
+        #   «요청»을 «실행»으로 치고 있어서, 승인이 낀 턴만큼 부풀어 있다(BL-52).
+        print(f"  ⚠️ 그중 {stale}턴은 `실행=` 칸이 없던 구간(~2026-09-12)이라 "
+              f"**요청을 실행으로 친 추정치**다 — 승인이 낀 턴이 부풀어 있다")
     print()
     for name, n in used.most_common():
         bar = "█" * min(40, n)

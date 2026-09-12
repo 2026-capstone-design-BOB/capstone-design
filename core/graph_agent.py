@@ -23,7 +23,7 @@ import re
 import time
 from typing import AsyncGenerator, Any, Optional, Callable
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
@@ -598,8 +598,8 @@ class PluizGraphAgent:
             #   가로채면 안 된다. 제안이 없거나 「네」가 아니면 None이라 그냥 지나간다.
             accepted = self._accept_suggestion(thread_id, user_input)
             if accepted is not None:
-                _log.info("턴 완료 | 입력=%r | 도구=[제안수락] | 응답 %d자 | 소요 %.2fs "
-                          "| LLM 0회(캐시)", user_input, len(accepted),
+                _log.info("턴 완료 | 입력=%r | 요청=[제안수락] | 실행=[제안수락] | "
+                          "응답 %d자 | 소요 %.2fs | LLM 0회(캐시)", user_input, len(accepted),
                           time.perf_counter() - started)
                 return accepted
 
@@ -669,14 +669,22 @@ class PluizGraphAgent:
             return question
 
         response = extract_response(result)
-        tool_names = self._turn_tool_names(result)
+        # BL-52 — «요청»과 «실행»을 나눠 찍는다. 예전엔 `도구=` 하나였고 그게
+        # 요청이었는데 실행으로 읽혀 오판을 만들었다.
+        tool_names = self._turn_requested_tools(result)
+        ran = self._turn_executed_tools(result)
+        # ⚠️ 캐시 히트는 도구를 **그래프 밖에서** 돌린다(절대규칙 2 — messages에는
+        #   AIMessage 하나만 남는다). 그대로 두면 `실행=없음`이 되어 «아무것도 안 했다»로
+        #   읽힌다 — BL-52가 고치려는 그 오독이다. 이름은 `[FastPath] [캐시 실행]` 줄에 있다.
+        if not ran and isinstance(result, dict) and result.get("decision") == "fast_hit":
+            ran = ["캐시"]
         if not response.strip():
             # 여기까지 왔는데 비었으면 도구도 안 돌았다는 뜻이다(output_guard가
             # 도구 결과로 복원하기 때문). 됐다고 하지 않는다.
             _log.warning("빈 응답 — 도구도 실행되지 않았다. 입력=%r", user_input)
             response = _NOTHING_HAPPENED_MSG
-        _log.info("턴 완료 | 입력=%r | 도구=%s | 응답 %d자%s%s%s",
-                  user_input, tool_names or "없음", len(response),
+        _log.info("턴 완료 | 입력=%r | 요청=%s | 실행=%s | 응답 %d자%s%s%s",
+                  user_input, tool_names or "없음", ran or "없음", len(response),
                   self._reason_note(result, response, tool_names),
                   self._plan_note(result),
                   self._metrics_note(result, time.perf_counter() - started))
@@ -824,12 +832,49 @@ class PluizGraphAgent:
             return ""
 
     @staticmethod
-    def _turn_tool_names(result: Any) -> list[str]:
-        """이번 턴에 실제로 호출된 도구 이름. (로그용 — 실패해도 무시)"""
+    def _turn_requested_tools(result: Any) -> list[str]:
+        """이번 턴에 LLM이 **요청한** 도구 이름. 실행된 것이 아니다. (로그용 · BL-52)
+
+        🚨 **이름을 바꾼 이유가 결함이다.** 예전 이름은 `_turn_tool_names`였고
+        docstring은 *"실제로 호출된 도구"* 라고 적혀 있었다. 아니었다 — 여기서 모으는 건
+        `AIMessage.tool_calls`, 즉 **LLM이 달라고 한 것**이다. 그래서 승인을 **거부한**
+        턴에도 이렇게 찍혔다:
+
+            [Graph] 승인 판정 | 1번째 | 답변='아니' → reject
+            [Agent] 턴 완료 | 입력='아니' | 도구=['delete_file', 'delete_file']
+
+        **아무것도 안 지웠는데 «delete_file 두 개»로 읽힌다.** 2026-09-12에 이 줄을
+        읽고 «계획+승인이면 삭제가 두 번 실행된다»고 **실제로 오판했다.**
+        (둘로 세어지는 건 BL-24의 «원본 마감 + 새 id 재발행» 때문이다)
+
+        ⚠️ **이 저장소는 로그로 판정한다**(BL-28·BL-39가 그래서 있다).
+          로그가 애매하면 그 규율이 통째로 흔들린다. 그래서 필드를 고치는 게 아니라
+          **둘로 나눴다** — `요청=`(여기)과 `실행=`(`_turn_executed_tools`).
+        """
         try:
             msgs = current_turn_messages(result.get("messages", []))
             return [c.get("name", "?") if isinstance(c, dict) else getattr(c, "name", "?")
                     for m in msgs for c in (getattr(m, "tool_calls", None) or [])]
+        except Exception:
+            return []
+
+    @staticmethod
+    def _turn_executed_tools(result: Any) -> list[str]:
+        """이번 턴에 **실제로 실행된** 도구 이름. (로그용 · BL-52)
+
+        `ToolNode`가 도구를 돌리고 남긴 `ToolMessage`만 센다. 판정은 **구조**가 한다 —
+        `ToolNode`는 `ToolMessage.name`을 채우고, `hitl`이 매달린 호출을 마감하며
+        지어내는 ToolMessage(«취소했습니다»·«보류됐습니다»)는 **이름이 없다.**
+        그래서 승인 거부 턴은 여기서 **자연히 빈 목록**이 된다.
+
+        ⚠️ 문구를 보지 않는다. 마감 사유 문자열을 목록으로 들고 비교하면 사유가
+          늘 때마다 조용히 어긋난다 — 이 저장소가 정규식·문구 판정을 피해 온 이유다.
+        """
+        try:
+            msgs = current_turn_messages(result.get("messages", []))
+            return [str(n) for m in msgs
+                    if isinstance(m, ToolMessage)
+                    for n in [getattr(m, "name", None)] if n]
         except Exception:
             return []
 
