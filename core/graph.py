@@ -1252,6 +1252,24 @@ def unfinished_notice(plan: Optional[list], covered: Any) -> str:
 
 
 # ── 그래프 빌더 ────────────────────────────────────────────────────
+class OfflineSkip(Exception):
+    """오프라인이라 **LLM을 부르지 않고** 턴을 접는다. (BL-46)
+
+    🚨 **이건 «오류»가 아니라 «판정»이다.** `agent` 노드가 `llm.invoke()` 직전에
+    올리고, `graph_agent`가 잡아 `_dead_end(kind="network")`로 보낸다 —
+    그 함수가 이미 스레드를 버리고 · 캐시 제안을 만들고 · 제안을 다음 턴까지
+    들고 있고 · `턴 실패 | 사유=network`를 로그에 남긴다.
+
+    🔑 **왜 상태가 아니라 예외인가.** `agent`는 `dict`를 돌려주는 노드다.
+    «응답이 없다»를 상태로 표현하려면 라우팅·리듀서·`output_guard`를 전부
+    건드려야 하는데, 예외는 **한 곳에서 올라가 한 곳에서 잡힌다.**
+
+    ⚠️ **`fast_path`보다 뒤에서만 올라간다.** 캐시 히트는 이 노드에 오지도 않는다 —
+    오프라인에서 되던 명령을 이 변경이 죽이지 않는 이유다.
+    → [design/BL-46_오프라인_LLM_생략.md](../docs/design/BL-46_오프라인_LLM_생략.md)
+    """
+
+
 def build_pluiz_graph(
     *,
     llm: Any,
@@ -1265,6 +1283,7 @@ def build_pluiz_graph(
     visual_verify_tools: Optional[set] = None,
     is_watching: Optional[Callable[[], bool]] = None,
     plan_decompose: Optional[Callable[[str], Any]] = None,
+    is_offline: Optional[Callable[[], bool]] = None,
 ):
     """Pluiz StateGraph를 구성해 compiled graph를 반환한다. (동기 노드)
 
@@ -1393,6 +1412,22 @@ def build_pluiz_graph(
         실행기를 새로 만들지 않는다 — 기존 agent ⇄ tools 루프가 한 단계씩 처리하고
         라우터가 되돌린다.
         """
+        # ── BL-46: 오프라인이면 **LLM을 부르지 않는다** ────────────────────
+        #
+        # 🚨 여기까지 왔다는 건 `fast_path`가 **이미 돌았고 못 잡았다**는 뜻이다.
+        #   (캐시 히트는 `route_after_fast`에서 `output_guard`로 빠져 이 노드에 안 온다)
+        #   그러니 지금 LLM을 불러 봐야 **8초를 태우고 실패**한다 — 그게 BL-46이다.
+        #
+        # ⚠️ **거짓 양성이 턴을 죽이지 않게 한 번 더 확인한다.** 바깥의 판정은
+        #   TTL 10초 캐시라, «10초 전에 끊겼다가 방금 복구된» 경우 멀쩡한 네트워크에
+        #   «인터넷이 없어요»라고 답하게 된다. 지금까지는 그 오판의 대가가
+        #   «45초 대신 8초»뿐이었지만, 이제 **턴의 생사**를 가른다.
+        #   비용은 **오프라인일 때만** 든다 — 온라인이면 캐시된 False에서 바로 끝난다.
+        if is_offline is not None and is_offline():
+            _log.info("[BL-46] 오프라인 · 캐시 미스 → LLM을 부르지 않고 접는다 | 입력=%r",
+                      _last_human_text(state["messages"]))
+            raise OfflineSkip()
+
         msgs = _prepare_messages(state["messages"])
         plan = list(state.get("plan") or [])
         cursor = int(state.get("plan_cursor") or 0)

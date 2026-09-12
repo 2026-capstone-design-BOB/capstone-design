@@ -29,6 +29,7 @@ from langgraph.types import Command
 
 from core.graph import (
     build_pluiz_graph, extract_response, current_turn_messages, _NOTHING_HAPPENED_MSG,
+    OfflineSkip,
 )
 from core.logger import get_logger
 
@@ -307,7 +308,19 @@ class PluizGraphAgent:
             target_exists=self.target_exists,
             visual_check=self.visual_check,
             plan_decompose=self.plan_decompose,
+            is_offline=self._offline_confirmed,
         )
+
+    #: 🚨 **단락 직전의 재확인** — `_offline_now()`의 TTL(10초) 캐시를 그대로 믿지 않는다.
+    #  (BL-46 §3-1) 지금까지 그 값이 틀려도 «45초 대신 8초»였지만, 이제 **턴의 생사**를
+    #  가른다. 「10초 전에 끊겼다가 방금 복구」된 경우 멀쩡한 네트워크에 대고
+    #  *"인터넷이 없어요"* 라고 답하게 된다.
+    #
+    #  🔑 **틀릴 때만 돈을 낸다.** 온라인이면 캐시된 `False`에서 바로 끝나 소켓을
+    #  열지 않고, 오프라인일 때만 0.8초짜리 확인이 한 번 더 붙는다.
+    @staticmethod
+    def _offline_confirmed() -> bool:
+        return _offline_now() and _offline_now(ttl=0.0)
 
     def _default_fast_resolve(self, text: str) -> Optional[str]:
         """프로덕션 fast_path: 캐시 + 결정론적 라우터 (동기)."""
@@ -613,6 +626,11 @@ class PluizGraphAgent:
                 timeout=self._timeout())
         except (asyncio.TimeoutError, TimeoutError):
             return self._dead_end(thread_id, user_input, started, "timeout")
+        except OfflineSkip:
+            # BL-46 — 오프라인이라 LLM을 **안 불렀다.** 실패가 아니라 판정이다.
+            #   `_dead_end("network")`가 캐시 제안까지 만들어 준다(새 경로를 안 만든다).
+            #   ⚠️ `fast_path`는 이미 돌았고 못 잡았다 — 캐시 히트는 여기 오지 않는다.
+            return self._dead_end(thread_id, user_input, started, "network")
         except Exception as e:
             err = str(e)
             if "tool_calls that do not have a corresponding ToolMessage" in err:
@@ -626,6 +644,8 @@ class PluizGraphAgent:
                         timeout=self._timeout())
                 except (asyncio.TimeoutError, TimeoutError):
                     return self._dead_end(thread_id, user_input, started, "timeout")
+                except OfflineSkip:
+                    return self._dead_end(thread_id, user_input, started, "network")
                 except Exception as e2:
                     return self._dead_end(
                         thread_id, user_input, started,
