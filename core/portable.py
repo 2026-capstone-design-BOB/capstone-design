@@ -193,12 +193,33 @@ def read_manifest(data: bytes) -> dict:
 
 
 def backup_file(path: str) -> Optional[str]:
-    """되돌릴 수 없는 변경 앞에서 되돌릴 길을 만든다. 백업 경로를 반환."""
+    """되돌릴 수 없는 변경 앞에서 되돌릴 길을 만든다. 백업 경로를 반환.
+
+    🚨 **같은 초에 두 번 부르면 첫 백업이 덮였다 (BL-49, 2026-09-12).**
+      이름표가 `%Y%m%d-%H%M%S`로 **초 단위**라 두 번째 호출이 같은 경로를 만들고
+      `shutil.copy2`가 조용히 덮어썼다. 실측:
+
+          b1 = backup_file(p)   # {'첫번째': 1} 을 백업
+          b2 = backup_file(p)   # {'두번째': 2} 를 백업
+          b1 == b2              # True — 파일이 **하나**뿐이고 내용은 '두번째'
+
+      **되돌릴 길을 만드는 함수가 되돌릴 길을 지우고 있었다.** 가져오기를
+      연달아 두 번 하면(파일을 잘못 골라 바로 다시 하는 건 흔한 일이다)
+      **원래 상태로 가는 유일한 사본이 사라진다.**
+
+    🔑 **초를 더 잘게 쪼개는 대신 «있으면 비켜 간다».** 마이크로초를 붙이면
+      이름이 읽기 어려워지고 **그래도 충돌 가능성은 0이 아니다** — 존재 확인이
+      확실하고, 사람이 읽는 이름도 지킨다.
+    """
     if not os.path.exists(path):
         return None
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     root, ext = os.path.splitext(path)
-    dst = f"{root}.backup-{stamp}{ext}"
+    base = f"{root}.backup-{stamp}"
+    dst, n = f"{base}{ext}", 2
+    while os.path.exists(dst):
+        dst = f"{base}-{n}{ext}"
+        n += 1
     shutil.copy2(path, dst)
     return dst
 

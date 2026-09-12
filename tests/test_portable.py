@@ -220,9 +220,33 @@ def run():
     backups = [f for f in os.listdir(tmp) if ".backup-" in f]
     check("가져오기 전에 백업을 남긴다", backups, os.listdir(tmp))
     check("백업을 사용자에게 알린다", rep3["backups"], rep3)
-    if backups:
-        with open(os.path.join(tmp, backups[0]), encoding="utf-8") as f:
+    # 🚨 **`backups[0]`을 쓰지 않는다 (BL-49).** 예전에는 그랬고, 그래서
+    #   전체 스위트에서 **가끔 37/38**이 났다 — §5의 가져오기들과 이 가져오기가
+    #   «다른 초»에 떨어지면 백업이 둘 이상이 되고, `os.listdir` 순서가
+    #   고른 첫 번째는 **직전 상태가 아니다.** 테스트가 빠르면 전부 같은 초라
+    #   파일이 하나뿐이어서 통과했다 — **부하가 걸릴 때만 깨지는 가정**이었다.
+    # 🔑 추측하지 말고 **함수가 알려 준 경로**를 쓴다.
+    # ⚠️ `report["backups"]`는 **파일명만** 담는다(절대경로는 사용자에게 안 보인다 —
+    #   BL-07이 «어디서 찾았는지»를 말할 때 경로를 안 싣는 것과 같은 이유).
+    _cache_stem = os.path.splitext(os.path.basename(cache_path))[0]
+    _mine = [b for b in rep3["backups"] if b.startswith(_cache_stem + ".backup-")]
+    check("캐시 백업이 보고에 있다", _mine, rep3["backups"])
+    if _mine:
+        with open(os.path.join(tmp, _mine[0]), encoding="utf-8") as f:
             check("백업이 **가져오기 전** 내용이다", list(json.load(f)) == ["노트 띄워줘"])
+
+    # BL-49 회귀 — 같은 초에 두 번 백업해도 **첫 번째가 남아 있어야** 한다.
+    #   되돌릴 길을 만드는 함수가 되돌릴 길을 지우면 안 된다.
+    _bp = os.path.join(tmp, "bl49.json")
+    with open(_bp, "w", encoding="utf-8") as f:
+        json.dump({"첫번째": 1}, f)
+    _b1 = portable.backup_file(_bp)
+    with open(_bp, "w", encoding="utf-8") as f:
+        json.dump({"두번째": 2}, f)
+    _b2 = portable.backup_file(_bp)
+    check("같은 초의 두 백업이 서로 다른 파일이다", _b1 != _b2, f"{_b1} vs {_b2}")
+    with open(_b1, encoding="utf-8") as f:
+        check("첫 백업이 덮이지 않는다", list(json.load(f)) == ["첫번째"])
 
     # ── §7. 왕복 ────────────────────────────────────────────
     print("\n=== §7. 내보낸 것을 그대로 다시 가져올 수 있다 ===")
