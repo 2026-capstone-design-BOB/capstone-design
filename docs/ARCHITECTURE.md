@@ -64,10 +64,17 @@ START → input_guard ─(차단)────→ output_guard → END
            │                               ▼
            └──────────────────────────→ agent ⇄ tools ──────→ output_guard → END
                                           │ ▲       │
+                                          │ │(오프라인)→ OfflineSkip ⇒ 그래프 밖 _dead_end (BL-46)
                                           │ └(계획에 남은 단계)
                                           │         └─(못 믿을 도구)→ visual_verify → agent
                                           └─(위험 도구)→ hitl (interrupt 승인) → tools | output_guard
 ```
+
+> 🔑 **오프라인 단락이 `fast_path`가 아니라 `agent`에 걸려 있는 것은 의도다**(BL-46).
+> 여기까지 왔다는 건 **캐시가 이미 돌았고 못 잡았다**는 뜻이라, LLM을 불러 봐야
+> 8초를 태우고 실패한다. 반대로 `fast_path`보다 앞에서 막으면
+> **오프라인에서 되던 캐시 명령까지 죽는다** — 이 기능의 전부를 잃는 방향이다.
+> → [design/BL-46_오프라인_LLM_생략.md](design/BL-46_오프라인_LLM_생략.md)
 
 > `planner`와 `visual_verify`는 **의존성이 주입됐을 때만 그래프에 존재한다.**
 > 꺼져 있으면 노드도 엣지도 만들어지지 않아 경로가 글자 그대로 예전과 같다.
@@ -77,7 +84,7 @@ START → input_guard ─(차단)────→ output_guard → END
 | `input_guard` | 코드 레벨 보안 검사 (OWASP LLM01/02) |
 | `fast_path` | 캐시 + 결정론적 라우터. **히트해도 결과를 `state.messages`에 기록** |
 | `planner` | 복합 명령을 **최대 2단계로 나눠 상태에 적는다**(M3). 실행은 하지 않는다. **기본 켜짐**(2026-09-07 라이브 확인 후 — `.env` `PLAN_ENABLED=false`로 끔) |
-| `agent` | LLM ReAct 추론 (동기 invoke). 계획이 있으면 **지금 실행할 단계만** 지시받는다 |
+| `agent` | LLM ReAct 추론 (동기 invoke). 계획이 있으면 **지금 실행할 단계만** 지시받는다. **오프라인이면 `llm.invoke()` 직전에 `OfflineSkip`을 올려 LLM을 아예 안 부른다**(BL-46 — 실패 턴 8.01초 → 0.17초) |
 | `tools` | LangGraph `ToolNode` |
 | `hitl` | 위험 도구 실행 전 `interrupt()` 사람 승인. **거부해도 같은 배치의 안전한 호출은 새 id로 재발행해 살린다**(BL-20) · **질문이 위험 호출 «전부»를 이름으로 부르고, 승인해도 «물어본 것»만 재발행돼 실행된다**(BL-24, 2026-09-10) → [BL-20](design/BL-20_거부후_안전호출.md) · [BL-24](design/BL-24_다중위험호출_승인.md) |
 | `visual_verify` | 도구 실행 결과를 **화면으로** 확인해 증거를 도구 결과에 붙임 (Phase 2) |
