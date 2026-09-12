@@ -316,6 +316,35 @@ def executed_danger_notice(messages: list[AnyMessage], said: str) -> str:
 
     ⚠️ 반드시 `current_turn_messages()`를 거친다(절대규칙 6). 전체 히스토리를
       훑으면 **지난 턴의 삭제를 이번 턴에 다시 보고한다.**
+
+    ⚠️ `said`는 **사용자에게 실제로 나갈 최종 본문**이어야 한다(BL-51).
+      LLM 원문을 넘기면 T04 보정·빈응답 복구가 본문을 도구 문장으로 바꿔친
+      경우에 아래 «이미 말했으면 빼기» 가드가 빗나가 **같은 삭제가 두 번** 나간다.
+    """
+    said_l = (said or "").lower()
+    parts: list[str] = []
+    for target, line in succeeded_danger(messages):
+        # 응답이 이미 그 대상을 말했으면 덧붙이지 않는다 — 같은 사실을 두 번
+        # 말하면 사람은 둘 중 하나를 다른 일로 읽는다.
+        if target and target.lower() in said_l:
+            continue
+        parts.append(line)
+
+    if not parts:
+        return ""
+    return " 그리고 " + " ".join(parts)
+
+
+def succeeded_danger(messages: list[AnyMessage]) -> list[tuple[str, str]]:
+    """이번 턴에 **성공한** 위험 도구의 `(대상 이름, 결과 첫 줄)`. (BL-32 / BL-51)
+
+    «무엇이 실제로 됐는가»를 한 곳에서만 판정하려고 뽑아낸 함수다. 두 곳이 쓴다:
+      - `executed_danger_notice` — 한 걸 말하지 않는 것을 막는다(BL-32)
+      - `prune_done_steps`      — 한 걸 «못 했다»고 말하는 것을 막는다(BL-51)
+    둘이 각자 판정하면 **한 응답 안에서 서로 반대되는 말**이 나간다. 실제로 나갔다.
+
+    ⚠️ 판정은 **상태**가 한다 — `tool_succeeded()`(BL-29의 도구 결과 계약)뿐이고
+      문구 정규식은 끼지 않는다.
     """
     turn = current_turn_messages(messages)
 
@@ -327,8 +356,7 @@ def executed_danger_notice(messages: list[AnyMessage], said: str) -> str:
             if isinstance(c, dict) and c.get("id"):
                 calls[c["id"]] = (c.get("name", ""), c.get("args", {}) or {})
 
-    said_l = (said or "").lower()
-    parts: list[str] = []
+    out: list[tuple[str, str]] = []
     seen: set[str] = set()
     for m in turn:
         if not isinstance(m, ToolMessage):
@@ -339,20 +367,38 @@ def executed_danger_notice(messages: list[AnyMessage], said: str) -> str:
         text = _msg_text(m).strip()
         if not text or not tool_succeeded(text):
             continue
-        # 응답이 이미 그 대상을 말했으면 덧붙이지 않는다 — 같은 사실을 두 번
-        # 말하면 사람은 둘 중 하나를 다른 일로 읽는다.
-        target = _danger_target(args)
-        if target and target.lower() in said_l:
-            continue
         line = text.splitlines()[0].strip().lstrip("✓").strip()
         if not line or line in seen:
             continue
         seen.add(line)
-        parts.append(line)
+        out.append((_danger_target(args), line))
+    return out
 
-    if not parts:
-        return ""
-    return " 그리고 " + " ".join(parts)
+
+def prune_done_steps(steps: Any, messages: list[AnyMessage]) -> list[str]:
+    """«못 한 단계»에서 **이번 턴에 성공한 위험 도구의 대상**을 뺀다. (BL-51)
+
+    🚨 **한 응답에서 말이 세 번 바뀌었다** — 1차 리허설 대본 7장면:
+
+        🤖 ✓ 'test.txt' 휴지통으로 옮겼어요.
+           다만 이건 못 했어요: 'test.txt 파일 지우기'.     ← 🚨 방금 했다고 한 그것
+           그리고 'test.txt' 휴지통으로 옮겼어요.
+
+    **왜 생기나.** `steps_covered`는 «몇 단계가 됐나»를 세고(M3-1 §3-1),
+    `remaining_steps`는 그 **개수를 이름으로 바꾸며 «뒤에서부터 못 했다»고 가정**한다.
+    앞 단계가 도구 없이 넘어가면(M3-1 §5-2의 알려진 한계) 개수는 맞지만 **이름이
+    틀린다** — 실제로 지운 단계를 «못 했다»고 부른다.
+
+    여기서 고치는 건 **개수 판정이 아니라 이름 고르기**다. M3-1 §3-1(두 신호의 min)은
+    그대로 두고, 「이번 턴에 성공했다는 증거가 있는 대상」만 목록에서 뺀다.
+    남는 오차(이름에 대상이 안 들어간 단계)는 오늘과 같이 동작한다 —
+    ⚠️ **틀리는 방향이 «침묵»이라 거짓 실패보다 낫다**(M3-1 §5-1과 같은 기준).
+    """
+    rest = [str(s) for s in (steps or [])]
+    targets = [t.lower() for t, _ in succeeded_danger(messages) if t]
+    if not targets:
+        return rest
+    return [s for s in rest if not any(t in s.lower() for t in targets)]
 
 
 def _join_targets(calls: list) -> str:
@@ -1245,10 +1291,20 @@ def unfinished_notice(plan: Optional[list], covered: Any) -> str:
     기존 "삭제는 취소했어요. " 는 **접두**라 자리가 겹치지 않는다.
     조사를 하드코딩하지 않으려고 목록 형태로 붙인다("…는/은" 문제 회피).
     """
-    rest = remaining_steps(plan, covered)
-    if not rest:
+    return steps_notice(remaining_steps(plan, covered))
+
+
+def steps_notice(rest: Any) -> str:
+    """단계 목록을 그대로 문구로. `unfinished_notice`의 뒷부분을 떼어낸 것이다.
+
+    떼어낸 이유는 하나다 — `output_guard`가 목록을 **한 번 걸러서**(BL-51의
+    `prune_done_steps`) 넘겨야 하는데, 개수→이름 변환과 문구 조립이 한 함수에
+    묶여 있으면 그 사이에 낄 자리가 없다.
+    """
+    items = [str(s) for s in (rest or []) if str(s).strip()]
+    if not items:
         return ""
-    return " 다만 이건 못 했어요: " + ", ".join(f"'{s}'" for s in rest) + "."
+    return " 다만 이건 못 했어요: " + ", ".join(f"'{s}'" for s in items) + "."
 
 
 # ── 그래프 빌더 ────────────────────────────────────────────────────
@@ -1512,25 +1568,42 @@ def build_pluiz_graph(
         # ⚠️ **커서를 그대로 믿지 않는다** (M3-1 / BL-21 ①). 커서는 진행률이 아니라
         #   agent 자기루프를 끝내려고 **무조건 전진하는 루프 제어 값**이다. 그걸 그대로
         #   읽던 탓에 라이브에서 단계를 건너뛰고도 문구가 붙지 않았다.
-        tail = unfinished_notice(
-            state.get("plan"),
-            steps_covered(state.get("plan_cursor"),
-                          turn_tool_call_count(state["messages"])))
+        # ⚠️ **못 한 단계 목록은 한 번 거른다** (BL-51). 이번 턴에 성공한 위험
+        #   도구의 대상은 «못 했다»에서 뺀다 — 안 그러면 같은 응답이 같은 파일을
+        #   두고 «지웠다»와 «못 지웠다»를 같이 말한다. 대본 7장면에서 실제로 나갔다.
+        _rest = prune_done_steps(
+            remaining_steps(
+                state.get("plan"),
+                steps_covered(state.get("plan_cursor"),
+                              turn_tool_call_count(state["messages"]))),
+            state["messages"])
         # BL-24 — 승인은 됐는데 없어서 못 지운 것. M3의 «못 한 단계»와 같은 자리의 접미다.
-        tail += missing_notice(state.get("missing_targets"))
+        base_tail = steps_notice(_rest) + missing_notice(state.get("missing_targets"))
+        note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
 
-        # BL-32 — **한 걸 말하지 않는 것**을 막는다. 위험 도구가 실제로 실행됐는데
-        # 응답이 그 대상을 언급하지 않으면, 도구가 만든 문장을 그대로 싣는다.
-        # 판정의 기준은 **LLM이 실제로 한 말**이라 여기서 먼저 꺼내 둔다.
-        _last = state["messages"][-1] if state["messages"] else None
-        _said = _msg_text(_last) if isinstance(_last, AIMessage) else ""
-        tail += executed_danger_notice(state["messages"], _said)
+        def _tail_for(body: str) -> str:
+            """접미를 **최종 본문을 보고** 만든다. (BL-32의 가드 + BL-51)
+
+            🚨 **여기서 `body`는 반드시 «사용자에게 실제로 나갈 문장»이어야 한다.**
+            예전엔 LLM 원문(`messages[-1]`)으로 한 번만 계산해 모든 분기가 그걸
+            돌려 썼다. 그런데 `verify_output`의 빈응답 복구는 본문을 **도구 문장
+            그대로**로 바꿔친다 — 그러면 «응답이 이미 그 대상을 말했으면 빼기»가
+            빈 문자열과 비교돼 빗나가고, 같은 삭제가 **두 번** 나간다:
+
+                ✓ 'test.txt' 휴지통으로 옮겼어요. 그리고 'test.txt' 휴지통으로 옮겼어요.
+
+            분기마다 본문이 다르므로 **접미도 분기마다 다시 만든다.**
+            """
+            return base_tail + executed_danger_notice(state["messages"], note + body)
+
+        def _emit(body: str, *, strip: bool = False) -> dict:
+            content = note + body + _tail_for(body)
+            return {"messages": [AIMessage(content=content.strip() if strip else content)],
+                    "deletion_cancelled": False, "missing_targets": []}
 
         notice = watch_notice_to_deliver(state["messages"])
         if notice is not None:
-            note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
-            return {"messages": [AIMessage(content=note + notice + tail)],
-                    "deletion_cancelled": False, "missing_targets": []}
+            return _emit(notice)
 
         # 도구를 안 부르고 "지켜볼게요"·"중단했어요"라고 말한 경우 (BL-19).
         # ⚠️ 캐시 히트는 제외한다. fast_path는 도구를 **실제로 실행하고도** messages에는
@@ -1539,27 +1612,23 @@ def build_pluiz_graph(
         lie = (None if state.get("decision") == "fast_hit"
                else detect_watch_lie(state["messages"], watching=is_watching()))
         if lie is not None:
-            note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
-            return {"messages": [AIMessage(content=note + lie + tail)],
-                    "deletion_cancelled": False, "missing_targets": []}
+            return _emit(lie)
 
         corrected = verify_output(state["messages"])
-        note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
         if corrected is not None:
-            return {"messages": [AIMessage(content=note + corrected + tail)],
-                    "deletion_cancelled": False, "missing_targets": []}
-        if note or tail:
-            # 새 명령의 답변 앞에 취소 사실을 붙인다. 안 붙이면 사용자는 삭제가
-            # 어떻게 됐는지 모른 채 새 명령의 결과만 보게 된다.
-            last = state["messages"][-1]
+            return _emit(corrected)
+
+        # 새 명령의 답변 앞에 취소 사실을 붙인다. 안 붙이면 사용자는 삭제가
+        # 어떻게 됐는지 모른 채 새 명령의 결과만 보게 된다.
+        last = state["messages"][-1] if state["messages"] else None
+        body = _msg_text(last) if isinstance(last, AIMessage) else ""
+        if note or _tail_for(body):
             if isinstance(last, AIMessage):
-                return {"messages": [AIMessage(content=note + _msg_text(last) + tail)],
-                        "deletion_cancelled": False, "missing_targets": []}
+                return _emit(body)
             # 붙일 응답이 없으면 **접미만이라도 내보낸다.** 예전엔 여기서 조용히
             # 버려졌는데, 버려지는 내용이 «취소했어요»·«지웠어요»라 BL-32가
             # 고치려던 바로 그 침묵이다. (BL-32)
-            return {"messages": [AIMessage(content=(note + tail).strip())],
-                    "deletion_cancelled": False, "missing_targets": []}
+            return _emit("", strip=True)
         return {}
 
     def visual_verify(state: PluizState) -> dict:

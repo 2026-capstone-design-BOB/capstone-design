@@ -452,5 +452,89 @@ g30r.invoke({"messages": [HumanMessage("a.txt랑 b.txt 지워줘")]}, cfg30r)
 g30r.invoke(_Command(resume="아니"), cfg30r)
 check("거부하면 **둘 다** 안 지워진다", _deleted == [], f"→ {_deleted}")
 
+# ── BL-51 — 한 응답에서 말이 세 번 바뀌지 않는가 ──────────────────
+# 1차 리허설(2026-09-12) 대본 7장면에서 그대로 나갔다:
+#
+#   🤖 ✓ 'test.txt' 휴지통으로 옮겼어요.
+#      다만 이건 못 했어요: 'test.txt 파일 지우기'.
+#      그리고 'test.txt' 휴지통으로 옮겼어요.
+#
+#   «했다 → 못 했다 → 또 했다». 세 조각이 각각 다른 곳에서 나왔고 **서로를 안 봤다.**
+# ⚠️ 문구가 아니라 **모순**을 본다 — 한 응답이 같은 파일을 두고 «했다»와 «못 했다»를
+#   같이 말하지 않는가, 같은 사실을 두 번 말하지 않는가.
+print("\n=== BL-51 한 응답 안에서 말이 바뀌지 않는다 ===")
+
+_P51 = os.path.join("C:", os.sep, "Users", "me", "Desktop", "test.txt")
+
+# [순수 함수] 성공한 위험 도구의 대상은 «못 한 단계»에서 빠진다
+_m51 = [
+    HumanMessage("메모장 열고 test.txt 파일 지워줘"),
+    AIMessage(content="", tool_calls=[{"name": "delete_file",
+              "args": {"file_path": _P51}, "id": "p51", "type": "tool_call"}]),
+    ToolMessage(content="✓ 'test.txt' 휴지통으로 옮겼어요.", tool_call_id="p51"),
+]
+_pruned = G.prune_done_steps(["메모장 열기", "test.txt 파일 지우기"], _m51)
+check("[BL-51] 성공한 대상을 담은 단계는 «못 했다»에서 빠진다",
+      _pruned == ["메모장 열기"], f"→ {_pruned}")
+check("[BL-51] 증거가 없으면 목록을 그대로 둔다 (침묵으로 기울지 않는다)",
+      G.prune_done_steps(["메모장 열기", "계산기 열기"], [HumanMessage("두 개 열어줘")])
+      == ["메모장 열기", "계산기 열기"])
+check("[BL-51] succeeded_danger는 **성공한 것만** 센다",
+      G.succeeded_danger(_m51[:2] + [ToolMessage(content="✗ 파일을 찾지 못했어요.",
+                                                 tool_call_id="p51")]) == [])
+
+# [끝단] 대본 7장면을 그대로 돌린다 — 빈 요약(실기에서 관측된 모양)까지 포함
+
+
+# ⚠️ 이름이 반드시 `delete_file`이어야 한다 — `DANGEROUS_TOOLS`에 들어 있는
+#   이름으로만 hitl(승인)과 BL-32/BL-51 경로가 열린다. 다른 이름을 주면
+#   테스트가 «통과»하는데 정작 본 경로를 한 줄도 안 지난다.
+@tool("delete_file")
+def _d51(file_path: str) -> str:
+    """파일 삭제(mock)."""
+    return "✓ '%s' 휴지통으로 옮겼어요." % os.path.basename(file_path)
+
+
+class _Scene7:
+    """1단계는 **도구 없이** 넘어가고(이미 열려 있다), 2단계에서 삭제한다.
+
+    요약이 `empty`면 **빈 응답**이다 — `verify_output`이 본문을 도구 문장으로
+    복원하는 경로이고, BL-51의 중복은 정확히 거기서 나왔다.
+    """
+    def __init__(self, empty): self.empty = empty; self.n = 0
+    def bind_tools(self, t, **kw): return self
+    def invoke(self, m):
+        turn = G.current_turn_messages(m)
+        done = {c["name"] for x in turn if isinstance(x, AIMessage)
+                for c in (getattr(x, "tool_calls", None) or [])}
+        if "delete_file" in done:
+            return AIMessage(content="" if self.empty else "네, 지웠어요.")
+        if any(isinstance(x, AIMessage) and not getattr(x, "tool_calls", None)
+               for x in turn):
+            self.n += 1
+            return AIMessage(content="", tool_calls=[
+                {"name": "delete_file", "args": {"file_path": _P51},
+                 "id": "s7_%d" % self.n, "type": "tool_call"}])
+        return AIMessage(content="메모장은 이미 열려 있어요.")     # ← 도구 0개
+
+
+for _empty, _label in ((True, "빈 요약"), (False, "요약 있음")):
+    _g51 = G.build_pluiz_graph(
+        llm=_Scene7(_empty), tools=[_d51],
+        security_check=lambda t: (False, ""), fast_resolve=lambda t: None,
+        plan_decompose=lambda t: ["메모장 열기", "test.txt 파일 지우기"],
+        target_exists=lambda *a, **k: True)
+    _c51 = {"configurable": {"thread_id": "bl51_%s" % _empty}}
+    _g51.invoke({"messages": [HumanMessage("메모장 열고 test.txt 파일 지워줘")]}, _c51)
+    _body = _g51.invoke(Command(resume="어"), _c51)["messages"][-1].content
+
+    check("🚨 [BL-51/%s] 지운 것을 «못 했다»고 하지 않는다" % _label,
+          "못 했어요: 'test.txt 파일 지우기'" not in _body, f"→ {_body!r}")
+    check("🚨 [BL-51/%s] 같은 삭제를 두 번 말하지 않는다" % _label,
+          _body.count("휴지통으로 옮겼어요") <= 1, f"→ {_body!r}")
+    check("[BL-51/%s] 그래도 삭제 사실은 남는다 (BL-32를 되돌리지 않는다)" % _label,
+          "test.txt" in _body, f"→ {_body!r}")
+
+
 print(f"\n결과: {passed}/{total} 통과")
 sys.exit(0 if passed == total else 1)
