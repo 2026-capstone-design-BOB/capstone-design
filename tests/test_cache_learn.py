@@ -142,6 +142,53 @@ def run():
     #   그게 이 저장소가 가장 싫어하는 결함 유형이다(BL-12·19·26·35).
     #   오프라인이 차별점이라면 **이 표의 길이가 차별점의 크기**이므로 앞으로도
     #   계속 늘어날 것이다. 늘릴 때마다 짝을 맞췄는지 여기서 걸린다.
+    print("=== 5-3. BL-50 — 지시대명사는 패턴이 될 수 없다 ===")
+    #
+    # 1차 리허설(2026-09-12) 대본 2장면에서 `'그거 꺼줘' → close_app(메모장)` 이 박혔다.
+    # 🚨 **L1~L3을 전부 통과했다** — 「꺼」가 action이고, 5글자고, 대조가 없다.
+    #   그래서 «오염분 제거»가 아니라 **게이트(L4)** 로 막는다. 지우기만 하면
+    #   리허설을 돌 때마다 다시 박힌다.
+    check("🚨 '그거 꺼줘' 학습 거부(L4)",
+          not c.learn("그거 꺼줘", [{"name": "close_app", "args": {"app": "메모장"}}]))
+    check("거절 사유 L4", (c.is_learnable_utterance("그거 꺼줘") or "").startswith("L4"))
+    for _bad in ("이거 열어줘", "저거 닫아줘", "그걸 지워줘",
+                 "거기에 회의록 적어줘", "그게 뭐야", "걔 꺼줘"):
+        check(f"지시대명사 거부: {_bad!r}",
+              (c.is_learnable_utterance(_bad) or "").startswith("L4"))
+    # 조사가 붙어도 잡는다 — 한국어는 지시어가 **어절 머리**에 온다
+    check("조사가 붙어도 잡는다('그거를')", c.has_deixis("그거를 꺼줘"))
+    check("어절 중간의 우연한 일치는 안 잡는다('줄이거나')",
+          not c.has_deixis("소리 줄이거나 꺼줘"))
+
+    # ⚠️ **게이트는 find()에도 있어야 한다.** 학습만 막으면 이미 박힌 것과
+    #   M6로 가져온 것이 그대로 돈다 — BL-27이 두 곳에 건 것과 같은 이유다.
+    c._cache["그거 꺼줘"] = CacheEntry(
+        pattern="그거 꺼줘", tool_calls=[{"name": "close_app", "args": {"app": "메모장"}}],
+        response_template="OK", hit_count=1, is_seed=False, source="dynamic")
+    c._build_intent_index()
+    check("🚨 이미 박혀 있어도 캐시를 타지 않는다",
+          c.find("그거 꺼줘") is None)
+    # ⚠️ 제안도 실행의 입구다(BL-37) — 「네」 한 마디면 실행된다.
+    #   반환값만 보면 **헛통과**한다(BL-37의 다른 게이트들이 이미 전부 막는다).
+    #   그래서 «게이트를 실제로 물어봤는가»를 본다.
+    _asked = []
+    _orig_deixis = c.has_deixis
+    c.has_deixis = lambda t: (_asked.append(t), _orig_deixis(t))[1]
+    try:
+        _sug = c.suggest("그거 꺼줘")
+    finally:
+        c.has_deixis = _orig_deixis
+    check("🚨 제안(suggest)도 지시대명사 게이트를 거친다", bool(_asked))
+    check("🚨 제안(suggest)이 지시대명사를 내놓지 않는다", _sug is None)
+    check("선별 제거가 지시대명사도 걷어낸다",
+          any(k == "그거 꺼줘" and r.startswith("L4")
+              for k, r in c.prune_unlearnable_dynamic()))
+
+    # 🚨 **여기가 회귀를 잡는 자리다** — 게이트가 정상 명령을 삼키면 안 된다.
+    for _ok in ("메모장 열어줘", "볼륨 올려줘", "밝기 줄여줘", "스크린샷 찍어줘",
+                "음소거해줘", "지금 몇 시야", "배터리 얼마나 남았어"):
+        check(f"정상 명령은 여전히 히트: {_ok!r}", c.find(_ok) is not None)
+
     print("=== 캐시가 아는 앱은 실행 사전도 알아야 한다 ===")
     import core.command_cache as CC
     from tools.app_control import APP_ALIASES, APP_PROCESS_MAP, APP_DISPLAY_NAMES

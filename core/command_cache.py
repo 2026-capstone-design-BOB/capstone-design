@@ -367,6 +367,34 @@ _RESIDUAL_MODIFIERS = frozenset([
 # → [M5 ADR §3-4](../docs/design/M5_임베딩_캐시.md)
 _CONTRAST_TOKENS = frozenset(["말고", "말구", "대신", "아니라", "아니고", "빼고"])
 
+# ── BL-50: 지시대명사 — **맥락에 묶인 말은 패턴이 될 수 없다** ─────
+#
+# 1차 리허설(2026-09-12) 대본 2장면에서 이게 박혔다:
+#
+#   '그거 꺼줘'  → close_app(메모장)      ← 직전 턴에만 의미가 있는 말이다
+#
+# 그 뒤로 **크롬을 보며 「그거 꺼줘」 하면 메모장이 꺼진다.** 캐시는 맥락을 안 본다.
+#
+# 🚨 **BL-27의 재발이 아니라 «다른 문»이다.** BL-27은 «승인 응답(「그래」)이 명령이
+# 됐다»였고 L1~L3은 «아는 낱말이 있나 · 너무 짧나 · 대조가 있나»를 본다.
+# `'그거 꺼줘'`는 「꺼」가 action이라 **셋을 전부 통과한다** — 실측으로 확인했다.
+# 「그거」가 **지시대명사**라는 것은 아무도 안 봤다.
+#
+# ⚠️ **한 번 지우는 걸로는 안 된다.** 대본을 돌 때마다 다시 박힌다. 그래서
+#   «오염분 제거»가 아니라 **게이트**로 막는다. → [BACKLOG BL-50](../docs/BACKLOG.md)
+#
+# 어절의 **시작**을 본다 — 한국어는 조사가 뒤에 붙으므로(「그거를」·「여기에」)
+# 지시어는 어절 머리에 온다. `_CONTRAST_TOKENS`가 끝을 보는 것(「메모장말고」)과
+# 정확히 반대다.
+#
+# ⚠️ 오판의 방향이 안전하다 — 막아서 생기는 손해는 **LLM이 2.5초에 처리**하는 것뿐이고,
+#   놓쳐서 생기는 손해는 **엉뚱한 앱을 끄는 것**이다(BL-27이 정한 비대칭과 같다).
+_DEIXIS_TOKENS = frozenset([
+    "그거", "이거", "저거", "그걸", "이걸", "저걸",
+    "그것", "이것", "저것", "그게", "이게", "저게",
+    "걔", "얘", "쟤", "거기", "여기", "저기",
+])
+
 # ── BL-27: 학습 자격 — **발화** 쪽 조건 ───────────────────────────
 #
 # `_is_learnable()`은 **도구**가 화이트리스트인지만 봤다. 발화가 명령의 꼴인지는
@@ -588,6 +616,28 @@ class CommandCache:
                 return True
         return False
 
+    def has_deixis(self, user_input: str) -> bool:
+        """발화가 **직전 맥락을 가리키는 말**에 기대고 있는가. (BL-50)
+
+        「그거 꺼줘」의 「그거」는 **직전 턴에만 의미가 있다.** 캐시는 맥락을 안 보므로
+        이런 말을 패턴으로 굳히면 «크롬을 보며 「그거 꺼줘」 하니 메모장이 꺼지는»
+        일이 생긴다 — 1차 리허설에서 실제로 박혔다.
+
+        어절 **완전일치** 또는 **어절의 시작**만 본다. 한국어는 조사가 뒤에 붙어
+        (「그거를」·「여기에」) 지시어가 어절 머리에 오기 때문이고, 부분일치로
+        엉뚱한 낱말(「높이거나」)을 삼키지 않기 위해서다.
+        `has_contrast_marker`가 어절의 **끝**을 보는 것과 정확히 반대다.
+        """
+        text = self._normalize(user_input)
+        for tok in text.split(" "):
+            if not tok:
+                continue
+            if tok in _DEIXIS_TOKENS:
+                return True
+            if any(tok.startswith(d) and len(tok) > len(d) for d in _DEIXIS_TOKENS):
+                return True
+        return False
+
     def _extract_intent(self, text: str) -> Optional[tuple[str, str]]:
         """(entity_key, action_key) 쌍 추출. 둘 다 있을 때만 반환."""
         entity = self._extract_entity(text)
@@ -665,6 +715,16 @@ class CommandCache:
         # 무엇이든(fast_path·테스트) 같은 판정을 받는다.
         if self.has_contrast_marker(normalized):
             print(f"[CommandCache] [BL-27] 대조 표지 → 캐시 포기, LLM으로: {normalized!r}")
+            return None
+
+        # Stage 0-b: 지시대명사 게이트 (BL-50) — 대조 게이트와 같은 자리다.
+        #
+        # 학습(L4)만 막으면 **이미 박힌 항목과 가져온 항목은 그대로 돈다.**
+        # BL-27이 같은 이유로 두 곳에 걸었다 — 입구를 하나만 막으면 다른 입구로 샌다.
+        # ⚠️ 막혀서 가는 곳이 **LLM**이라는 게 핵심이다 — 대화 맥락을 가진 쪽은
+        #   거기뿐이라, «그거»가 무엇인지 아는 유일한 자리다.
+        if self.has_deixis(normalized):
+            print(f"[CommandCache] [BL-50] 지시대명사 → 캐시 포기, LLM으로: {normalized!r}")
             return None
 
         # Stage 1: Intent-based
@@ -751,6 +811,12 @@ class CommandCache:
 
         # ③ 대조 게이트 — `find()`와 같은 판정을 받는다 (BL-27)
         if self.has_contrast_marker(text):
+            return None
+
+        # ③-b 지시대명사 게이트 — 같은 이유다 (BL-50).
+        #   «혹시 「메모장 꺼줘」인가요?»라고 제안하면 사용자는 「네」라고 답하고,
+        #   그러면 **캐시가 고른 엉뚱한 앱이 꺼진다.** 제안도 실행의 입구다(BL-37).
+        if self.has_deixis(text):
             return None
 
         # ② 복합 명령이면 제안하지 않는다. 「네」 했는데 절반만 실행되면 그게 사고다
@@ -993,6 +1059,12 @@ class CommandCache:
           → `'그래'`·`'오시가 된거야 다시'`(STT 오인식) 차단
         - **L2** — 공백 제외 `_MIN_LEARN_CHARS`글자 미만이면 거절. → `'그래'`(2글자)
         - **L3** — 부정·대조 표지가 있으면 거절. → `'계산기 말고 메모장 열어줘'`
+        - **L4** — 지시대명사(「그거」·「여기」…)가 있으면 거절. (BL-50)
+          → `'그거 꺼줘'`·`'거기에 회의록 적어줘'` 차단
+
+        🚨 **L4는 L1~L3이 못 막는 축이다.** `'그거 꺼줘'`는 「꺼」가 action이라
+        L1을 통과하고, 5글자라 L2도, 대조가 없어 L3도 통과한다 — 1차 리허설에서
+        그대로 학습됐다. 맥락에 묶인 말은 **패턴이 될 수 없다**는 것이 L4다.
 
         ⚠️ **L1은 «entity **또는** action»이다. «둘 다»가 아니다.**
         ADR 초안은 «intent(둘 다) 추출 실패 시 거절»이었는데, 재보니 **시드 37개 중
@@ -1008,6 +1080,8 @@ class CommandCache:
             return f"L2:너무 짧음({len(key.replace(' ', ''))}글자)"
         if self.has_contrast_marker(key):
             return "L3:부정·대조 표지"
+        if self.has_deixis(key):
+            return "L4:지시대명사"
         if not (self._extract_entity(key) or self._extract_action(key)):
             return "L1:아는 낱말 없음"
         return None
