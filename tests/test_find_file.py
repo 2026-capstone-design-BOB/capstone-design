@@ -77,6 +77,9 @@ def run():
     _touch(docs, "졸업작품계획서_최종.docx")
     _touch(desk, ".env")                       # 비밀 파일 — 절대 안 나와야 한다
     _touch(desk, "하위", "깊은", "회의록.txt")   # 재귀 탐색 확인
+    _touch(desk, "a.txt")                      # 대본 6장면 — «에이점 티엑스티»
+    _touch(desk, "b.txt")
+    _touch(desk, "오이.jpg")                    # 음차로 읽으면 'oe' — 회귀 함정
 
     # LOCATION_MAP을 임시 폴더로 갈아끼운다 (사용자 실제 폴더를 안 건드린다)
     orig_map = dict(fs.LOCATION_MAP)
@@ -241,6 +244,63 @@ def run():
         finally:
             if orig_startfile is not None:
                 os.startfile = orig_startfile
+
+        # ── ⑦ D-01a — 발음 표기로 불러도 찾는다 ────────────────
+        # 1차 리허설(2026-09-12): *"에이점 티엑스티 파일이랑 ~ 이런 식으로
+        # 말하면 발음만 듣고 제대로 못 알아들어서 잘못 찾아."*
+        print()
+        print("=== ⑦ 한글 음차 → 알파벳 (D-01a) ===")
+
+        # 순수 함수부터 — 여기가 틀리면 아래는 전부 우연이다
+        check("① «에이점 티엑스티» → 'a.txt'",
+              fs._romanize_ko("에이점 티엑스티") == "a.txt", fs._romanize_ko("에이점 티엑스티"))
+        check("② 띄어쓰기가 없어도 같다",
+              fs._romanize_ko("에이점티엑스티") == "a.txt")
+        check("③ '에이치'가 '에이'+'치'로 쪼개지지 않는다",
+              fs._romanize_ko("에이치더블유피") == "hwp", fs._romanize_ko("에이치더블유피"))
+        check("④ 확장자만도 읽는다 — «티엑스티» → 'txt'",
+              fs._romanize_ko("티엑스티") == "txt")
+
+        # 🚨 여기가 이 기능의 안전선이다 — 한 조각이라도 남으면 변환하지 않는다
+        check("⑤ 🚨 '이력서'는 음차가 아니다 (이=e 뒤에 '력서'가 남는다)",
+              fs._romanize_ko("이력서") is None, fs._romanize_ko("이력서"))
+        check("⑥ 🚨 '개발착수서'도 아니다", fs._romanize_ko("개발착수서") is None)
+        check("⑦ 🚨 홑음절은 변환하지 않는다 — '비'는 'b'가 아니다",
+              fs._romanize_ko("비") is None and fs._romanize_ko("이") is None)
+        check("⑧ 🚨 한글이 없으면 애초에 후보가 없다", fs._romanize_ko("a.txt") is None)
+
+        # 실제 탐색
+        r = find(name="에이점 티엑스티", location="desktop")
+        check("⑨ «에이점 티엑스티» 로 a.txt를 찾는다", "a.txt" in r, r)
+        r = find(name="비점티엑스티", location="desktop")
+        check("⑩ «비점티엑스티» 로 b.txt를 찾는다", "b.txt" in r, r)
+        r = find(name="", extension="티엑스티", location="desktop")
+        check("⑪ 확장자를 발음으로 줘도 찾는다", "a.txt" in r and "b.txt" in r, r)
+
+        # 🚨 잃는 것이 없는가 — 이 기능의 설계 전제다
+        r = find(name="오이", location="desktop")
+        check("⑫ 🚨 '오이'는 음차로 'oe'지만 '오이.jpg'가 그대로 나온다",
+              "오이.jpg" in r, r)
+        r = find(name="이력서", location="downloads")
+        check("⑬ 🚨 '이력서'가 여전히 찾아진다 (회귀)",
+              "이력서_변소윤.pdf" in r, r)
+
+        # 여는 쪽도 같은 매칭을 탄다 (BL-31 경로)
+        opened = []
+        orig_startfile = getattr(os, "startfile", None)
+        os.startfile = lambda p: opened.append(p)
+        try:
+            fs.open_file.invoke({"file_path": "에이점티엑스티"})
+            check("⑭ open_file도 발음 표기로 연다",
+                  any(os.path.basename(p) == "a.txt" for p in opened), opened)
+        finally:
+            if orig_startfile is not None:
+                os.startfile = orig_startfile
+
+        # 🚨 삭제는 여전히 탐색을 안 탄다 — 비대칭은 그대로다
+        r = fs.delete_file.invoke({"file_path": "에이점티엑스티"})
+        check("⑮ 🚨 delete_file은 발음 표기를 풀어 주지 않는다 (의도된 비대칭)",
+              r.startswith("✗") and os.path.exists(os.path.join(desk, "a.txt")), r)
 
     finally:
         fs.LOCATION_MAP.clear()

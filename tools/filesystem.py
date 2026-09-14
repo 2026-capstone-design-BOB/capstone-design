@@ -135,6 +135,78 @@ def _norm_name(s: str) -> str:
     return re.sub(r"[\s_\-()\[\]]+", "", s).lower()
 
 
+# ── 한글 음차 → 알파벳 (D-01a, 2026-09-14) ──────────────────────────────
+# 음성으로 영문 파일명을 부르면 STT는 **소리 나는 대로** 준다 — `a.txt` 가
+# «에이점 티엑스티» 로 온다. STT는 제 일을 한 것이다(사람이 그렇게 말했다).
+# 1차 리허설 D-01에서 나왔다: *"발음만 듣고 제대로 못 알아들어서 잘못 찾아."*
+#
+# 🚨 **치환하지 않고 후보를 «더한다».** '오이.jpg' 의 '오이'는 음차로 읽으면
+#   오(o)+이(e) = 'oe' 다 — 치환하면 **멀쩡히 되던 매칭이 죽는다.** 원문 키를
+#   언제나 먼저 두고 음차 키를 뒤에 붙여 **하나라도 맞으면 맞은 것**으로 본다.
+#   그래서 이 기능은 **잃는 것이 없다** — 오변환도 무해하다.
+#
+# 🚨 **전부 쪼개져야만 변환한다.** '이력서'는 이(e) 다음 '력서'가 남으므로
+#   음차가 아니다 → 후보를 안 만든다. 한 조각이라도 남으면 통째로 버린다.
+#   (부분 변환을 허용하면 한국어 파일명 대부분이 알파벳 쓰레기가 된다)
+#
+# 🚨 **두 조각 이상일 때만 변환한다.** 홑음절 letter-name이 하필 전부 흔한
+#   한국어 낱말이다 — 이·오·비·시·지·디·티·피·유·엘·엠·엔·알·큐.
+#   '비' 하나를 'b'로 읽으면 이름에 b가 든 **모든 파일**이 걸린다.
+_KO_PIECES = {
+    "에이": "a", "비": "b", "씨": "c", "시": "c", "디": "d", "이": "e",
+    "에프": "f", "지": "g", "에이치": "h", "아이": "i", "제이": "j",
+    "케이": "k", "엘": "l", "엠": "m", "엔": "n", "오": "o", "피": "p",
+    "큐": "q", "알": "r", "아르": "r", "에스": "s", "티": "t", "유": "u",
+    "브이": "v", "더블유": "w", "더블류": "w", "엑스": "x", "와이": "y",
+    "제트": "z", "지트": "z",
+    "점": ".", "닷": ".",            # "에이**점**티엑스티"
+}
+# 긴 것부터 — '에이치'가 '에이'+'치'로 쪼개지면 안 된다.
+_KO_PIECE_KEYS = sorted(_KO_PIECES, key=len, reverse=True)
+_KO_MIN_PIECES = 2
+
+
+def _romanize_ko(s: str) -> str | None:
+    """«에이점 티엑스티» → 'a.txt'. 음차가 아니면 **None**(후보를 안 만든다).
+
+    반환이 None이어도 부르는 쪽은 원문으로 그대로 찾는다 — 이 함수는
+    더할 후보가 있는지만 답한다.
+    """
+    t = re.sub(r"\s+", "", s)
+    if not t or not re.search(r"[가-힣]", t):
+        return None                      # 한글이 없으면 음차일 수가 없다
+    out: list[str] = []
+    i = pieces = 0
+    while i < len(t):
+        ch = t[i]
+        if ch.isascii() and (ch.isalnum() or ch in "._-"):
+            out.append(ch)               # '에이점 txt' 처럼 섞여 올 수 있다
+            i += 1
+            continue
+        for k in _KO_PIECE_KEYS:
+            if t.startswith(k, i):
+                out.append(_KO_PIECES[k])
+                i += len(k)
+                pieces += 1
+                break
+        else:
+            return None                  # 한 조각이라도 남으면 음차가 아니다
+    if pieces < _KO_MIN_PIECES:
+        return None
+    return "".join(out)
+
+
+def _alts(s: str) -> list[str]:
+    """원문 + 음차 후보. **원문이 언제나 첫 번째다**(빠른 경로를 지키려고)."""
+    if not s:
+        return []
+    out = [s]
+    r = _romanize_ko(s)
+    if r and r not in out:
+        out.append(r)
+    return out
+
+
 def _walk_names(base: str, include_dirs: bool = False) -> list[str]:
     """base 아래 모든 파일의 전체 경로. (비밀 파일은 애초에 담지 않는다)
 
@@ -165,33 +237,46 @@ def _match_in(base: str, name: str, extension: str) -> list[str]:
     if not os.path.isdir(base):
         return []
 
-    if name and extension:
-        pattern = f"*{name}*.{extension}"
-    elif name:
-        pattern = f"*{name}*"
-    elif extension:
-        pattern = f"*.{extension}"
-    else:
+    if not name and not extension:
         return []
 
-    hits = [m for m in glob.glob(os.path.join(base, "**", pattern), recursive=True)
-            if not _is_secret_path(m)]
-    if hits:
-        return hits
+    # 음차 후보를 더한다 — **원문 조합이 언제나 먼저** 돈다(D-01a).
+    name_alts = _alts(name) or [""]
+    ext_alts = _alts(extension) or [""]
+
+    for nm in name_alts:
+        for ex in ext_alts:
+            if nm and ex:
+                pattern = f"*{nm}*.{ex}"
+            elif nm:
+                pattern = f"*{nm}*"
+            elif ex:
+                pattern = f"*.{ex}"
+            else:
+                continue
+            hits = [m for m in glob.glob(os.path.join(base, "**", pattern), recursive=True)
+                    if not _is_secret_path(m)]
+            if hits:
+                return hits
 
     # 2차 — 띄어쓰기·구분자를 걷어내고 다시 본다 (실측: 여기가 대부분을 잡는다)
     if not name:
         return []
-    key = _norm_name(name)
-    if not key:
+    keys = []
+    for nm in name_alts:
+        k = _norm_name(nm)
+        if k and k not in keys:
+            keys.append(k)
+    if not keys:
         return []
-    ext = extension.lower().lstrip(".")
+    exts = [e.lower().lstrip(".") for e in ext_alts if e]
     out = []
     for p in _walk_names(base):
         b = os.path.basename(p)
-        if ext and not b.lower().endswith("." + ext):
+        if exts and not any(b.lower().endswith("." + e) for e in exts):
             continue
-        if key in _norm_name(b):
+        nb = _norm_name(b)
+        if any(k in nb for k in keys):
             out.append(p)
     return out
 
@@ -208,7 +293,13 @@ def _near_misses(name: str, bases: list[str], limit: int = 3) -> list[str]:
     """
     if not name:
         return []
-    key = _norm_name(name)
+    keys = []
+    for nm in _alts(name):             # 음차 후보도 «혹시 이건가요»에 태운다
+        k = _norm_name(nm)
+        if k and k not in keys:
+            keys.append(k)
+    if not keys:
+        return []
     pool: dict[str, str] = {}          # 정규화 이름 → 보여줄 이름 (중복 제거)
     for base in bases:
         if not os.path.isdir(base):
@@ -218,8 +309,13 @@ def _near_misses(name: str, bases: list[str], limit: int = 3) -> list[str]:
             if os.path.isdir(p):
                 label += " (폴더)"
             pool.setdefault(_norm_name(os.path.basename(p)), label)
-    close = difflib.get_close_matches(key, list(pool), n=limit, cutoff=0.70)
-    return [pool[c] for c in close]
+    names = list(pool)
+    close: list[str] = []
+    for k in keys:                     # 원문 후보가 먼저 자리를 잡는다
+        for c in difflib.get_close_matches(k, names, n=limit, cutoff=0.70):
+            if c not in close:
+                close.append(c)
+    return [pool[c] for c in close[:limit]]
 
 
 @tool
