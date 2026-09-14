@@ -57,7 +57,25 @@ _log = get_logger("Graph")
 
 # click_ui_element: 클릭은 되돌릴 수 없고, 좌표는 Vision의 **추정**이다.
 # 무엇을 어디서 누를지 사용자가 보고 승인해야 한다. (2026-09-03)
+_NL = chr(10)
+
 DANGEROUS_TOOLS = {"delete_file", "delete_folder", "click_ui_element"}
+
+# 계획의 **안 해 본 단계**를 한 번 더 시도할 때만 묶는 도구들 (M-01 · M3-2)
+#
+# 🚨 **`DANGEROUS_TOOLS`의 여집합이 아니다.** `open_app`·`volume_up`·`type_text`는
+#   위험하지 않지만 **상태를 바꾼다.** 여집합으로 두면 도구가 하나 늘 때마다
+#   조용히 샌다 — 그래서 화이트리스트로 적는다.
+#
+# 🚨 **`describe_screen`은 일부러 뺐다.** M3-1 §6이 예로 들었지만, §6의 기준은
+#   «중복 실행이 무해하므로»인데 화면을 한 장 더 **외부로 내보내는 것**은 무해한
+#   중복이 아니다. 같은 이유로 `get_clipboard_text`(개인정보)·
+#   `take_screenshot`(파일 생성)·웹 검색류(검색어가 나간다)도 뺐다.
+#   → docs/design/M3-2_미시도_단계_재시도.md §4
+READONLY_RETRY_TOOLS = {
+    "find_file", "list_directory",
+    "get_running_apps", "get_battery_status", "get_current_time",
+}
 
 # ── 실행 결과 시각적 검증: **못 믿을 도구** 정의 (Phase 2) ─────────
 # 위가 "위험해서 멈추는 도구"라면 여기는 **못 믿어서 확인하는 도구**다.
@@ -871,6 +889,28 @@ def with_promise_directive(msgs: list[AnyMessage]) -> list[AnyMessage]:
     return [SystemMessage(content=_PROMISE_RETRY_DIRECTIVE.strip())] + out
 
 
+def with_retry_step_directive(msgs: list[AnyMessage], step: str) -> list[AnyMessage]:
+    """M-01 재시도용 메시지. `with_promise_directive`와 **같은 규칙**이다.
+
+    ⚠️ **«반드시 부르라»고 쓰지 않는다.** 이 재시도는 읽기전용 도구만 묶여 있고
+      `tool_choice` 강제도 없다 — 부를 것이 없으면 **안 부르는 것이 맞다.**
+      억지로 부르게 하면 헛호출이 `steps_covered`를 올려 «못 했어요»를 침묵시킨다
+      (→ M3-2 §3). 그래서 «할 수 있으면 하라»까지만 말한다.
+    """
+    directive = (
+        f"{_NL}{_NL}[이번 단계] 지금 해야 할 단계는 '{step}' 입니다. "
+        "묶여 있는 도구로 **할 수 있는 단계라면 지금 그 도구를 부르세요.** "
+        "이 단계에 맞는 도구가 없으면 부르지 말고 그냥 답하세요 — "
+        "없는 일을 한 것처럼 아무 도구나 부르면 안 됩니다."
+    )
+    out = list(msgs)
+    for i, m in enumerate(out):
+        if isinstance(m, SystemMessage):
+            out[i] = SystemMessage(content=_msg_text(m) + directive)
+            return out
+    return [SystemMessage(content=directive.strip())] + out
+
+
 def detect_watch_lie(messages: list[AnyMessage], *, watching: bool) -> Optional[str]:
     """응답이 감시를 해줬다고 말하는데 **실제로는 아무 일도 없었으면** 정직한 말로 바꾼다.
 
@@ -1277,6 +1317,31 @@ def reissue_message(safe_calls: Any) -> Optional[AIMessage]:
                      response_metadata={_REISSUE_KEY: True})
 
 
+def needs_step_retry(response: Any, in_plan: bool,
+                    cursor: Any = 0, turn_calls: Any = 0) -> bool:
+    """계획 한 단계를 **아예 안 해 봤는가**. (M-01 · M3-2 §4)
+
+    참이면 «읽기전용 도구만 묶어» 한 번 더 묻는다. 판정은 **상태**만 본다 —
+    계획 중인가 · 이번 응답에 도구 호출이 있는가 · 이번 턴에 도구가 몇 번 돌았나.
+    문구를 읽지 않는다(BL-19 그물과 같은 방침: 정규식은 범위만 좁히고 판정하지 않는다).
+
+    🚨 **«실패»와 «안 해 봄»은 다르다.** 도구를 불러서 `✗`가 돌아온 것은
+      여기에 걸리지 않는다 — 부르긴 불렀으므로 `tool_calls`가 있다.
+      사용자가 리허설에서 가른 것도 정확히 그 선이다.
+
+    🚨 **`turn_calls <= cursor` 가 루프를 막는 줄이다.** 재시도가 성공하면
+      도구가 돌고 agent로 **되돌아오는데**, 그때 응답은 또 «도구 0개»다.
+      이 줄이 없으면 재시도 → 도구 → agent → 재시도 … 로 **돈다.**
+      (`steps_covered`와 같은 셈이다 — cursor번째 단계를 덮으려면 호출이
+      `cursor+1`개는 있어야 한다. 그 이하면 이 단계는 아직 안 돌았다.)
+    """
+    if not in_plan:
+        return False
+    if getattr(response, "tool_calls", None):
+        return False
+    return _as_int(turn_calls) <= _as_int(cursor)
+
+
 def steps_covered(cursor: Any, tool_calls: Any) -> int:
     """단계가 여기까지는 진행됐다고 볼 근거 — **덜 낙관적인 쪽**을 믿는다. (M3-1)
 
@@ -1394,6 +1459,9 @@ def build_pluiz_graph(
     # ⚠️ 첫 패스는 절대 건드리지 않는다 — 평범한 대화까지 도구를 부르게 된다.
     # ⚠️ 지원하지 않는 provider·mock이면 None이고, 그러면 **오늘과 똑같이** 동작한다.
     _forced_bind: dict[str, Any] = {}
+    # M-01 재시도에 묶을 것들. **허용목록에 있는 것만** 남긴다 (M3-2 §4).
+    _readonly_tools = [t for t in (tools or [])
+                       if getattr(t, "name", None) in READONLY_RETRY_TOOLS]
 
     def _forced_llm(name: str):
         """`name` 도구를 반드시 부르게 묶은 LLM. 못 묶으면 None(=오늘 경로)."""
@@ -1560,6 +1628,40 @@ def build_pluiz_graph(
                 response = retried
             else:
                 _log.warning("[BL-35] 재시도에도 도구 미호출 — 원래 응답을 그대로 둔다")
+
+        # M-01: 계획의 한 단계를 **아예 안 해 봤으면** 한 번 더 묻는다 (M3-2).
+        # BL-19·BL-35와 같은 계열이지만 **결정적으로 다른 점이 하나** 있다:
+        #
+        #   🚨 **강제하지 않는다.** 저 둘은 부를 도구가 정해져 있었지만(watch_screen)
+        #      여기는 **부를 것이 없을 수도 있는** 자리다. `tool_choice`로 밀면
+        #      모델이 아무 읽기 도구나 부르고, 그 헛호출이 turn_tool_call_count를
+        #      올려 steps_covered를 밀어 **«못 했어요»를 침묵시킨다**(M3-2 §3).
+        #      BL-26/BL-32와 같은 모양이라, 안전장치를 넣다가 거짓말을 만드는 꼴이다.
+        #
+        #   🚨 보장은 **묶는 목록**이 한다 — READONLY_RETRY_TOOLS에 없으면 부를 수
+        #      없다. 프롬프트가 아니라 구조다(BL-19의 교훈).
+        #
+        # 최악이 «오늘의 동작»이라 되돌릴 것이 없다 → M3-2 §4
+        elif (_readonly_tools and needs_step_retry(
+                response, in_plan,
+                cursor=cursor, turn_calls=turn_tool_call_count(state["messages"]))):
+            step = str(plan[cursor]) if plan and cursor < len(plan) else ""
+            _plog.info("[M-01] 단계 미시도 → 1회 재시도(읽기전용 %d개) | 단계=%r",
+                       len(_readonly_tools), step)
+            try:
+                retried = llm.bind_tools(_readonly_tools).invoke(
+                    with_retry_step_directive(msgs, step))
+            except Exception as e:
+                _log.warning("[M-01] 재시도 실패(%s) — 원래 응답을 쓴다",
+                             type(e).__name__)
+                retried = None
+            if retried is not None and getattr(retried, "tool_calls", None):
+                _plog.info("[M-01] 재시도가 단계를 집었다 | 도구=%s",
+                           [c.get("name") for c in (retried.tool_calls or [])])
+                response = retried
+            else:
+                # 오늘과 똑같다 — output_guard가 «못 했어요»를 그대로 붙인다.
+                _plog.info("[M-01] 재시도도 미호출 — 못 한 단계로 보고한다 | 단계=%r", step)
 
         out: dict = {"messages": [response]}
         # 도구를 안 불렀다 = 이 단계에서 더 할 일이 없다 → 다음 단계로 넘어간다.

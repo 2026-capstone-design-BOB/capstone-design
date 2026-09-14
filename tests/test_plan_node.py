@@ -536,5 +536,136 @@ for _empty, _label in ((True, "빈 요약"), (False, "요약 있음")):
           "test.txt" in _body, f"→ {_body!r}")
 
 
+
+# ══════════════════════════════════════════════════════════════════
+# M-01 (M3-2) — 계획의 «안 해 본 단계»를 한 번 더 시도한다
+#
+# 1차 리허설(2026-09-12)에서 사용자가 가른 선을 그대로 지킨다:
+#   *"실패해서 문구 뜨는 건 그렇다 쳐도, **할 수 있는데 그냥 명령 씹혔다고**
+#     안 하는 건 좀 그렇잖아."*
+# → docs/design/M3-2_미시도_단계_재시도.md
+print()
+print("[M-01] 안 해 본 단계를 한 번 더 시도한다 (읽기전용만 · 강제 없음)")
+
+from langchain_core.messages import SystemMessage as _SM
+
+
+@tool
+def get_running_apps() -> str:
+    """켜진 앱 목록(mock) — READONLY_RETRY_TOOLS에 있는 유일한 도구다."""
+    order.append("running")
+    return "✓ 메모장이 켜져 있어요."
+
+
+class _M01LLM:
+    """1단계는 도구로 하고, **2단계는 말로만 때운다.**
+
+    재시도인지는 `with_retry_step_directive`가 넣는 «[이번 단계]» 표시로 안다 —
+    지시가 실제로 도착했는지까지 같이 보게 된다.
+    """
+    def __init__(self, retry_calls=True):
+        self.retry_calls = retry_calls
+        self.binds = []              # (묶인 도구 이름들, kwargs)
+        self.last_bound = []
+        self.retry_bound = None
+        self.retry_kwargs = None
+        self.retries = 0
+
+    def bind_tools(self, tools, **kw):
+        names = [getattr(t, "name", None) for t in tools]
+        self.binds.append((names, dict(kw)))
+        self.last_bound = names
+        return self
+
+    def invoke(self, msgs):
+        sys_text = " ".join(G._msg_text(m) for m in msgs if isinstance(m, _SM))
+        if "[이번 단계]" in sys_text:                     # ← 재시도 패스
+            self.retries += 1
+            self.retry_bound = list(self.last_bound)
+            self.retry_kwargs = dict(self.binds[-1][1])
+            if self.retry_calls:
+                return AIMessage(content="", tool_calls=[{
+                    "name": "get_running_apps", "args": {},
+                    "id": "m01_%d" % self.retries, "type": "tool_call"}])
+            return AIMessage(content="지금은 확인이 어렵네요.")
+        if msgs and isinstance(msgs[-1], ToolMessage):    # 방금 도구가 돌았다 → 마무리
+            return AIMessage(content="했어요.")
+        m = _DIRECTIVE_RE.search(sys_text)
+        if m and m.group(1) == "1":
+            return AIMessage(content="", tool_calls=[{
+                "name": "open_app", "args": {"app": "메모장"},
+                "id": "m01_open", "type": "tool_call"}])
+        return AIMessage(content="지금 켜져 있는 앱을 알려드릴게요.")   # 2단계 — 말만
+
+
+def _build_m01(llm, tools):
+    return G.build_pluiz_graph(
+        llm=llm, tools=tools, security_check=fake_security,
+        fast_resolve=no_fast,
+        plan_decompose=lambda t: ["메모장 열기", "지금 켜져 있는 앱 알려주기"])
+
+
+# ── ① 순수 함수 — «실패»와 «안 해 봄»을 가르는가 ─────────────────
+_with = AIMessage(content="", tool_calls=[{"name": "x", "args": {},
+                                           "id": "1", "type": "tool_call"}])
+_without = AIMessage(content="말만 했다")
+check("① 계획 중이 아니면 안 건다",
+      G.needs_step_retry(_without, False) is False)
+check("② 🚨 도구를 불렀으면 안 건다 (실패는 재시도 대상이 아니다)",
+      G.needs_step_retry(_with, True) is False)
+check("③ 계획 중 · 도구 0개 · 이번 턴 호출도 없으면 건다",
+      G.needs_step_retry(_without, True, cursor=0, turn_calls=0) is True)
+check("④ 🚨 이번 턴 호출이 단계를 덮고도 남으면 안 건다 (재시도 루프 차단)",
+      G.needs_step_retry(_without, True, cursor=1, turn_calls=2) is False)
+check("⑤ 1단계를 아직 안 덮었으면 건다",
+      G.needs_step_retry(_without, True, cursor=1, turn_calls=1) is True)
+
+# ── ② 실제로 단계를 집어내는가 ───────────────────────────────────
+order.clear()
+_llm = _M01LLM(retry_calls=True)
+_g = _build_m01(_llm, [open_app, close_app, delete_file, get_running_apps])
+_r = _g.invoke({"messages": [HumanMessage("메모장 열고 지금 켜져 있는 앱 알려줘")]},
+               {"configurable": {"thread_id": "m01_ok"}})
+_body = last_ai(_r)
+check("⑥ 말로만 때운 단계를 재시도가 집어낸다", "running" in order, order)
+check("⑦ 그래서 «못 했어요»가 안 붙는다", "못 했어요" not in _body, "→ %r" % _body)
+
+# ── ③ 🚨 무엇을 묶었는가 — 이 기능의 안전선 전부가 여기 있다 ──────
+check("⑧ 🚨 재시도에는 **읽기전용 도구만** 묶인다",
+      _llm.retry_bound == ["get_running_apps"], _llm.retry_bound)
+check("⑨ 🚨 그래서 위험 도구(delete_file)는 **부를 수가 없다**",
+      "delete_file" not in (_llm.retry_bound or []), _llm.retry_bound)
+check("⑩ 🚨 상태를 바꾸는 도구(open_app·close_app)도 빠진다",
+      not ({"open_app", "close_app"} & set(_llm.retry_bound or [])), _llm.retry_bound)
+check("⑪ 🚨 tool_choice로 **강제하지 않는다** (헛호출이 «못 했어요»를 침묵시킨다)",
+      _llm.retry_kwargs == {}, _llm.retry_kwargs)
+check("⑫ 🚨 한 단계에 재시도는 **한 번뿐**이다", _llm.retries == 1, _llm.retries)
+
+# ── ④ 재시도가 실패하면 «오늘의 동작»으로 돌아가는가 ──────────────
+order.clear()
+_llm2 = _M01LLM(retry_calls=False)
+_g2 = _build_m01(_llm2, [open_app, close_app, delete_file, get_running_apps])
+_r2 = _g2.invoke({"messages": [HumanMessage("메모장 열고 지금 켜져 있는 앱 알려줘")]},
+                 {"configurable": {"thread_id": "m01_no"}})
+_body2 = last_ai(_r2)
+check("⑬ 재시도도 도구를 안 부르면 «못 했어요»가 그대로 붙는다",
+      "못 했어요" in _body2, "→ %r" % _body2)
+# 🚨 재시도가 한 말("지금은 확인이 어렵네요")은 **버린다.** 원래 응답이 남는다 —
+#   BL-35가 정한 규율("재시도도 실패하면 응답을 고쳐 쓰지 않는다")과 같은 자리다.
+#   오탐했을 때 멀쩡한 답을 재시도의 변명으로 바꿔치는 쪽이 더 나쁘다.
+check("⑭ 🚨 재시도가 한 말로 응답을 바꿔치지 않는다 (원래 답이 남는다)",
+      "알려드릴게요" in _body2 and "확인이 어렵네요" not in _body2, "→ %r" % _body2)
+
+# ── ⑤ 읽기전용 도구가 아예 없으면 오늘과 완전히 같은가 ────────────
+order.clear()
+_llm3 = _M01LLM(retry_calls=True)
+_g3 = _build_m01(_llm3, [open_app, close_app, delete_file])      # 읽기전용 0개
+_r3 = _g3.invoke({"messages": [HumanMessage("메모장 열고 지금 켜져 있는 앱 알려줘")]},
+                 {"configurable": {"thread_id": "m01_none"}})
+check("⑮ 묶을 읽기전용 도구가 없으면 재시도 자체를 안 한다", _llm3.retries == 0)
+check("⑯ 그때는 오늘과 같이 «못 했어요»로 끝난다",
+      "못 했어요" in last_ai(_r3), "→ %r" % last_ai(_r3))
+
+
 print(f"\n결과: {passed}/{total} 통과")
 sys.exit(0 if passed == total else 1)
