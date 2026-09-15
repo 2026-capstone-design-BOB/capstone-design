@@ -124,10 +124,11 @@ python tests/test_cache_learn.py  # 88/88
 python tests/test_hitl_agent.py   # 8/8
 python tests/test_hitl_graph.py   # 140/140  ← 승인 경로 전체(BL-20·24·38·40)
 python tests/test_offline_skip.py # 11/11   ← 오프라인이면 LLM을 안 부른다(BL-46)
-python tests/test_plan_node.py    # 77/77   ← 계획 전체(M3·M3-1·M3-2·BL-51)
+python tests/test_plan_node.py    # 82/82   ← 계획 전체(M3·M3-1·M3-2·BL-51)
 python tests/test_find_file.py    # 57/57   ← 파일 찾기(BL-07·BL-31·D-01a)
+python tests/test_bl53_stt_echo.py # 31/31  ← 승인이 STT 반추에 안 깨진다(BL-53)
 
-python scripts/run_mock_suite.py  # 46파일 1672/1672  ← 합계는 항상 이걸로 센다
+python scripts/run_mock_suite.py  # 47파일 1708/1708  ← 합계는 항상 이걸로 센다
 ```
 
 상세: [docs/WORKFLOW.md](docs/WORKFLOW.md)
