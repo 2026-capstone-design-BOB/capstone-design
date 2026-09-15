@@ -38,6 +38,26 @@ def build_llm(settings: Any = None):
             model=settings.gemini_model,
             google_api_key=settings.gemini_api_key,
             temperature=0,
+            # 🚨 thinking을 끈다. 2026-09-15 라이브에서 **빈 응답**이 났다.
+            #
+            #   턴 완료 | 입력='a.txt 지워 줘' | 요청=없음 | 실행=없음
+            #           | 사유=못함 | LLM 1회 | 토큰 in=5934 out=0
+            #
+            # 재현 결과가 명확했다(같은 질문·같은 도구 41개):
+            #   · 도구만 바인딩            → delete_file 정상
+            #   · + 시스템 프롬프트        → **out=0 · content 없음 · 도구 호출 없음**
+            #   · + 시스템 프롬프트 + 이 줄 → 정상
+            #
+            # ⚠️ **코드는 그대로인데 같은 날 12:23엔 되고 18:27엔 안 됐다.**
+            #    `gemini-2.5-flash`는 버전이 굴러가는 **별칭**이라 서버 쪽이 바뀐 것이다.
+            #    우리가 고를 수 있는 건 «별칭을 바꾸는 것»(또 굴러간다)이 아니라
+            #    **«흔들리는 경로를 안 쓰는 것»** 이라고 판단했다.
+            #
+            # 덤으로 thinking 토큰이 사라져 응답이 빨라지고 비용도 준다.
+            # (단순 호출에서 출력 35토큰 중 33이 reasoning이었다)
+            #
+            # 📌 `gemini-2.0-flash`는 **이미 404**다 — 문서의 «2.0 Flash» 표기는 낡았다.
+            thinking_budget=0,
         )
     elif provider == "claude":
         from langchain_anthropic import ChatAnthropic

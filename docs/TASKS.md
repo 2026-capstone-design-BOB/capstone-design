@@ -465,6 +465,9 @@
 - [ ] 🚨 **`.env`의 `WAKE_WORDS`가 `플루이즈`인지 확인한다** — [BL-54](BACKLOG.md).
       호출어를 바꾼 채로 켜면 **전용 모델이 버려지고 Whisper 경로(감지율 천장 69%)로 떨어진다.**
       2026-09-14 리허설 뒤 실제로 `메타몽`인 채 남아 있었다
+- [ ] 🚨 **모델을 한 번 불러 본다** — 아무 명령이나 하나. **응답이 비면 [BL-57](BACKLOG.md)이다.**
+      `gemini-2.5-flash`는 **버전이 굴러가는 별칭**이라 2026-09-15에 실제로 터졌다
+      (코드는 그대로인데 같은 날 12:23 정상 → 18:27 전부 빈 응답)
 - [ ] mock 스위트 실측 — `python scripts/run_mock_suite.py` (숫자를 기억으로 적지 않는다)
 - [ ] 테스트가 더럽힌 캐시 되돌리기 — `git status`에 `cache/` 가 뜨면 되돌린다(BL-11 계열)
 - [ ] **백업** — `services/wakeword_model.npz` · `cache/command_cache.json`
