@@ -631,12 +631,25 @@ check("⑥ 말로만 때운 단계를 재시도가 집어낸다", "running" in o
 check("⑦ 그래서 «못 했어요»가 안 붙는다", "못 했어요" not in _body, "→ %r" % _body)
 
 # ── ③ 🚨 무엇을 묶었는가 — 이 기능의 안전선 전부가 여기 있다 ──────
-check("⑧ 🚨 재시도에는 **읽기전용 도구만** 묶인다",
-      _llm.retry_bound == ["get_running_apps"], _llm.retry_bound)
+check("⑧ 🚨 재시도에는 **허용목록에 있는 것만** 묶인다 (읽기 ∪ 멱등)",
+      set(_llm.retry_bound or []) == {"get_running_apps", "open_app"},
+      _llm.retry_bound)
 check("⑨ 🚨 그래서 위험 도구(delete_file)는 **부를 수가 없다**",
       "delete_file" not in (_llm.retry_bound or []), _llm.retry_bound)
-check("⑩ 🚨 상태를 바꾸는 도구(open_app·close_app)도 빠진다",
-      not ({"open_app", "close_app"} & set(_llm.retry_bound or [])), _llm.retry_bound)
+# 🚨 2026-09-15에 `open_app`이 **들어왔다**(M3-2 §6-1 · ⏸️ 사용자 결정).
+#   근거는 «무해해서»가 아니라 **«멱등해서»** 다 — 이미 실행 중이면 새 창을 만들지
+#   않고 포커스만 한다. `close_app`은 **되돌리는 방향**이라 그대로 빠져 있다:
+#   안 시킨 창이 닫히면 사용자가 하던 일이 사라진다. 이 비대칭이 이 줄의 요지다.
+check("⑩ 🚨 `close_app`은 **여전히 빠진다** — 멱등해 보여도 되돌리는 방향이다",
+      "close_app" not in (_llm.retry_bound or []), _llm.retry_bound)
+check("⑩-a 🚨 두 목록이 **섞이지 않았다** — 기준이 무너지면 조용히 샌다",
+      "open_app" not in G.READONLY_RETRY_TOOLS
+      and "open_app" in G.IDEMPOTENT_RETRY_TOOLS
+      and G.STEP_RETRY_TOOLS == G.READONLY_RETRY_TOOLS | G.IDEMPOTENT_RETRY_TOOLS)
+check("⑩-b 🚨 상태를 **누적**시키는 도구는 멱등이 아니다 — 들어오면 안 된다",
+      not ({"volume_up", "volume_down", "type_text", "close_app",
+            "delete_file", "delete_folder", "click_ui_element"}
+           & G.STEP_RETRY_TOOLS), G.STEP_RETRY_TOOLS)
 check("⑪ 🚨 tool_choice로 **강제하지 않는다** (헛호출이 «못 했어요»를 침묵시킨다)",
       _llm.retry_kwargs == {}, _llm.retry_kwargs)
 check("⑫ 🚨 한 단계에 재시도는 **한 번뿐**이다", _llm.retries == 1, _llm.retries)
@@ -656,15 +669,55 @@ check("⑬ 재시도도 도구를 안 부르면 «못 했어요»가 그대로 �
 check("⑭ 🚨 재시도가 한 말로 응답을 바꿔치지 않는다 (원래 답이 남는다)",
       "알려드릴게요" in _body2 and "확인이 어렵네요" not in _body2, "→ %r" % _body2)
 
-# ── ⑤ 읽기전용 도구가 아예 없으면 오늘과 완전히 같은가 ────────────
+# ── ⑤ 재시도 가능한 도구가 아예 없으면 오늘과 완전히 같은가 ───────
+# ⚠️ `open_app`이 §6-1로 들어왔으므로 «0개»를 만들려면 그것도 빼야 한다.
 order.clear()
 _llm3 = _M01LLM(retry_calls=True)
-_g3 = _build_m01(_llm3, [open_app, close_app, delete_file])      # 읽기전용 0개
+_g3 = _build_m01(_llm3, [close_app, delete_file])            # 재시도 가능 0개
 _r3 = _g3.invoke({"messages": [HumanMessage("메모장 열고 지금 켜져 있는 앱 알려줘")]},
                  {"configurable": {"thread_id": "m01_none"}})
-check("⑮ 묶을 읽기전용 도구가 없으면 재시도 자체를 안 한다", _llm3.retries == 0)
+check("⑮ 묶을 도구가 없으면 재시도 자체를 안 한다", _llm3.retries == 0)
 check("⑯ 그때는 오늘과 같이 «못 했어요»로 끝난다",
       "못 했어요" in last_ai(_r3), "→ %r" % last_ai(_r3))
+
+# ── ⑥ 🚨 사용자가 든 예가 실제로 걸리는가 (M-01의 출발점) ─────────
+#   *"메모장 열고 계산기도 열어줘"* — 2단계가 `open_app`이라 2026-09-14 구현에서는
+#   **재시도가 안 붙던** 바로 그 경우다. §6-1이 연 문이 이것이다.
+order.clear()
+
+
+class _M01OpenLLM(_M01LLM):
+    """2단계(`open_app`)를 말로만 때우고, 재시도에서는 `open_app`을 부른다."""
+
+    def invoke(self, msgs):
+        sys_text = " ".join(G._msg_text(m) for m in msgs if isinstance(m, _SM))
+        if "[이번 단계]" in sys_text:
+            self.retries += 1
+            self.retry_bound = list(self.last_bound)
+            self.retry_kwargs = dict(self.binds[-1][1])
+            return AIMessage(content="", tool_calls=[{
+                "name": "open_app", "args": {"app": "계산기"},
+                "id": "m01_calc", "type": "tool_call"}])
+        if msgs and isinstance(msgs[-1], ToolMessage):
+            return AIMessage(content="했어요.")
+        m = _DIRECTIVE_RE.search(sys_text)
+        if m and m.group(1) == "1":
+            return AIMessage(content="", tool_calls=[{
+                "name": "open_app", "args": {"app": "메모장"},
+                "id": "m01_open", "type": "tool_call"}])
+        return AIMessage(content="계산기도 열어드릴게요.")      # 2단계 — 말만
+
+
+_llm4 = _M01OpenLLM()
+_g4 = _build_m01(_llm4, [open_app, close_app, delete_file, get_running_apps])
+_r4 = _g4.invoke({"messages": [HumanMessage("메모장 열고 계산기도 열어줘")]},
+                 {"configurable": {"thread_id": "m01_openapp"}})
+_body4 = last_ai(_r4)
+check("⑰ 🆕 `open_app` 단계도 재시도가 집어낸다 (사용자가 든 바로 그 예)",
+      _llm4.retries == 1 and "계산기" in " ".join(order), order)
+check("⑱ 🆕 그래서 «못 했어요»가 안 붙는다", "못 했어요" not in _body4, "→ %r" % _body4)
+check("⑲ 🚨 그래도 **강제는 아니다** (tool_choice 없음)",
+      _llm4.retry_kwargs == {}, _llm4.retry_kwargs)
 
 
 print(f"\n결과: {passed}/{total} 통과")

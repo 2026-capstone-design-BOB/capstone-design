@@ -77,6 +77,31 @@ READONLY_RETRY_TOOLS = {
     "get_running_apps", "get_battery_status", "get_current_time",
 }
 
+# 읽기는 아니지만 **다시 해도 같은 자리에 머무는**(멱등) 상태변경 도구. (M3-2 §6-1)
+#
+# 🚨 **위 목록에 섞지 않는다.** M3-2 §4가 세운 기준은 «위험하지 않은 것»이 아니라
+#   **«읽기»** 였다 — 기준이 무를수록 도구가 늘 때마다 조용히 샌다. `open_app`은
+#   그 기준을 통과하지 못하므로 **기준을 바꾸는 대신 칸을 하나 더 만든다.**
+#   두 목록의 합집합이 `STEP_RETRY_TOOLS`다. 어느 쪽으로 들어왔는지가 남는다.
+#
+# **`open_app`을 넣는 근거는 «무해해서»가 아니라 «멱등해서»다**:
+#   `tools/app_control.py`의 `open_app`은 이미 실행 중이면 **새 창을 만들지 않고
+#   포커스만** 한다(`_is_running` → `_focus_window`). 2026-09-02 실기에서 새 메모장이
+#   쌓이던 것을 고치며 들어간 규칙이다. 그래서 «한 번 더»가 «두 개»가 되지 않는다.
+#
+# ⚠️ **`explorer`는 그 규칙의 유일한 예외다**(app_control.py §explorer 전용).
+#   탐색기는 항상 새 창을 연다. 다만 M-01 재시도는 «이 단계를 **아예 안 해 봤을
+#   때»만 도는 것**이라(`turn_calls <= cursor`) 이미 연 것을 또 열지 않는다.
+#   예외가 문제가 되려면 커서 회계가 먼저 틀려야 한다.
+#
+# ⚠️ **`close_app`은 넣지 않았다.** 멱등해 보이지만 **되돌리는 방향**이라 헛호출의
+#   대가가 다르다 — 안 시킨 창이 닫히면 사용자가 하던 일이 사라진다.
+#   `volume_up`·`type_text`는 부를 때마다 값이 **누적**되므로 애초에 멱등이 아니다.
+IDEMPOTENT_RETRY_TOOLS = {"open_app"}
+
+#: M-01 재시도에 실제로 묶이는 것. 두 기준의 합집합이다.
+STEP_RETRY_TOOLS = READONLY_RETRY_TOOLS | IDEMPOTENT_RETRY_TOOLS
+
 # ── 실행 결과 시각적 검증: **못 믿을 도구** 정의 (Phase 2) ─────────
 # 위가 "위험해서 멈추는 도구"라면 여기는 **못 믿어서 확인하는 도구**다.
 # 실행 직후 visual_verify 노드가 화면을 실제로 보고, 그 증거를 도구 결과에 붙인다.
@@ -1486,9 +1511,9 @@ def build_pluiz_graph(
     # ⚠️ 첫 패스는 절대 건드리지 않는다 — 평범한 대화까지 도구를 부르게 된다.
     # ⚠️ 지원하지 않는 provider·mock이면 None이고, 그러면 **오늘과 똑같이** 동작한다.
     _forced_bind: dict[str, Any] = {}
-    # M-01 재시도에 묶을 것들. **허용목록에 있는 것만** 남긴다 (M3-2 §4).
-    _readonly_tools = [t for t in (tools or [])
-                       if getattr(t, "name", None) in READONLY_RETRY_TOOLS]
+    # M-01 재시도에 묶을 것들. **허용목록에 있는 것만** 남긴다 (M3-2 §4·§6-1).
+    _retry_tools = [t for t in (tools or [])
+                    if getattr(t, "name", None) in STEP_RETRY_TOOLS]
 
     def _forced_llm(name: str):
         """`name` 도구를 반드시 부르게 묶은 LLM. 못 묶으면 None(=오늘 경로)."""
@@ -1665,18 +1690,18 @@ def build_pluiz_graph(
         #      올려 steps_covered를 밀어 **«못 했어요»를 침묵시킨다**(M3-2 §3).
         #      BL-26/BL-32와 같은 모양이라, 안전장치를 넣다가 거짓말을 만드는 꼴이다.
         #
-        #   🚨 보장은 **묶는 목록**이 한다 — READONLY_RETRY_TOOLS에 없으면 부를 수
+        #   🚨 보장은 **묶는 목록**이 한다 — STEP_RETRY_TOOLS에 없으면 부를 수
         #      없다. 프롬프트가 아니라 구조다(BL-19의 교훈).
         #
         # 최악이 «오늘의 동작»이라 되돌릴 것이 없다 → M3-2 §4
-        elif (_readonly_tools and needs_step_retry(
+        elif (_retry_tools and needs_step_retry(
                 response, in_plan,
                 cursor=cursor, turn_calls=turn_tool_call_count(state["messages"]))):
             step = str(plan[cursor]) if plan and cursor < len(plan) else ""
-            _plog.info("[M-01] 단계 미시도 → 1회 재시도(읽기전용 %d개) | 단계=%r",
-                       len(_readonly_tools), step)
+            _plog.info("[M-01] 단계 미시도 → 1회 재시도(재시도 가능 %d개) | 단계=%r",
+                       len(_retry_tools), step)
             try:
-                retried = llm.bind_tools(_readonly_tools).invoke(
+                retried = llm.bind_tools(_retry_tools).invoke(
                     with_retry_step_directive(msgs, step))
             except Exception as e:
                 _log.warning("[M-01] 재시도 실패(%s) — 원래 응답을 쓴다",
