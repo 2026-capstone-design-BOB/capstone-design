@@ -490,7 +490,13 @@
 
     const LEAD = 3.0, SLOT = 4.0, FREE = 15.0, FREE_N = 3;
     const TARGET_SR = 16000;
-    const RMS_MIN = 0.006;   // scripts/train_wakeword.py 의 발화 구간 임계와 같아야 한다
+    /* 🚨 **2026-09-16 정정 — 이 값이 0.006 이었고, 그래서 멀쩡한 녹음에 «소리가 작아요»가 떴다.**
+     *    0.006 은 `train_wakeword.py` 가 **통짜 녹음에서 발화 구간을 찾을 때** 쓰는 값이다.
+     *    지금은 **슬롯마다 라벨이 있어 구간을 찾을 필요가 없다** — 여기서는 «말을 했나»만 가리면 된다.
+     *    🔑 **실제로 모델에 닿는 관문은 `services/wakeword.py` 의 0.0015 다.**
+     *    실측(3명·78구간)에서 **최솟값이 0.0061 로 관문의 4배**였다 — 아무도 안 작았다.
+     *    무음(방 잡음)은 보통 0.001 아래다. 그래서 관문보다 약간 위로 내린다. */
+    const RMS_MIN = 0.0025;
     const GAP = 0.35;        // 이어 붙일 때 슬롯 사이 무음(초)
 
     /* 🌐 **전송기는 바깥에서 꽂는다.**
@@ -651,12 +657,18 @@
     let gainWarned = false;
     function checkGain(t) {
       if (gainWarned || !t.pcm) return;
-      const weak = t.rms < RMS_MIN * 2.5 || t.peak < 0.08;
+      // 🚨 **2026-09-16 정정 — 조건이 `rms<0.015 || peak<0.08` 이라 거의 모두에게 떴다.**
+      //    사용자 보고: *"해 본 사람들 다들 입력 소리가 작다고 나온다고 한다."*
+      //    근거 없이 런타임 관문(0.0015)의 10배를 요구했다. 실측 3명은 전부
+      //    관문의 4배 이상인데도 경고를 봤다.
+      //    → **둘 다(AND) 낮을 때만**, «진짜 안 들리는» 수준일 때만 띄운다.
+      //    ⚠️ 겁주는 경고는 참여를 깎는다. 그게 이 프로젝트의 임계 경로다.
+      const weak = t.rms < 0.004 && t.peak < 0.03;
       if (!weak) { gainWarned = true; return; }   // 한 번 넉넉하면 다시 안 본다
       gainWarned = true;
       $('gainWarn').innerHTML =
-        '<div class="big warn">🎤 마이크 소리가 작습니다</div>'
-        + '<p class="note">이대로도 보내실 수 있지만, <b>학습에 쓰기 어려울 수 있습니다.</b><br>'
+        '<div class="big warn">🎤 마이크 소리가 많이 작습니다</div>'
+        + '<p class="note">계속하셔도 되지만, 올리면 더 좋습니다.<br>'
         + '<b>Windows</b> 설정 › 시스템 › 소리 › 입력 › 장치 속성 › <b>입력 볼륨</b>을 올리거나,<br>'
         + '<b>맥</b> 시스템 설정 › 사운드 › 입력 › <b>입력 볼륨</b>을 올린 뒤<br>'
         + '아래 <b>«↺ 방금 것 다시»</b> 를 눌러 주세요. 마이크에 더 가까이 가도 좋습니다.</p>';
@@ -705,8 +717,8 @@
       $('verdict').innerHTML = ratio >= 0.7
         ? '<span class="ok big">' + good + ' / ' + takes.length + ' 좋아요.</span> 이대로 보내셔도 됩니다.'
         : ratio >= 0.4
-          ? '<span class="warn big">' + good + ' / ' + takes.length + ' 만 잘 들어갔습니다.</span> '
-          + '<b>마이크 입력 볼륨</b>을 올리고 <b>«소리가 작아요»</b> 항목을 다시 해 주시면 좋습니다.'
+          ? '<span class="warn big">' + good + ' / ' + takes.length + ' 들어갔습니다.</span> '
+          + '이대로 보내셔도 <b>쓸 수 있습니다.</b> 여유 되시면 «소리가 작아요» 항목만 다시 해 주세요.'
           : '<span class="bad big">' + good + ' / ' + takes.length + '.</span> '
           + '목소리가 거의 안 들어왔습니다. 마이크 입력 장치를 확인해 주세요.';
       show('s-review');
