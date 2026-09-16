@@ -664,7 +664,26 @@
       //    → **둘 다(AND) 낮을 때만**, «진짜 안 들리는» 수준일 때만 띄운다.
       //    ⚠️ 겁주는 경고는 참여를 깎는다. 그게 이 프로젝트의 임계 경로다.
       const weak = t.rms < 0.004 && t.peak < 0.03;
-      if (!weak) { gainWarned = true; return; }   // 한 번 넉넉하면 다시 안 본다
+      gainWarned = true;                          // 어느 쪽이든 한 번만 말한다
+
+      // ✅ **괜찮으면 «괜찮다»고 말해 준다.** 아무 말이 없으면 사람들은
+      //    «작다고 뜨진 않는데 이게 맞나?» 하고 불안해한다 — 실제로 그런 보고가 있었다.
+      //    초록 막대가 움직이는 것만으로는 «충분한지»를 알 수 없다.
+      if (!weak) {
+        const mult = t.rms / RMS_MIN;
+        $('gainWarn').style.borderColor = 'var(--ok)';
+        $('gainWarn').innerHTML =
+          '<div class="big ok">🎤 소리 잘 들어오고 있어요</div>'
+          + '<p class="note">입력 크기가 <b>충분합니다</b>'
+          + (mult >= 5 ? ' (넉넉해요)' : ' (적당해요)')
+          + '. 이대로 쭉 진행하시면 됩니다.<br>'
+          + '<b>중간에 «소리가 작아요»가 몇 개 떠도 괜찮습니다</b> — 그 항목만 다시 하거나 '
+          + '그냥 두셔도 데이터로 씁니다.</p>';
+        $('gainWarn').classList.remove('hide');
+        setTimeout(() => $('gainWarn').classList.add('hide'), 9000);
+        return;
+      }
+      $('gainWarn').style.borderColor = 'var(--warn)';
       gainWarned = true;
       $('gainWarn').innerHTML =
         '<div class="big warn">🎤 마이크 소리가 많이 작습니다</div>'
