@@ -58,7 +58,9 @@ RAW = os.path.join(_ROOT, "data", "wakeword_raw")
 OUT = os.path.join(_ROOT, "data", "wakeword")
 
 SR = 16000          # scripts/wakeword_data.py · train_wakeword.py 와 같아야 한다
-RMS_MIN = 0.006     # train_wakeword.build_dataset ③ 의 발화 구간 임계와 같은 값
+RMS_MIN = 0.0025    # 🚨 2026-09-16: 0.006 이었다. 그건 «통짜 녹음에서 구간 찾기» 값인데
+                    #   여기는 라벨이 있어 찾을 필요가 없다. 런타임 관문(0.0015)보다
+                    #   약간 위면 «말을 했나»를 가르기에 충분하다. 페이지와 같은 값.
 PAD = 0.25          # 슬롯 경계에서 잘리지 않게 앞뒤로 조금 더 준다(초)
 
 
