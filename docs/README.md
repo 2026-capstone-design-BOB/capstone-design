@@ -78,6 +78,8 @@
 | **캐시 매칭·학습 수정** | [ARCHITECTURE.md § 캐시](ARCHITECTURE.md#커맨드-캐시) → [design/M1_P4_캐시정책.md](design/M1_P4_캐시정책.md) |
 | **구조를 바꾸는 큰 결정** | [design/](design/)에 ADR 먼저 작성 → [WORKFLOW.md § 설계 결정](WORKFLOW.md#설계-결정-adr) |
 | **«이걸 왜 만드나»가 흔들릴 때** | `docs/planning/제품_방향.md` — 제품 판단과 열린 결정 (🔒 로컬 전용) |
+| **«시연 뒤에 뭘 하나»** | `docs/planning/개발_계획.md` — 주차별 배분 · **밀릴 때 떨어지는 순서** · 9/22용 한 장 (🔒 로컬 전용) |
+| **«남은 게 전부 뭔가»** | `docs/planning/다루고자_하는_내용.md` — 항목별 **지금 상태 판정** (🔒 로컬 전용) |
 | **미팅·보고 자료 준비** | `docs/meetings/` — 날짜별 동결 스냅샷. 가장 최근 것을 골라 새로 쓴다 (🔒 로컬 전용) |
 | **테스트 작성·실행** | [WORKFLOW.md § 테스트](WORKFLOW.md#테스트) · 수동 항목은 [testing/](testing/) |
 | **환경이 이상할 때 (도구가 조용히 안 됨)** | `python tests/test_dependencies.py` → [WORKFLOW.md § 의존성](WORKFLOW.md#️-의존성이-없으면-도구가-조용히-죽는다) |
@@ -137,6 +139,7 @@ hwp 양식 8종(`D01`~`D08`)이 원본이고, **내용은 md 작업본으로 관
 | [과제_03_작품소개글](teamwork/과제_03_작품소개글.md) | 🔴 10/28 · hwp 1쪽 |
 | [과제_04_발표슬라이드](teamwork/과제_04_발표슬라이드.md) | 11월 초 · 구성은 개발자, 살은 팀원. README 정리 포함 |
 | [미팅_준비양식](teamwork/미팅_준비양식.md) | 매주 ①~⑤ 양식 |
+| 🆕 [녹음_부탁드립니다](teamwork/녹음_부탁드립니다.md) | 🔴 **10/06 · 20~30명.** 그대로 복사해 보내는 문구 + «왜 딴 말도 시키나» 설명 + 모인 것 가져오는 법 |
 | [피드백_기록](teamwork/피드백_기록.md) | 🆕 **교수님 피드백을 담는 자리** — 지금까지 없었다 |
 
 > 🔒 **저장소에 없는 문서 3개**(`docs/planning/` · `docs/meetings/` · `docs/presentation/`)는
