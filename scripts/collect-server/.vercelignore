@@ -1,0 +1,14 @@
+# 🚨 이 파일이 있으면 Vercel 은 .gitignore 를 안 본다. 그래서 public/ 이 올라간다.
+#    (public/ 은 .gitignore 에 있다 — 생성물이라 저장소에는 안 넣는다)
+#
+# 왜 Vercel 에서 빌드하지 않는가:
+#   원본 페이지가 `scripts/플루이즈_녹음.html` 로 **이 폴더 바깥**에 있다.
+#   배포에는 이 폴더만 올라가므로 빌드가 원본을 못 찾는다.
+#   → `npm run deploy` 가 **로컬에서 굽고** 결과물을 올린다.
+node_modules
+src
+build.mjs
+pull.mjs
+.env
+.env.local
+.vercel

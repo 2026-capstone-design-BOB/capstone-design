@@ -250,9 +250,11 @@ const TARGET_SR = 16000;
 const RMS_MIN = 0.006;   // scripts/train_wakeword.py 의 발화 구간 임계와 같아야 한다
 const GAP = 0.35;        // 이어 붙일 때 슬롯 사이 무음(초)
 
-/* 업로드 주소. 비어 있으면 «파일로 받기»만 한다.
-   배포본은 이 값을 채워 넣는다 → scripts/collect-server/ */
-const UPLOAD_URL = (window.PLUIZ_UPLOAD_URL || '').trim();
+/* 🌐 **전송기는 바깥에서 꽂는다.**
+   이 파일만 열면 `window.PLUIZ_SEND` 가 없으므로 «파일로 받기»만 한다(오프라인 모드).
+   배포본은 `scripts/collect-server/` 가 업로더를 먼저 싣고 이 값을 채운다.
+   🔑 **한 파일로 두 모드**다 — 페이지를 두 벌 관리하면 반드시 한쪽만 갱신된다. */
+const sender = () => (typeof window.PLUIZ_SEND === 'function' ? window.PLUIZ_SEND : null);
 
 function pick(arr, n){
   const c = arr.slice();
@@ -472,7 +474,7 @@ $('finish').onclick = () => {
     + '<tr><td>③ 자유 발화</td><td>' + seen.freetalk + ' / ' + want.freetalk + '</td></tr>'
     + '<tr><td>길이</td><td>' + (all.length/TARGET_SR/60).toFixed(1) + '분</td></tr>';
 
-  if(UPLOAD_URL){
+  if(sender()){
     $('sendBody').innerHTML = '<div class="big">마지막입니다</div>'
       + '<p class="note">아래 버튼을 누르면 <b>바로 전달</b>됩니다. 파일을 따로 보내실 필요 없어요.</p>';
   }else{
@@ -485,19 +487,22 @@ $('finish').onclick = () => {
 };
 
 $('send').onclick = async () => {
-  $('send').disabled = true; $('send').textContent = '보내는 중…';
+  const send = sender();
+  if(!send) return;
+  $('send').disabled = true;
+  const setPct = p => { $('send').textContent = '보내는 중… ' + p + '%'; };
+  setPct(0);
   try{
-    const fd = new FormData();
-    fd.append('meta', out.json);
-    fd.append('audio', out.wav, out.base + '.wav');
-    const r = await fetch(UPLOAD_URL, {method:'POST', body:fd});
-    if(!r.ok) throw new Error('서버 응답 ' + r.status);
+    await send(out, setPct);
     $('sendCard').innerHTML = '<div class="big ok">보냈습니다. 정말 감사합니다 🙏</div>'
       + '<p class="note">이 창은 닫으셔도 됩니다.</p>';
   }catch(e){
+    // ⚠️ **실패를 조용히 삼키지 않는다.** 여기서 막히면 그 사람의 3분이 그냥 날아간다.
+    //    그래서 «파일로 받기» 를 항상 남겨 둔다 — 최후의 경로가 있어야 한다.
     $('send').disabled = false; $('send').textContent = '다시 보내기';
-    $('sendBody').innerHTML += '<p class="note bad">보내지 못했습니다 (' + e.message + ').<br>'
-      + '인터넷을 확인하고 다시 눌러 주세요. 계속 안 되면 <b>«대신 파일로 받기»</b> 로 받아서 보내 주세요.</p>';
+    $('sendBody').innerHTML += '<p class="note bad">보내지 못했습니다 (' + (e.message || e) + ').<br>'
+      + '인터넷을 확인하고 다시 눌러 주세요. 계속 안 되면 아래 '
+      + '<b>«대신 파일로 받기»</b> 로 받아서 보내 주시면 똑같습니다.</p>';
   }
 };
 
