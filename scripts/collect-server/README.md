@@ -45,11 +45,11 @@
 ```bash
 cd scripts/collect-server
 npm install
-npm run deploy          # 로컬에서 굽고 → 배포
+npm run deploy          # 로컬에서 굽고 → 배포 (내부에서 npx vercel 을 쓴다)
 
 # 모인 것 내려받기
-vercel env pull .env.local
-npm run pull            # → data/wakeword_raw/
+npx vercel env pull .env.local   # 처음 한 번만
+npm run pull                     # 🔁 가져올 때마다
 python ../ingest_wakeword.py --list
 ```
 

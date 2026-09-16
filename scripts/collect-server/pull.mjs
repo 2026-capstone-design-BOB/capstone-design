@@ -1,7 +1,9 @@
 /* 모인 녹음을 내려받는다 → data/wakeword_raw/
  *
- *     vercel env pull .env.local     # BLOB_READ_WRITE_TOKEN 을 받아 온다
- *     npm run pull
+ *     npx vercel env pull .env.local     # BLOB_READ_WRITE_TOKEN 을 받아 온다 (처음 한 번만)
+ *     npm run pull                       # 모인 것을 가져올 때마다
+ *
+ * ⚠️ `vercel` 은 전역 설치가 아니라서 **`npx vercel`** 로 부른다.
  *
  * 그 다음은 기존 경로 그대로다:
  *     python scripts/ingest_wakeword.py --list
@@ -30,7 +32,7 @@ if (!process.env.BLOB_READ_WRITE_TOKEN) {
 }
 if (!process.env.BLOB_READ_WRITE_TOKEN) {
   console.error('✗ BLOB_READ_WRITE_TOKEN 이 없습니다.');
-  console.error('  scripts/collect-server 에서 `vercel env pull .env.local` 를 먼저 돌리세요.');
+  console.error('  scripts/collect-server 에서 `npx vercel env pull .env.local` 를 먼저 돌리세요.');
   process.exit(1);
 }
 
@@ -47,8 +49,10 @@ do {
     const base = name.replace(/\.(wav|json)$/, '');
     pairs.set(base, (pairs.get(base) || 0) + 1);
     if (await exists(dst)) { skipped++; continue; }
-    const r = await get(b.url);          // private 이라 토큰이 필요하다
-    const buf = Buffer.from(await new Response(r.body ?? r).arrayBuffer());
+    // 🚨 `access: 'private'` 를 **반드시 넘긴다.** 빼면 «missing options» 로 죽는다.
+    //    그리고 `get()` 은 `{statusCode, stream, headers, blob}` 을 준다 — `body` 가 아니다.
+    const r = await get(b.url, { access: 'private' });
+    const buf = Buffer.from(await new Response(r.stream).arrayBuffer());
     await writeFile(dst, buf);
     total++;
     console.log('  ↓ ' + name + ' (' + (buf.length / 1024 / 1024).toFixed(1) + 'MB)');

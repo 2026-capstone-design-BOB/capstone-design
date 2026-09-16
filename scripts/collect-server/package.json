@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node build.mjs",
     "pull": "node pull.mjs",
-    "deploy": "npm run build && vercel deploy --prod"
+    "deploy": "npm run build && npx vercel deploy --prod"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0"
