@@ -8,8 +8,8 @@
 입력 — `scripts/플루이즈_녹음.html` 이 만든 파일 쌍을 `data/wakeword_raw/` 에 넣는다.
 
     data/wakeword_raw/
-      pluiz_오다영_20260918T142301.wav
-      pluiz_오다영_20260918T142301.json   ← 언제 무엇을 말했는지
+      pluiz_홍길동_20260918T142301.wav
+      pluiz_홍길동_20260918T142301.json   ← 언제 무엇을 말했는지
 
 출력 — `data/wakeword/` (git 밖)
 
