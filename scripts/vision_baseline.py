@@ -45,6 +45,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _FIXTURE = os.path.join(_ROOT, "cache", "vision_baseline_fixture.txt")
 
+# 🔒 **메모장 케이스는 앱 이름이 아니라 «제목»으로 창을 특정한다.**
+#
+# 앱 이름(`"메모장"`)으로 부르면 `find_hwnd_for_app`이 **notepad.exe 창 아무거나**를
+# 집는다. 사용자가 자기 메모장을 열어 두고 있으면 **그 내용이 Gemini로 나간다.**
+# 2026-09-16에 실제로 그 상황이라 메모장 케이스 7건을 못 돌렸다.
+#
+# 파일 이름이 창 제목에 들어가므로(`vision_baseline_fixture.txt - 메모장`),
+# 이 문자열은 **프로세스 매칭에 실패 → 제목 폴백**을 타서 우리 창만 집는다.
+# ⚠️ 이름을 바꾸면 이 보호가 풀린다. 파일명과 같이 바꿀 것.
+_NOTEPAD = "vision_baseline_fixture"
+
 # 고정 텍스트 — 메모장에 띄워 놓고 «이 창에 뭐가 적혀 있나»를 묻는다.
 # 한국어·영어·숫자를 섞어 둔다. **정답을 우리가 안다**는 게 이 파일의 전부다.
 FIXTURE_TEXT = (
@@ -62,29 +73,29 @@ FIXTURE_TEXT = (
 # must/never: describe 채점용 키워드
 CASES = [
     # ── A. describe_screen — 메모장(내용을 우리가 안다) ──────────
-    dict(id=1, kind="describe", window="메모장", q="",
+    dict(id=1, kind="describe", window=_NOTEPAD, q="",
          must=["회의록"], never=[],
          note="창을 설명해 보라고만 한다. 본문의 제목이 나오는가"),
-    dict(id=2, kind="describe", window="메모장", q="이 창에 적힌 첫 줄을 그대로 알려주세요.",
+    dict(id=2, kind="describe", window=_NOTEPAD, q="이 창에 적힌 첫 줄을 그대로 알려주세요.",
          must=["플루이즈", "회의록"], never=[],
          note="읽기 정확도 — 한국어 한 줄"),
-    dict(id=3, kind="describe", window="메모장", q="이 창에 적힌 날짜를 알려주세요.",
+    dict(id=3, kind="describe", window=_NOTEPAD, q="이 창에 적힌 날짜를 알려주세요.",
          must=["2026", "09", "16"], never=[],
          note="숫자 읽기"),
-    dict(id=4, kind="describe", window="메모장", q="이 창에 영어로 적힌 부분이 있나요? 있으면 그대로 적어주세요.",
+    dict(id=4, kind="describe", window=_NOTEPAD, q="이 창에 영어로 적힌 부분이 있나요? 있으면 그대로 적어주세요.",
          must=["September"], never=[],
          note="영문 읽기"),
     dict(id=5, kind="describe", window="계산기", q="",
          must=["계산기"], never=[],
          note="다른 앱도 알아보는가"),
     # 🚨 환각 탐침 — describe 쪽
-    dict(id=6, kind="describe", window="메모장",
+    dict(id=6, kind="describe", window=_NOTEPAD,
          q="이 창에 '삭제' 버튼이 있나요? 있으면 어디에 있는지, 없으면 없다고 답하세요.",
-         must=["없"], never=["있습니다", "있어요"],
+         must=[r"없|보이지\s*않|있지\s*않"], never=["있습니다", "있어요"],
          note="🚨 없는 것을 있다고 하는가"),
     dict(id=7, kind="describe", window="계산기",
          q="지금 이 창에 오류 메시지가 떠 있나요?",
-         must=["없"], never=["있습니다", "있어요"],
+         must=[r"없|보이지\s*않|있지\s*않|떠\s*있지\s*않"], never=["있습니다", "있어요"],
          note="🚨 없는 상태를 지어내는가"),
 
     # ── B. find_ui_element — 있는 것 ─────────────────────────────
@@ -92,11 +103,15 @@ CASES = [
          note="명백히 있는 버튼"),
     dict(id=9, kind="find", window="계산기", target="등호(=) 버튼", truth=True,
          note="기호 버튼"),
-    dict(id=10, kind="find", window="계산기", target="지우기(CE) 버튼", truth=True,
-         note="약어 라벨"),
-    dict(id=11, kind="find", window="메모장", target="파일 메뉴", truth=True,
+    # ⚠️ **정답을 확정할 수 없어 뺐다 (2026-09-16).** 계산기가 «공학용» 모드였고
+    #    모델이 *"'C' 버튼은 보이지만 'CE'는 아니다"* 라고 **구분해서** 답했다.
+    #    화면에 CE가 정말 있었는지 우리가 모른다 → **정답이 불확실한 케이스는
+    #    자에 넣지 않는다.** 모르는 것을 «틀렸다»로 세면 자가 거짓말을 한다.
+    dict(id=10, kind="find", window="계산기", target="숫자 0 버튼", truth=True,
+         note="숫자 버튼(하단) — 세로 방향 좌표"),
+    dict(id=11, kind="find", window=_NOTEPAD, target="파일 메뉴", truth=True,
          note="메뉴 막대"),
-    dict(id=12, kind="find", window="메모장", target="편집 메뉴", truth=True,
+    dict(id=12, kind="find", window=_NOTEPAD, target="편집 메뉴", truth=True,
          note="메뉴 막대 — 이웃 항목과 구분하는가"),
 
     # ── C. 🚨 find_ui_element — 없는 것. 정답은 «못 찾았다» ──────
@@ -104,7 +119,7 @@ CASES = [
          note="🚨 계산기에 저장 버튼은 없다"),
     dict(id=14, kind="find", window="계산기", target="로그인 버튼", truth=False,
          note="🚨 있을 법하지만 없다"),
-    dict(id=15, kind="find", window="메모장", target="결제하기 버튼", truth=False,
+    dict(id=15, kind="find", window=_NOTEPAD, target="결제하기 버튼", truth=False,
          note="🚨 문맥상 말이 안 되는 것"),
 ]
 
@@ -130,10 +145,25 @@ def _api_failed(out: str) -> bool:
 
 
 def _window_rect(app: str):
-    """그 앱 창의 화면 사각형. 못 찾으면 None."""
+    """그 앱 창의 화면 사각형(**물리 픽셀**). 못 찾으면 None.
+
+    🚨 **DPI를 맞추지 않으면 «창 밖»이라는 거짓 경보가 난다 (2026-09-16 첫 판).**
+      `GetWindowRect`는 프로세스가 DPI-aware가 아니면 **논리 픽셀**을 준다.
+      Vision 좌표는 **물리 픽셀**이라, 150%·200% 배율에서는 멀쩡한 좌표가
+      창 밖으로 계산된다. 실제로 계산기 케이스 둘이 그렇게 🚨로 찍혔다 —
+      배율을 되돌려 보면 **둘 다 창 안이었다.**
+      «틀렸다»고 말하려면 **자부터 같은 단위**여야 한다.
+    """
     try:
         import ctypes
         from ctypes import wintypes
+        try:                                  # Per-Monitor v2 → 물리 픽셀로 읽는다
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
         from tools.app_control import find_hwnd_for_app
         hwnd = find_hwnd_for_app(app)
         if not hwnd:
@@ -146,10 +176,22 @@ def _window_rect(app: str):
 
 
 def _score_describe(case, out: str):
-    """키워드 대조. (ok, 사유)  ⚠️ 근사다 — 자유서술을 기계가 판정할 수는 없다."""
+    """키워드 대조. (ok, 사유)  ⚠️ 근사다 — 자유서술을 기계가 판정할 수는 없다.
+
+    🚨 **«근사»가 실제로 틀렸다 (2026-09-16 첫 판).** 환각 탐침 둘의 정답 키워드를
+      `"없"` 하나로 뒀는데, 모델은 *"'삭제' 버튼이 **보이지 않습니다**"* 라고
+      **정확히 맞게** 답했다. 그런데 채점기가 ✗를 줬다.
+      **모델이 아니라 자가 틀린 것이다.** 그래서 키워드는 정규식으로 받는다.
+    """
     low = out.lower()
-    miss = [k for k in case["must"] if k.lower() not in low]
-    bad = [k for k in case["never"] if k.lower() in low]
+    # 🚨 **«금지어»는 응답 전체가 아니라 «첫 문장»에서만 본다.** (2026-09-16 2차)
+    #   프롬프트가 *"이 질문에 먼저 답하세요"* 라 **답은 첫 문장**이고, 그 뒤에는
+    #   화면 전체 설명이 붙는다. 전체에서 «있습니다»를 찾으면
+    #   *"삭제 버튼이 보이지 않습니다. 화면에는 탭이 보입니다…"* 처럼
+    #   **정답을 말한 응답이 뒷부분 서술 때문에 ✗**가 된다. 실제로 그렇게 났다.
+    head = re.split(r"[.!?\n]", out.strip(), 1)[0].lower()
+    miss = [k for k in case["must"] if not re.search(k.lower(), low)]
+    bad = [k for k in case["never"] if re.search(k.lower(), head)]
     if miss:
         return False, f"빠진 말: {', '.join(miss)}"
     if bad:
@@ -188,7 +230,7 @@ def prepare():
     import subprocess
     subprocess.Popen(["notepad.exe", _FIXTURE])
     from tools.app_control import open_app
-    print("  · 메모장(고정 텍스트) 띄우는 중…")
+    print(f"  · 메모장(고정 텍스트) 띄우는 중… window={_NOTEPAD!r} 로만 잡는다")
     time.sleep(1.5)
     print("  · 계산기 여는 중…", open_app.invoke({"app": "계산기"}))
     time.sleep(1.5)
