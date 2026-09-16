@@ -100,3 +100,7 @@ models/embed/
 
 # Vision 기준선 출력 — 화면 이미지와 응답 원문이다. 공개 저장소에 올리지 않는다.
 logs/vision_baseline/
+
+# Vision 기준선 fixture — 내용의 출처는 scripts/vision_baseline.py 의 FIXTURE_TEXT 다.
+# 두 벌을 두면 한쪽만 고쳐진다(이 저장소가 반복해서 데인 모양).
+cache/vision_baseline_fixture.txt
