@@ -302,6 +302,29 @@ def run():
         check("⑮ 🚨 delete_file은 발음 표기를 풀어 주지 않는다 (의도된 비대칭)",
               r.startswith("✗") and os.path.exists(os.path.join(desk, "a.txt")), r)
 
+        # 🚨 **조각이 name/extension으로 갈라져 와도 찾는가** (2026-09-16 실측)
+        #   ⑨는 LLM이 «에이점 티엑스티»를 **한 덩어리**로 넘겨 준 경우다.
+        #   그런데 점을 구분자로 읽어 `name='에이'` · `extension='티엑스티'` 로
+        #   나눠 주면 양쪽 다 홑음절이라 `_romanize_ko`가 **None**이었고,
+        #   실측하니 **a.txt를 못 찾았다.** 2차 리허설에서는 STT가 미리
+        #   'a.txt'로 바꿔 준 탓에 이 갈래가 **한 번도 안 돌았다** — 그래서
+        #   «코드가 푸는지»가 계속 미검증으로 남아 있었다.
+        r = find(name="에이", extension="티엑스티", location="desktop")
+        check("⑯ 🚨 name='에이' · ext='티엑스티' 로 갈라져 와도 a.txt를 찾는다",
+              "a.txt" in r, r)
+        r = find(name="에이", extension="txt", location="desktop")
+        check("⑰ 🚨 확장자가 이미 'txt'로 와도 찾는다", "a.txt" in r, r)
+
+        # 🚨 **문턱을 낮춰도 원문이 먼저 돈다** — 이게 낮춰도 되는 이유다.
+        #   여기가 깨지면 홑음절 letter-name이 한국어 파일명을 덮는다(⑦의 반대).
+        r = find(name="오", extension="jpg", location="desktop")
+        check("⑱ 🚨 '오'+jpg는 'o'가 아니라 '오이.jpg'로 먼저 간다",
+              "오이.jpg" in r, r)
+        check("⑲ 🚨 완화는 `_match_in` 안에서만 — `_romanize_ko` 기본값은 그대로",
+              fs._romanize_ko("에이") is None
+              and fs._romanize_ko("에이", min_pieces=1) == "a",
+              (fs._romanize_ko("에이"), fs._romanize_ko("에이", min_pieces=1)))
+
     finally:
         fs.LOCATION_MAP.clear()
         fs.LOCATION_MAP.update(orig_map)

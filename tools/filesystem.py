@@ -166,11 +166,15 @@ _KO_PIECE_KEYS = sorted(_KO_PIECES, key=len, reverse=True)
 _KO_MIN_PIECES = 2
 
 
-def _romanize_ko(s: str) -> str | None:
+def _romanize_ko(s: str, min_pieces: int = _KO_MIN_PIECES) -> str | None:
     """«에이점 티엑스티» → 'a.txt'. 음차가 아니면 **None**(후보를 안 만든다).
 
     반환이 None이어도 부르는 쪽은 원문으로 그대로 찾는다 — 이 함수는
     더할 후보가 있는지만 답한다.
+
+    ⚠️ `min_pieces`를 **기본값보다 낮춰 부르는 곳은 `_match_in` 하나뿐이다.**
+      문턱이 존재하는 이유(홑음절 letter-name이 전부 흔한 한국어 낱말이다)는
+      그대로 유효하다 — 낮춰도 되는 조건은 거기에 적어 뒀다.
     """
     t = re.sub(r"\s+", "", s)
     if not t or not re.search(r"[가-힣]", t):
@@ -191,7 +195,7 @@ def _romanize_ko(s: str) -> str | None:
                 break
         else:
             return None                  # 한 조각이라도 남으면 음차가 아니다
-    if pieces < _KO_MIN_PIECES:
+    if pieces < min_pieces:
         return None
     return "".join(out)
 
@@ -244,20 +248,42 @@ def _match_in(base: str, name: str, extension: str) -> list[str]:
     name_alts = _alts(name) or [""]
     ext_alts = _alts(extension) or [""]
 
-    for nm in name_alts:
-        for ex in ext_alts:
-            if nm and ex:
-                pattern = f"*{nm}*.{ex}"
-            elif nm:
-                pattern = f"*{nm}*"
-            elif ex:
-                pattern = f"*.{ex}"
-            else:
-                continue
-            hits = [m for m in glob.glob(os.path.join(base, "**", pattern), recursive=True)
-                    if not _is_secret_path(m)]
-            if hits:
-                return hits
+    # 🚨 **조각이 name/extension으로 갈라져 오면 양쪽 다 문턱에 걸린다 (D-01a).**
+    #   *"에이점 티엑스티 찾아줘"* 를 LLM이 한 덩어리(`name='에이점 티엑스티'`)로
+    #   주면 위 후보가 'a.txt'를 만들어 낸다. 그런데 **점을 구분자로 읽어**
+    #   `name='에이'` · `extension='티엑스티'`(또는 이미 `'txt'`)로 나눠 주면
+    #   `_romanize_ko('에이')`는 조각이 하나뿐이라 **None**이다 —
+    #   홑음절 letter-name('비'·'이'·'오'…)을 막는 그 문턱이다.
+    #   실측으로 이 갈래에서 `a.txt`를 **못 찾았다**(2026-09-16).
+    #
+    #   그래서 여기서만 문턱을 1로 낮춘다. 낮춰도 되는 근거는 **조건**에 있다:
+    #   ① `extension`이 따로 왔다는 것 자체가 «파일명 전체를 불러 줬다»는 신호고,
+    #   ② 이 후보는 **원문 조합이 전부 빗나간 뒤에만** 돈다(아래 순서).
+    #   그래서 '비.pdf'라는 한국어 파일이 있으면 그쪽이 **먼저** 잡힌다.
+    #   ③ 느린 2차(정규화 비교)에는 **넣지 않는다** — 거기는 순서가 없어서
+    #      'b'가 이름에 b가 든 파일을 한꺼번에 끌어온다.
+    split_pairs: list[tuple[str, str]] = []
+    if name and extension:
+        rn = _romanize_ko(name, min_pieces=1)
+        if rn:
+            for ex in ext_alts:
+                if ex and (rn, ex) not in split_pairs:
+                    split_pairs.append((rn, ex))
+
+    pairs = [(nm, ex) for nm in name_alts for ex in ext_alts] + split_pairs
+    for nm, ex in pairs:
+        if nm and ex:
+            pattern = f"*{nm}*.{ex}"
+        elif nm:
+            pattern = f"*{nm}*"
+        elif ex:
+            pattern = f"*.{ex}"
+        else:
+            continue
+        hits = [m for m in glob.glob(os.path.join(base, "**", pattern), recursive=True)
+                if not _is_secret_path(m)]
+        if hits:
+            return hits
 
     # 2차 — 띄어쓰기·구분자를 걷어내고 다시 본다 (실측: 여기가 대부분을 잡는다)
     if not name:
