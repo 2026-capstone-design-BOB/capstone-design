@@ -151,7 +151,15 @@ V1 → V2로 어떻게 발전했는지를 보여주는 게 이 프로젝트의 �
 |---|---|
 | `wakeword_data.py` | 웨이크워드 학습 데이터 생성 (edge-tts 합성 · 증강) |
 | `train_wakeword.py` | 웨이크워드 모델 학습 → `services/wakeword_model.npz` |
+| `record_wakeword.py` | 「플루이즈」 실제 녹음 (본인용 · Python·마이크 필요) |
+| 🆕 `플루이즈_녹음.html` | **남에게 보내는 녹음 도구.** 설치 없이 브라우저에서 돈다 → `wav` + `json`<br>🚨 **양성만이 아니라 «비슷한 다른 말»과 «잡담»도 같이 받는다** — 그게 이 파일의 존재 이유다(M7 §5-1) |
+| 🆕 `ingest_wakeword.py` | 받아 온 `wav`+`json` → `data/wakeword/` 배열 + 화자 단위 홀드아웃. **stdlib `wave` 만 쓴다** |
 | `check_deps_drift.py` | `requirements.lock.txt` 고정 버전 vs PyPI 최신 대조 → [`docs/research/`](research/) ② 항목을 채운다. **stdlib만 쓴다** |
+
+> 📁 **`data/` 는 git 밖이다** (2026-09-16에 `.gitignore`에 넣었다).
+> `*.wav` 는 확장자로 이미 막혔지만 `ingest_wakeword.py` 가 만드는 **`.npy`(수십 MB)와 `.json` 은
+> 안 막혀 있었다** — 하마터면 커밋될 뻔했다. 용량 문제만이 아니라 **사람들 목소리**라서다.
+> 동의받은 범위는 «졸업작품 학습»이지 «공개 저장소 게시»가 아니다.
 
 **규칙 두 가지**
 
