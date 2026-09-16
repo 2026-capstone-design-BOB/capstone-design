@@ -97,3 +97,6 @@ docs/*.pdf
 # 만드는 법은 scripts/record_wakeword.py (docs/TASKS.md ③)
 wake_voice*.npy
 models/embed/
+
+# Vision 기준선 출력 — 화면 이미지와 응답 원문이다. 공개 저장소에 올리지 않는다.
+logs/vision_baseline/
