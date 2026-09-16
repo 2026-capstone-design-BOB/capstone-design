@@ -154,6 +154,7 @@ V1 → V2로 어떻게 발전했는지를 보여주는 게 이 프로젝트의 �
 | `record_wakeword.py` | 「플루이즈」 실제 녹음 (본인용 · Python·마이크 필요) |
 | 🆕 `플루이즈_녹음.html` | **남에게 보내는 녹음 도구.** 설치 없이 브라우저에서 돈다 → `wav` + `json`<br>🚨 **양성만이 아니라 «비슷한 다른 말»과 «잡담»도 같이 받는다** — 그게 이 파일의 존재 이유다(M7 §5-1) |
 | 🆕 `ingest_wakeword.py` | 받아 온 `wav`+`json` → `data/wakeword/` 배열 + 화자 단위 홀드아웃. **stdlib `wave` 만 쓴다** |
+| 🆕 `inspect_wakeword.py` | 받은 녹음을 **재 보고 들어 본다** — 기기별 RMS·피크 표 · `--play <이름>` 으로 구간만 모아 재생<br>🚨 «소리가 작다»가 **임계 문제가 아니라 마이크 게인 문제**임을 숫자로 가른다 |
 | `check_deps_drift.py` | `requirements.lock.txt` 고정 버전 vs PyPI 최신 대조 → [`docs/research/`](research/) ② 항목을 채운다. **stdlib만 쓴다** |
 
 > 📁 **`data/` 는 git 밖이다** (2026-09-16에 `.gitignore`에 넣었다).
