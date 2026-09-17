@@ -129,8 +129,12 @@ python tests/test_find_file.py    # 61/61   ← 파일 찾기(BL-07·BL-31·D-01
 python tests/test_bl53_stt_echo.py # 31/31  ← 승인이 STT 반추에 안 깨진다(BL-53)
 python tests/test_llm_config.py   # 6/6     ← 모델 thinking을 끈 채로 둔다(BL-57)
 
-python scripts/run_mock_suite.py  # 48파일 1718/1718  ← 합계는 항상 이걸로 센다
+python scripts/run_mock_suite.py  # 합계는 항상 이걸로 센다 (숫자는 여기 안 적는다)
 ```
+
+🚨 **스위트는 cmd / Anaconda Prompt에서 돌립니다.** Git Bash에서 돌리면 **프로젝트와 무관한 거짓 실패**가 납니다 → [WORKFLOW § 환경](docs/WORKFLOW.md)
+
+📌 **합계 숫자는 [docs/README.md 상태표](docs/README.md)에만 적습니다** — 여기 적혀 있던 «48파일 1718»이 2026-09-17에 낡은 채 발견됐습니다(실제 49/1738). 이 파일이 같은 이유로 낡은 것은 **세 번째**입니다.
 
 상세: [docs/WORKFLOW.md](docs/WORKFLOW.md)
 

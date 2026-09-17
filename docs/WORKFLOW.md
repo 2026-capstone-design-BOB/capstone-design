@@ -29,6 +29,30 @@ export PYTHONIOENCODING=utf-8      # Git Bash
 $env:PYTHONIOENCODING = "utf-8"    # PowerShell
 ```
 
+### 🚨 Git Bash에서는 mock 스위트가 **거짓 실패**한다 (2026-09-17 확인)
+
+**테스트는 cmd / Anaconda Prompt에서 돌린다.** Git Bash에서 `conda activate pluiz` 하면
+`SSL_CERT_FILE`이 **없는 경로**로 덮어씌워지고, `test_llm_config.py`가 그 자리에서 죽는다.
+
+```
+Git Bash  : SSL_CERT_FILE=...\envs\pluiz/ssl/cacert.pem          ← 없다
+cmd.exe   : SSL_CERT_FILE=...\envs\pluiz\Library\ssl\cacert.pem  ← 있다
+→ FileNotFoundError: [Errno 2] No such file or directory
+```
+
+conda의 **posix 활성화 스크립트**가 `$CONDA_PREFIX/ssl/`을 잡는데 Windows의 실제 위치는
+`Library\ssl\`이다. `google-genai`는 이 변수를 **명시적으로** 읽어 SSL 컨텍스트를 만들기
+때문에(`_api_client.py::_ensure_httpx_ssl_ctx`) 클라이언트 생성 단계에서 예외가 난다.
+
+| 어디서 | 결과 |
+|---|---|
+| **cmd / Anaconda Prompt** | ✅ **49파일 1738/1738** — 이게 맞는 숫자다 |
+| Git Bash | ❌ 49파일 1732/1732 + 실패 1파일 — **프로젝트 회귀가 아니다** |
+| PowerShell | ⚠️ `conda activate`가 안 먹어 **base 파이썬**으로 돈다 → [BL-59](BACKLOG.md) |
+
+🔑 **실제 실행 경로(`launch.bat` = cmd)는 영향이 없다.** 앱은 멀쩡하다.
+⚠️ **동결일(9/21)에 Git Bash로 재다가 «실패 1»을 보면 그날을 통째로 잃는다** — 그래서 여기 적는다.
+
 ### 실행
 
 ```bash
