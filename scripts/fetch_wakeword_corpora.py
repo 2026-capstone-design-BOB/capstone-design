@@ -66,11 +66,13 @@ DEST = os.path.join(ROOT, "data", "corpora")
 MANIFEST = os.path.join(DEST, "manifest.json")
 GB = 1024 ** 3
 MARGIN_BYTES = 2 * GB          # 디스크 여유를 이만큼은 남긴다
+#: 한 바이트도 안 느는 바퀴를 몇 번까지 견디나. 망 깜빡임과 «정말 안 되는 것»을 가른다.
+STALL_LIMIT = 3
 
 
 class Corpus:
     def __init__(self, key, title, url, size, md5, archive, probe,
-                 extracted_hint, license_, why, mirrors=()):
+                 extracted_hint, license_, why, mirrors=(), extract_into=None):
         self.key = key
         self.title = title
         self.url = url
@@ -82,10 +84,24 @@ class Corpus:
         self.extracted_hint = extracted_hint  # 풀었을 때 어림값 (정확하지 않다)
         self.license = license_
         self.why = why
+        self.extract_into = extract_into      # 최상위 폴더가 없는 압축을 담을 자리
 
     @property
     def archive_path(self):
         return os.path.join(DEST, self.archive)
+
+    @property
+    def extract_dir(self):
+        """압축을 풀 자리.
+
+        🚨 2026-09-18에 여기서 한 번 데였다 — **Zeroth 압축에는 최상위 폴더가 없다.**
+        `data/corpora/` 에 그대로 풀면 `train_data_01`·`test_data_01`·`AUDIO_INFO`·
+        `zeroth.lm.*` 아홉 덩어리가 말뭉치 뿌리에 흩어지고, `probe`(`zeroth_korean`)는
+        영영 안 생긴다. **md5 는 맞는데 «안 풀렸다»고 나오는** 그 모양이다
+        (10.3GB 를 제대로 받아 놓고도 «실패»로 셌다).
+        그래서 그런 압축은 **제 이름의 폴더를 만들어 그 안에 푼다.**
+        """
+        return os.path.join(DEST, self.extract_into) if self.extract_into else DEST
 
     @property
     def probe_path(self):
@@ -102,12 +118,21 @@ class Corpus:
 # ── 받을 것 ─────────────────────────────────────────────────────────
 # 용량과 md5 는 2026-09-18에 openslr.org 에 직접 물어 확인한 값이다
 # (Content-Length + resources/<n>/checksum.md5). 추측이 아니다.
+#
+# 🚨 **대체 주소도 2026-09-18에 직접 찔러 봤다.** 처음에 적어 둔 `us.openslr.org` 는
+#    **인증서가 그 이름으로 발급돼 있지 않다**(Hostname mismatch). 본 주소가 끊긴
+#    바로 그 순간에 대체 주소가 SSL 로 죽었다 — **«대체 주소가 있다»가 거짓이었고,
+#    그 사실은 본 주소가 죽기 전까지 드러나지 않는다.** 그래서 적어 두기 전에 찔러 본다.
+#      · www.openslr.org            ✅ 206(이어받기 됨)
+#      · us.openslr.org             ❌ 인증서 이름 불일치 — **뺐다**
+#      · openslr.elda.org           ❌ handshake timeout (한국에서)
+#      · openslr.magicdatatech.com  ✅ 206 · 셋 다 크기가 본 주소와 같다
 CORPORA = {
     "musan": Corpus(
         key="musan",
         title="MUSAN — 말·음악·잡음",
         url="https://www.openslr.org/resources/17/musan.tar.gz",
-        mirrors=["https://us.openslr.org/resources/17/musan.tar.gz"],
+        mirrors=["https://openslr.magicdatatech.com/resources/17/musan.tar.gz"],
         size=11086114085,
         md5="0c472d4fc0c5141eca47ad1ffeb2a7df",
         archive="musan.tar.gz",
@@ -121,7 +146,7 @@ CORPORA = {
         key="rirs",
         title="RIR and Noises — 실측 방 임펄스 응답",
         url="https://www.openslr.org/resources/28/rirs_noises.zip",
-        mirrors=["https://us.openslr.org/resources/28/rirs_noises.zip"],
+        mirrors=["https://openslr.magicdatatech.com/resources/28/rirs_noises.zip"],
         size=1311166223,
         md5="e6f48e257286e05de56413b4779d8ffb",
         archive="rirs_noises.zip",
@@ -135,12 +160,14 @@ CORPORA = {
         key="zeroth",
         title="Zeroth-Korean — 한국어 읽기 음성 약 51시간",
         url="https://www.openslr.org/resources/40/zeroth_korean.tar.gz",
-        mirrors=["https://us.openslr.org/resources/40/zeroth_korean.tar.gz",
+        mirrors=["https://openslr.magicdatatech.com/resources/40/zeroth_korean.tar.gz",
                  "https://storage.googleapis.com/zeroth_project/zeroth_korean.tar.gz"],
         size=10339720618,
         md5="8e0a4268bb8e80db3773c331025ef1e2",
         archive="zeroth_korean.tar.gz",
         probe="zeroth_korean",
+        # 🔑 이 압축만 최상위 폴더가 없다 (musan/ · RIRS_NOISES/ 는 있다)
+        extract_into="zeroth_korean",
         extracted_hint=11 * GB,
         license_="CC BY 4.0 (저작자 표시)",
         why="🔴 셋 중 값이 가장 크다. 오탐의 모양이 «발음에 속는 게 아니라 음성이면 깬다» 였다 — "
@@ -269,8 +296,20 @@ def _opener():
     return urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
 
 
-def download(c, force=False):
-    """이어받기로 `c.archive` 를 채운다. 이미 완전하면 건드리지 않는다."""
+def download(c, force=False, rounds=8):
+    """이어받기로 `c.archive` 를 채운다. 이미 완전하면 건드리지 않는다.
+
+    🚨 **끊기면 스스로 다시 붙는다**(`rounds` 바퀴까지). 2026-09-18에 MUSAN 을
+    두 번 놓쳤다 — 10GB 를 받는 중 서버가 3MB/s → 370KB/s 로 떨어지다 읽기 타임아웃으로
+    죽었고, 그때마다 **사람이 같은 명령을 다시 쳐야 했다.** 이어받기가 되는데도
+    사람을 붙잡아 두는 것은 도구가 일을 덜 한 것이다.
+    ⚠️ 한 바퀴를 다 돌았는데 한 바이트도 안 늘면 **잠깐 쉬었다 다시 본다.**
+       `STALL_LIMIT` 바퀴 연속으로 그러면 멈춘다 — 안 그러면 망이 끊긴 자리에서
+       영원히 돈다. 🔑 **한 번에 포기하지 않는 이유**: 2026-09-18에 8.74GB 지점에서
+       `getaddrinfo failed` 가 두 주소에 동시에 났다. 서버가 죽은 게 아니라
+       **이 PC의 이름 해석이 몇 초 끊긴 것**이었다. 거기서 바로 포기하면
+       10GB 를 받다가 «망 깜빡임» 하나에 사람을 다시 부르게 된다.
+    """
     part = c.archive_path + ".part"
     if os.path.exists(c.archive_path) and not force:
         got = os.path.getsize(c.archive_path)
@@ -291,24 +330,44 @@ def download(c, force=False):
 
     opener = _opener()
     last_err = None
-    for url in c.urls:
-        if have == c.size:
-            break
-        try:
-            _stream(opener, url, part, have, c.size)
-            last_err = None
-            break
-        except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:   # noqa: BLE001
-            last_err = e
+    stalled = 0
+    for r_i in range(max(1, rounds)):
+        before = have
+        for url in c.urls:
+            if have >= c.size:
+                break
+            try:
+                _stream(opener, url, part, have, c.size)
+                last_err = None
+            except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:  # noqa: BLE001
+                last_err = e
+                print(f"  ⚠️ {url} 실패 ({e}) — 다음 주소를 시도한다. "
+                      f"받은 {human(have)} 는 남는다")
             have = os.path.getsize(part) if os.path.exists(part) else 0
-            print(f"  ⚠️ {url} 실패 ({e}) — 다음 주소를 시도한다. 받은 {human(have)} 는 남는다")
-    if last_err is not None:
-        print(f"  ❌ 모든 주소가 실패했다. 마지막 오류: {last_err}")
-        return False
+            if have >= c.size:
+                break
+        if have >= c.size:
+            break
+        if have <= before:
+            stalled += 1
+            if stalled >= STALL_LIMIT:
+                # 🔑 여기서 멈춰야 «돌고 있는데 아무 일도 안 일어나는» 상태를 안 만든다.
+                print(f"  ❌ {STALL_LIMIT}바퀴 연속으로 한 바이트도 안 늘었다. 망을 확인할 것")
+                break
+            wait = 5 * (2 ** (stalled - 1))          # 5 · 10 · 20초
+            print(f"  ⏳ 진전이 없다 — {wait}초 쉬었다 다시 본다 "
+                  f"({stalled}/{STALL_LIMIT}번째 · 받은 {human(have)} 는 그대로다)",
+                  flush=True)
+            time.sleep(wait)
+            continue
+        stalled = 0
+        print(f"  ↻ 끊겼다 — {human(have)} 지점부터 다시 붙는다 "
+              f"({r_i + 2}/{rounds}번째 · 받은 것은 그대로다)", flush=True)
 
     got = os.path.getsize(part) if os.path.exists(part) else 0
     if got != c.size:
-        print(f"  ❌ 크기가 안 맞는다 ({human(got)} ≠ {human(c.size)})")
+        print(f"  ❌ 크기가 안 맞는다 ({human(got)} ≠ {human(c.size)})"
+              + (f" · 마지막 오류: {last_err}" if last_err else ""))
         print("     🔑 같은 명령을 다시 돌리면 **받은 지점부터 이어받는다.** 처음부터가 아니다")
         return False
     os.replace(part, c.archive_path)
@@ -370,22 +429,32 @@ def extract(c):
     if c.extracted():
         print(f"  이미 풀려 있다 ({os.path.relpath(c.probe_path, ROOT)}) — 건너뛴다")
         return True
-    print(f"  압축을 푼다 → data/corpora/ (몇 분 걸린다)")
+    into = c.extract_dir
+    os.makedirs(into, exist_ok=True)
+    print(f"  압축을 푼다 → {os.path.relpath(into, ROOT).replace(os.sep, '/')}/ (몇 분 걸린다)")
     try:
         if c.archive.endswith(".zip"):
             with zipfile.ZipFile(c.archive_path) as z:
-                z.extractall(DEST)
+                z.extractall(into)
         else:
             with tarfile.open(c.archive_path, "r:gz") as t:
                 try:
-                    t.extractall(DEST, filter="data")   # 3.11.4+ — 경로 탈출을 막는다
+                    t.extractall(into, filter="data")   # 3.11.4+ — 경로 탈출을 막는다
                 except TypeError:
-                    t.extractall(DEST)
+                    t.extractall(into)
     except Exception as e:                                       # noqa: BLE001
         print(f"  ❌ 푸는 중 실패: {e}")
         return False
     if not c.extracted():
-        print(f"  ❌ 풀렸는데 {c.probe} 가 없다 — 구조가 바뀐 것 같다. 직접 열어 확인할 것")
+        # 🚨 «풀었는데 없다»는 대개 **압축 안의 구조가 바뀐 것**이다. 이름만 말하고 끝내면
+        #    사람이 탐색기를 열어 헤맨다 — 실제로 뭐가 생겼는지 여기서 보여 준다.
+        try:
+            got = sorted(os.listdir(into))[:12]
+        except OSError:
+            got = []
+        print(f"  ❌ 풀렸는데 {c.probe} 가 없다 — 압축 안 구조가 바뀐 것 같다")
+        print(f"     실제로 생긴 것: {', '.join(got) if got else '(비어 있다)'}")
+        print(f"     → CORPORA['{c.key}'] 의 probe / extract_into 를 실제 이름에 맞춰야 한다")
         return False
     return True
 
@@ -514,7 +583,7 @@ def cmd_verify():
     return 0 if bad == 0 else 1
 
 
-def cmd_fetch(keys, drop_archive, force):
+def cmd_fetch(keys, drop_archive, force, rounds=8):
     picked = [CORPORA[k] for k in keys]
     need_dl = sum(c.size for c in picked if force or not os.path.exists(c.archive_path))
     need_ex = sum(c.extracted_hint for c in picked if not c.extracted())
@@ -531,7 +600,7 @@ def cmd_fetch(keys, drop_archive, force):
     failed = []
     for c in picked:
         print(f"\n── [{c.key}] {c.title}")
-        if not download(c, force=force):
+        if not download(c, force=force, rounds=rounds):
             failed.append(c.key)
             continue
         print(f"  md5 를 검사한다 ({human(c.size)} 라 몇 분 걸린다)")
@@ -583,6 +652,8 @@ def main():
     ap.add_argument("--drop-archive", action="store_true",
                     help="푼 것을 확인한 뒤 압축파일을 지운다 (디스크 회수)")
     ap.add_argument("--force", action="store_true", help="이미 있어도 처음부터 다시 받는다")
+    ap.add_argument("--retries", type=int, default=8,
+                    help="끊겼을 때 다시 붙는 횟수 (기본 8). 받은 것은 버리지 않는다")
     a = ap.parse_args()
 
     unknown = [k for k in a.keys if k not in CORPORA]
@@ -601,7 +672,7 @@ def main():
     if a.verify:
         return cmd_verify()
     keys = list(CORPORA) if a.all else list(dict.fromkeys(a.keys))
-    return cmd_fetch(keys, a.drop_archive, a.force)
+    return cmd_fetch(keys, a.drop_archive, a.force, a.retries)
 
 
 if __name__ == "__main__":
