@@ -126,61 +126,21 @@ def _is_network_error(e: Exception) -> bool:
 _HITL_NODE = "hitl"
 
 
-#: `_looks_offline()` 결과를 이 초만큼 재사용한다. (ts, offline)
-#  매 턴 소켓을 여는 것을 막으려는 것이고, 10초면 «방금 Wi-Fi를 켰다»도 곧 반영된다.
-_OFFLINE_TTL = 10.0
-_offline_probe: tuple[float, bool] = (0.0, False)
-
-
-def _offline_now(ttl: float = _OFFLINE_TTL) -> bool:
-    """지금 오프라인인가 — **TTL 캐시를 쓴다.** 턴 시작마다 불러도 싸다.
-
-    🚨 **왜 이게 필요한가 (2026-09-11 2차 실기).** 오프라인 판정을 «타임아웃이 난 뒤»에만
-    했더니 **응답이 여전히 45초**였다. 사용자 지적: *"오프라인 응답시간 너무 길다."*
-    맞는 지적이다 — 문구만 고쳤고 **기다리는 시간은 그대로**였다.
-
-    그래서 **턴이 시작될 때** 한 번 보고, 오프라인이면 LLM 타임아웃을 짧게 잡는다
-    (`_timeout()` 참조). 캐시 실행은 그 안에 넉넉히 들어가고,
-    LLM이 필요한 턴은 **45초가 아니라 8초에** 정직한 답으로 끝난다.
-    """
-    global _offline_probe
-    ts, val = _offline_probe
-    now = time.monotonic()
-    if now - ts < ttl:
-        return val
-    val = _looks_offline(timeout=0.8)
-    _offline_probe = (now, val)
-    return val
-
-
-def _reset_offline_probe():
-    """테스트용 — TTL 캐시를 비운다."""
-    global _offline_probe
-    _offline_probe = (0.0, False)
-
-
-def _looks_offline(timeout: float = 1.5) -> bool:
-    """지금 인터넷이 끊겨 있나. **추측이 아니라 한 번 찔러 본다.**
-
-    🚨 **왜 필요한가 (2026-09-11 실기).** 오프라인에서 LLM을 부르면 SDK가 내부
-    재시도를 돌다가 **네트워크 오류를 던지기 전에 `agent_timeout`(45초)이 먼저**
-    터졌다. 그래서 `_is_network_error()` 분기가 한 번도 타지 않고, 사용자는
-    *"처리가 너무 오래 걸려서 중단했어요"* 를 받았다 — **끊긴 걸 알려주지도,
-    캐시 제안을 내지도 못했다.** 실기에서 오프라인 턴 6개가 전부 이렇게 죽었다.
-
-    ⚠️ **정상 경로에서는 부르지 않는다.** 타임아웃·예외가 난 뒤에만 본다 —
-      매 턴 소켓을 열면 온라인일 때 공짜로 수 ms를 버린다.
-    ⚠️ 실패는 «온라인»으로 읽는다. 판정 실패로 «오프라인 문구»를 내보내면
-      **멀쩡한 네트워크에 거짓말을 하는 셈**이라 더 나쁘다.
-    """
-    import socket
-    for host, port in (("8.8.8.8", 53), ("1.1.1.1", 53)):
-        try:
-            with socket.create_connection((host, port), timeout=timeout):
-                return False                      # 한 곳이라도 닿으면 온라인
-        except Exception:
-            continue
-    return True
+# ── 망 판정 — **본체는 `core/net.py` 에 있다** (2026-09-18에 옮겼다) ──────
+#
+# 🔑 [BL-58](../docs/BACKLOG.md) 을 고치려면 `tools/web.py` 도 같은 판정을 봐야 하는데,
+#    `tools/` 가 이 파일을 부르면 **import 고리가 생긴다**(여기 → tool_registry → tools).
+#    그래서 아무것도 import 하지 않는 자리로 내렸다.
+#
+# ⚠️ **예전 이름을 그대로 둔다.** 테스트가 `ga._offline_now` 를 갈아끼우고 있고
+#    (`tests/test_offline_skip.py`), 이 파일 안의 호출은 모듈 전역을 보므로
+#    **그 방식이 계속 통한다.**
+from core.net import (                                        # noqa: E402
+    _OFFLINE_TTL,
+    looks_offline as _looks_offline,
+    offline_now as _offline_now,
+    reset_offline_probe as _reset_offline_probe,
+)
 
 
 _TIMEOUT_MSG = "처리가 너무 오래 걸려서 중단했어요. 조금 더 간단하게 말씀해 주시겠어요?"
