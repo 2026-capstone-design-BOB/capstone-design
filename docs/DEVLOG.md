@@ -15,11 +15,11 @@
 >
 > ```bash
 > conda activate pluiz
-> python scripts/fetch_wakeword_corpora.py musan      # 🔴 ① 6.32GB 지점부터 이어받는다
+> python scripts/fetch_wakeword_corpora.py musan      # 🔴 ① 5.89GB 지점부터 이어받는다
 > python scripts/wakeword_corpus.py --check           # ② 다 들어왔나
 > ```
 >
-> **① MUSAN 내려받기가 13:56에 실패했다**(`musan.tar.gz.part` 6.32GB에서 멈춤).
+> **① MUSAN 내려받기가 13:56에 실패했다**(`musan.tar.gz.part` 5.89GB에서 멈춤).
 > Zeroth 는 그 뒤로도 계속 받고 있었다. **다시 돌리면 받은 지점부터 이어받는다.**
 > **② MUSAN 이 들어오면 «학습 쪽 배선»**(M7 4단계의 남은 절반)을 한다 —
 > `wakeword_data.augment` 자리를 [`Augmenter`](../scripts/wakeword_corpus.py) 로 갈아끼우는 일이다.
