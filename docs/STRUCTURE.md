@@ -150,7 +150,9 @@ V1 → V2로 어떻게 발전했는지를 보여주는 게 이 프로젝트의 �
 | 파일 | 용도 |
 |---|---|
 | `wakeword_data.py` | 웨이크워드 학습 데이터 생성 (edge-tts 합성 · 증강) |
-| `train_wakeword.py` | 웨이크워드 모델 학습 → `services/wakeword_model.npz` |
+| `train_wakeword.py` | 웨이크워드 모델 학습 → **`services/wakeword_model_candidate.npz`**<br>⚠️ 런타임 모델을 바로 안 덮는다. 평가를 통과한 뒤 `--replace-runtime` |
+| `wakeword_corpus.py` | 내려받은 말뭉치(MUSAN·RIR·Zeroth·AI Hub)로 **실측 증강** (M7 4단계) |
+| `fetch_wakeword_corpora.py` | 그 말뭉치를 받아 `data/corpora/` 에 푼다 (M7 2단계) |
 | `record_wakeword.py` | 「플루이즈」 실제 녹음 (본인용 · Python·마이크 필요) |
 | 🆕 `플루이즈_녹음.html` | **남에게 보내는 녹음 도구.** 설치 없이 브라우저에서 돈다 → `wav` + `json`<br>🚨 **양성만이 아니라 «비슷한 다른 말»과 «잡담»도 같이 받는다** — 그게 이 파일의 존재 이유다(M7 §5-1) |
 | 🆕 `ingest_wakeword.py` | 받아 온 `wav`+`json` → `data/wakeword/` 배열 + 화자 단위 홀드아웃. **stdlib `wave` 만 쓴다** |
