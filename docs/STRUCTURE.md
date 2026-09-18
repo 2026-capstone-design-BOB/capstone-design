@@ -139,6 +139,7 @@ V1 → V2로 어떻게 발전했는지를 보여주는 게 이 프로젝트의 �
 | `CLAUDE.md`는 **루트** | Claude Code가 루트에서 자동 로드한다 | 도구 규약 |
 | `cache/`는 **루트 기준 계산** | `_BASE_DIR`이 `core/`의 부모로 계산된다. `core/`를 옮기면 캐시 경로가 어긋난다 | [`core/command_cache.py`](../core/command_cache.py) |
 | `core/auth.py`는 **stdlib만 import** | CI mock 잡은 langgraph·langchain-core만 설치한다. fastapi나 pydantic-settings를 끌어오면 `test_auth.py`가 CI에서 죽는다. FastAPI 결합은 전부 `main.py`에 둔다 | [`core/auth.py`](../core/auth.py) · `.github/workflows/tests.yml` |
+| `core/net.py`도 **아무것도 import 하지 않는다** | `tools/web.py`가 망 판정을 봐야 하는데([BL-58](BACKLOG.md)), `core/graph_agent.py`를 부르면 **고리가 생긴다**(graph_agent → tool_registry → tools). 그래서 판정만 떼어 표준 라이브러리로 두었다. 여기에 프로젝트 모듈을 하나라도 import 하면 **그 고리가 되살아난다** — `test_bl58_offline_web.py` ⑤가 검사한다 | [`core/net.py`](../core/net.py) · [`tools/web.py`](../tools/web.py) |
 | 토큰 파일도 **루트 기준 계산** (`cache/.auth_token`) | Electron이 `path.join(__dirname, '..', 'cache', '.auth_token')`로 **따로** 계산한다. 한쪽만 옮기면 UI가 서버에 붙지 못한다 (`test_auth.py`가 이 계약을 검사한다) | [`core/auth.py`](../core/auth.py) · [`electron-ui/main.js`](../electron-ui/main.js) |
 
 ---
