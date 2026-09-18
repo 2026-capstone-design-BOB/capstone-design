@@ -27,11 +27,11 @@
 >
 > ```bash
 > conda activate pluiz
-> python scripts/fetch_wakeword_corpora.py musan      # 🔴 6.32GB 지점부터 이어받는다
+> python scripts/fetch_wakeword_corpora.py musan      # 🔴 5.89GB 지점부터 이어받는다
 > python scripts/wakeword_corpus.py --check           # 다 들어왔나
 > ```
 >
-> **🔴 MUSAN 내려받기가 2026-09-18 13:56에 실패했다** — `musan.tar.gz.part` 가 **6.32GB**
+> **🔴 MUSAN 내려받기가 2026-09-18 13:56에 실패했다** — `musan.tar.gz.part` 가 **5.89GB**
 > 에서 멈춰 있다. **다시 돌리면 처음부터가 아니라 그 지점부터 이어받는다.**
 > Zeroth 는 실패하지 않았다(계속 받는 중이었다).
 >
@@ -45,7 +45,7 @@
 > |---|---|
 > | AI Hub | ✅ **108,808개 · 92시간 · 화자 101명** (99.6% 읽힘) |
 > | 방 울림 | ✅ **60,218개** + 잡음 935개 |
-> | MUSAN | 🔴 **6.32GB / 10.32GB — 이어받아야 한다** |
+> | MUSAN | 🔴 **5.89GB / 10.32GB — 이어받아야 한다** |
 > | Zeroth | ⬜ 받는 중 (선택 — AI Hub 92시간이 이미 있다) |
 >
 > ---
