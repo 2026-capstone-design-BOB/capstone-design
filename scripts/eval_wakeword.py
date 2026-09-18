@@ -265,19 +265,48 @@ def main():
     # ── 소크 모드: 라벨이 없다. 전부 «안 불렀다»로 보고 FA/시간만 센다 ──
     if a.soak:
         total_sec = 0.0
-        fires_all = 0
+        frames_all = []
         for p in a.soak:
             audio = read_wav(p)
             fr = scan(model, audio, gate)
-            f = replay(fr, th_default)
             dur = len(audio) / SAMPLE_RATE
             total_sec += dur
-            fires_all += len(f)
-            print(f"  {os.path.basename(p):40s} {dur/60:6.1f}분  깬 횟수 {len(f):3d}")
+            frames_all.append(fr)
+            print(f"  {os.path.basename(p):40s} {dur/60:6.1f}분  "
+                  f"깬 횟수 {len(replay(fr, th_default)):3d}")
+        if total_sec <= 0:
+            sys.exit("[eval] FATAL: 오디오가 비어 있다")
         hours = total_sec / 3600.0
-        print(f"\n  합계 {hours:.2f}시간 · 오탐 {fires_all}회 → "
-              f"**FA/시간 {fires_all/hours:.1f}**" if hours > 0 else "\n  (오디오가 없다)")
-        print("\n🚨 이것이 «전시회에서 쓸 수 있는가»를 결정하는 숫자다. 목표는 ≤ 1회.")
+
+        def fa_at(th):
+            return sum(len(replay(fr, th)) for fr in frames_all)
+
+        n = fa_at(th_default)
+        print(f"\n  합계 {hours:.2f}시간 · 오탐 {n}회 → **FA/시간 {n/hours:.1f}**  (목표 ≤ 1)")
+        print("\n🚨 이것이 «전시회에서 쓸 수 있는가»를 결정하는 숫자다.")
+
+        out = {"mode": "soak", "files": list(a.soak), "hours": hours,
+               "energy_gate": gate, "threshold_default": th_default,
+               "fa": n, "fa_per_hour": n / hours}
+
+        if a.sweep:
+            # 확률은 이미 창마다 계산돼 있다 — 임계만 바꿔 재생하면 되므로 공짜다.
+            print(f"\n── 임계 훑기 (긴 오디오 {hours:.2f}시간) ─────────────")
+            print(f"{'임계':>6} {'오탐':>6} {'FA/시간':>9}")
+            rows = []
+            for th in [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]:
+                k = fa_at(th)
+                rows.append({"threshold": th, "fa": k, "fa_per_hour": k / hours})
+                mark = "  ← 지금" if abs(th - th_default) < 1e-9 else ""
+                print(f"{th:>6.2f} {k:>6} {k/hours:>9.1f}{mark}")
+            out["sweep"] = rows
+            print("\n🔑 FRR(놓침)은 이 오디오로 못 잰다 — **부른 적이 없기 때문이다.**")
+            print("   운용점을 고르려면 이 표를 `--sweep`(호출 모드)의 FRR 표와 **같은 임계에서** 읽는다.")
+
+        if a.json:
+            io.open(a.json, "w", encoding="utf-8").write(
+                json.dumps(out, ensure_ascii=False, indent=2))
+            print(f"\n[eval] 저장 → {a.json}")
         return 0
 
     # ── 호출 모드: 라벨 녹음 ──
@@ -332,7 +361,7 @@ def main():
         print(f"\n── 임계 훑기 — «FA/시간을 고정하고 그때의 FRR» ──────────")
         print(f"{'임계':>6} {'FRR':>8} {'깸/부름':>10} {'오탐':>5} {'FA/시간':>9}")
         rows = []
-        for th in [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
+        for th in [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]:
             r = score(sessions, th)
             rows.append({k: v for k, v in r.items() if k != "per_session"})
             mark = "  ← 지금" if abs(th - th_default) < 1e-9 else ""
