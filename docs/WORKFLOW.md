@@ -210,7 +210,7 @@ python tests/test_dependencies.py     # 선언 ↔ 실제 대조. 환경 세팅 
 
 | 잡 | 하는 일 |
 |---|---|
-| `mock-suite` | 문법 검사 + mock 테스트 **30파일** (Ubuntu). 서버 필요한 3개와 로컬 전용 `test_dependencies`는 제외. 개수 출처는 [README 상태표](README.md) |
+| `mock-suite` | 문법 검사 + mock 테스트 (Ubuntu). 서버 필요한 3개와 **로컬 환경 전용 둘**(`test_dependencies` · `test_llm_config`)은 제외 — 이 잡은 `langgraph`·`langchain-core`만 일부러 깔기 때문이다. 🔑 **«조용한 초록»이 아니라 «명시적 제외»다**([BL-59](BACKLOG.md)) |
 | `link-check` | 모든 `.md`의 상대링크·이미지 참조가 실제 존재하는지 |
 | `secret-guard` | `.env` 추적 여부 · 실제 API 키 패턴 · 커밋된 `.pyc` |
 

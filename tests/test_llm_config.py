@@ -15,6 +15,21 @@ LLM 구성 계약 — 흔들리는 경로를 다시 밟지 않는다 (BL-57)
 
 ⚠️ 실제 API를 부르지 않는다(mock 스위트에 들어가야 한다). **인자만 검사한다.**
    라이브 확인은 D-1 점검 목록의 «모델 호출 한 번»이 담당한다.
+
+## 🚨 BL-59 — **건너뛴 것을 «통과»라고 말하지 않는다** (2026-09-18 해결)
+
+예전에는 `langchain_google_genai` 가 없으면 §1이 통째로 사라지고 **`2/2 통과` ·
+종료코드 0** 이 나왔다. §1은 BL-57의 회귀 방지 **본체**다 — 그게 조용히 없어지면
+남는 것은 BL-57과 무관한 두 건뿐인데 화면은 초록이다.
+**«도구가 거짓 성공을 보고한다»(BL-58)의 테스트 판본**이고, 이 저장소가 여섯 번
+고친 «확인하지 않고 됐다고 말하는 것»과 같은 모양이다.
+
+이제 **건너뛴 건수를 세어 «판정 불가»로 죽는다.** 통과 건수도 올라가지 않는다.
+🔑 **CI(ubuntu)는 이 파일을 아예 안 돌린다** — 거긴 `langgraph`·`langchain-core`만
+   일부러 설치하는 잡이라 **항상 판정 불가**가 된다. `test_dependencies.py` 와 같은
+   이유·같은 방식으로 제외했다(`.github/workflows/tests.yml`).
+   **«조용한 초록»을 «명시적 제외»로 바꾼 것이다** — 없던 검사가 생기진 않지만,
+   **없다는 사실이 보이게** 됐다.
 """
 import sys, os
 
@@ -37,12 +52,24 @@ class FakeSettings:
 
 
 def run():
-    passed = total = 0
+    passed = total = skipped = 0
 
     def check(name, cond):
         nonlocal passed, total
         total += 1; passed += bool(cond)
         print(f"  {'✓' if cond else '✗ FAIL'} {name}")
+
+    def cannot_judge(names, why):
+        """검사하지 못한 것을 **세어서** 남긴다.
+
+        🚨 그냥 `print` 하고 넘어가면 «2/2 통과»가 된다(BL-59). 건너뛴 것은
+           통과가 아니라 **판정 불가**다 — 합계에도 넣지 않고, 종료코드로 말한다.
+        """
+        nonlocal skipped
+        for n in names:
+            skipped += 1
+            print(f"  ⬜ 판정 불가 {n}")
+        print(f"     └ {why}")
 
     try:
         import langchain_google_genai  # noqa: F401
@@ -53,7 +80,13 @@ def run():
     # ── §1 gemini는 thinking을 끄고 만든다 ────────────────────────────
     print("\n§1 thinking 차단 (BL-57 본체)")
     if not has_gemini:
-        print("  · langchain_google_genai 미설치 — §1 건너뜀")
+        cannot_judge(
+            ["thinking_budget=0 이 걸려 있다",
+             "temperature=0",
+             "모델명이 설정에서 온다",
+             "모델명을 코드에 박지 않았다"],
+            "langchain_google_genai 가 없다 — `pluiz` 환경이 아니다. "
+            "BL-57 방어가 살아 있는지 **여기서는 알 수 없다**")
     else:
         llm = build_llm(FakeSettings())
         check("thinking_budget=0 이 걸려 있다 (없으면 모든 호출이 out=0)",
@@ -90,8 +123,14 @@ def run():
     check("thinking_budget 옆에 BL-57 근거가 적혀 있다",
           "thinking_budget" in src and "out=0" in src)
 
-    print(f"\n결과: {passed}/{total} 통과")
-    return passed == total
+    # 🚨 여기가 BL-59 의 본체다. **못 잰 것이 있으면 «통과»라는 말을 아예 안 쓴다.**
+    #    «2/2 통과»는 훑어보는 사람에게 초록으로 읽힌다 — 그게 이 결함이 한 일이다.
+    if skipped:
+        print(f"\n결과: {passed}/{total} · 🚨 판정 불가 {skipped}건 — 초록이 아니다")
+        print(f"   BL-57 방어 {skipped}건을 못 쟀다. `conda activate pluiz` 로 다시 돌릴 것")
+    else:
+        print(f"\n결과: {passed}/{total} 통과")
+    return passed == total and skipped == 0
 
 
 if __name__ == "__main__":
