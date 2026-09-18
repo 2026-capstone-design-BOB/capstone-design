@@ -27,6 +27,8 @@ import os
 import sys
 import tarfile
 import tempfile
+import time
+import types
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -201,7 +203,7 @@ def run():
             with open(c.archive_path, "wb") as f:
                 f.write(payload)
             F.free_bytes = lambda: 500 * F.GB
-            F.download = lambda cc, force=False: True
+            F.download = lambda cc, force=False, rounds=8: True
             F.extract = lambda cc: False                 # 푸는 데 실패했다
             rv, out = _quiet(F.cmd_fetch, ["fake"], True, False)   # --drop-archive
             check("🚨 푸는 데 실패하면 압축파일을 안 지운다",
@@ -259,8 +261,76 @@ def run():
                   os.path.exists(c.archive_path)
                   and not os.path.exists(c.archive_path + ".part")
                   and os.path.getsize(c.archive_path) == 1000)
+
+            # ── 🚨 끊기면 **스스로 다시 붙는다** (2026-09-18) ──────────────
+            # MUSAN 10GB 를 두 번 놓쳤다. 서버가 3MB/s → 370KB/s 로 떨어지다
+            # 읽기 타임아웃으로 죽었고, **이어받기가 되는데도 사람이 같은 명령을
+            # 다시 쳐야 했다.** 도구가 할 수 있는 일을 사람에게 미룬 것이다.
+            os.remove(c.archive_path)
+            tries = []
+
+            def _flaky(opener, url, part, have, totalsz):
+                tries.append(have)
+                with open(part, "ab") as f:            # 조금 받다가
+                    f.write(b"x" * 300)
+                if len(tries) < 3:                     # 두 번은 끊긴다
+                    raise OSError("읽기 시간 초과")
+                with open(part, "ab") as f:
+                    f.write(b"x" * (totalsz - have - 300))
+
+            F._stream = _flaky
+            rv, out = _quiet(F.download, c)
+            check(f"🚨 끊겨도 스스로 다시 붙는다 (사람을 안 붙잡는다) · 시도 {tries}",
+                  rv is True)
+            check("다시 붙을 때도 받은 것을 안 버린다 (이어받는 지점이 는다)",
+                  tries == sorted(tries) and tries[0] == 0 and tries[-1] > 0)
+            check("다시 붙었다고 말한다 (조용히 재시도하지 않는다)", "다시 붙는다" in out)
+
+            # ⚠️ 그런데 **한 바이트도 안 느는 상태에서는 멈춰야 한다.**
+            #    안 그러면 망이 끊긴 자리에서 영원히 돈다 — «돌고 있는데
+            #    아무 일도 안 일어나는» 것이 실패보다 나쁘다.
+            #    🔑 다만 **한 번에 포기하지도 않는다**(2026-09-18 — 8.74GB 지점에서
+            #    `getaddrinfo failed` 가 두 주소에 동시에 났다. 서버가 죽은 게 아니라
+            #    이 PC의 이름 해석이 몇 초 끊긴 것이었다). 그래서 «몇 번까지 견디나»가
+            #    상수(`STALL_LIMIT`)이고, 그 값이 실제로 상한인지를 여기서 본다.
+            os.remove(c.archive_path)
+            spins = []
+
+            def _dead(opener, url, part, have, totalsz):
+                spins.append(have)
+                raise OSError("연결할 수 없다")
+
+            F._stream = _dead
+            old_time = F.time
+            F.time = types.SimpleNamespace(       # 기다리는 시간을 테스트가 안 산다
+                sleep=lambda *_a: None, time=time.time, strftime=time.strftime)
+            try:
+                rv, out = _quiet(F.download, c, rounds=99)
+            finally:
+                F.time = old_time
+            check(f"🚨 안 늘면 결국 멈춘다 (영원히 안 돈다) · 시도 {len(spins)}회",
+                  rv is False and len(spins) == F.STALL_LIMIT * len(c.urls))
+            check("🔑 한 번에 포기하지도 않는다 (망 깜빡임을 견딘다)",
+                  F.STALL_LIMIT >= 2 and "쉬었다 다시 본다" in out)
         finally:
             F.DEST, F._stream = old_dest, old_stream
+
+    print("=== 9-B. 대체 주소가 «있다»가 아니라 «된다» 인가 ===")
+    # 🚨 2026-09-18 — 본 주소가 끊긴 **바로 그 순간에** 대체 주소가 SSL 로 죽었다.
+    #    `us.openslr.org` 는 인증서가 그 이름으로 발급돼 있지 않다(Hostname mismatch).
+    #    «대체 주소가 있다»가 거짓이었고, **본 주소가 죽기 전까지 드러나지 않았다.**
+    #    그래서 여기서 ①그 주소가 다시 안 들어왔는지 ②실측 기록이 소스에 남아 있는지를 본다.
+    #    (망에는 안 나간다 — 나가면 테스트가 망 상태에 따라 흔들린다)
+    src = io.open(os.path.join(_ROOT, "scripts", "fetch_wakeword_corpora.py"),
+                  encoding="utf-8").read()
+    check("🚨 인증서가 안 맞는 주소(us.openslr.org)가 다시 안 들어왔다",
+          "us.openslr.org/resources" not in src)
+    check("대체 주소를 직접 찔러 본 기록이 소스에 있다",
+          "Hostname mismatch" in src and "206" in src)
+    for c in F.CORPORA.values():
+        hosts = {u.split("/")[2] for u in c.urls}
+        check(f"[{c.key}] 대체 주소가 **다른 호스트**다 (같은 서버면 대체가 아니다)",
+              len(hosts) == len(c.urls))
 
     print("=== 10. 목록(manifest) 이 4단계가 읽을 것을 담는가 ===")
     with tempfile.TemporaryDirectory() as tmp:
