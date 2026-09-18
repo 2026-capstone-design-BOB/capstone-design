@@ -310,6 +310,138 @@ def run():
     else:
         check("읽는 쪽 뿌리가 넷이다 (musan · RIRS_NOISES · zeroth_korean · manual)", True)
 
+    print("=== ⑩ 최상위 폴더가 없는 압축도 제 이름의 폴더에 풀린다 ===")
+    # 🚨 2026-09-18에 실제로 겪었다 — Zeroth 압축에는 최상위 폴더가 없어서
+    #    `data/corpora/` 에 아홉 덩어리가 흩어졌고 `zeroth_korean` 는 안 생겼다.
+    #    **md5 는 맞는데 «안 풀렸다»** 가 되고, 10.3GB 를 제대로 받아 놓고 «실패»로 셌다.
+    #    ⑨의 문자열 대조로는 못 잡는다 — 양쪽 다 «zeroth_korean» 이라고 적혀 있었다.
+    #    잡히는 자리는 **실제로 풀어 보는 것**뿐이다.
+    import fetch_wakeword_corpora as F               # stdlib 만 쓴다 — CI 에서도 돈다
+    import tarfile as _tar
+
+    def _tgz(path, names):
+        with _tar.open(path, "w:gz") as t:
+            for n in names:
+                f = os.path.join(os.path.dirname(path), n.replace("/", "_"))
+                io.open(f, "w", encoding="utf-8").write("x")
+                t.add(f, arcname=n)
+
+    def _corpus(key, archive, probe, into):
+        return F.Corpus(key=key, title=key, url="", size=0, md5="", archive=archive,
+                        probe=probe, extracted_hint=0, license_="", why="",
+                        extract_into=into)
+
+    _keep = F.DEST
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            F.DEST = os.path.join(td, "corpora")
+            os.makedirs(F.DEST)
+
+            # ① 최상위 폴더가 없는 압축 (Zeroth 모양)
+            flat = os.path.join(F.DEST, "flat.tar.gz")
+            _tgz(flat, ["train_data_01/003/106/a.flac", "AUDIO_INFO"])
+            c = _corpus("flat", "flat.tar.gz", "zeroth_korean", "zeroth_korean")
+            ok = F.extract(c)
+            check("🚨 풀린다 — «풀렸는데 없다» 가 안 난다", ok)
+            check("probe 폴더가 실제로 생긴다", os.path.isdir(c.probe_path))
+            check("내용이 그 안에 들어간다 (뿌리에 흩어지지 않는다)",
+                  os.path.isdir(os.path.join(c.probe_path, "train_data_01")))
+            check("말뭉치 뿌리가 안 더러워진다 (train_data_01 이 밖에 없다)",
+                  not os.path.exists(os.path.join(F.DEST, "train_data_01")))
+            inv = F.inventory_one(c)
+            check("세어진다 — manifest 에 «풀림» 으로 적힌다",
+                  bool(inv) and inv["files"] == 2, f"실제 {inv}")
+
+            # ② 최상위 폴더가 있는 압축 (musan · RIRS_NOISES 모양) 은 그대로 뿌리에 푼다
+            nest = os.path.join(F.DEST, "nest.tar.gz")
+            _tgz(nest, ["musan/noise/b.wav"])
+            c2 = _corpus("nest", "nest.tar.gz", "musan/noise", None)
+            check("extract_into 가 없으면 예전대로 뿌리에 푼다",
+                  F.extract(c2) and os.path.isdir(os.path.join(F.DEST, "musan", "noise")))
+            check("그때는 폴더를 한 겹 더 만들지 않는다",
+                  not os.path.exists(os.path.join(F.DEST, "nest")))
+    finally:
+        F.DEST = _keep
+
+    print("=== ⑪ 학습 배선 — «절반만 실측» 이 안 된다 ===")
+    # 🚨 증강 호출부가 네 군데였다(양성·음성·균형맞추기·사용자녹음). 한 군데를 빠뜨리면
+    #    **그 부분만 옛 흉내로 학습되는데 오류가 안 난다.** 그래서 호출부를 `aug()` 하나로
+    #    모으고, **소스에 직접 호출이 남아 있지 않은지** 여기서 센다.
+    import re
+    train_src = io.open(os.path.join(_ROOT, "scripts", "train_wakeword.py"),
+                        encoding="utf-8").read()
+    direct = re.findall(r"(?<![\w.])augment\(", train_src)
+    check("🚨 augment() 직접 호출이 한 군데뿐이다 (aug() 안)",
+          len(direct) == 1, f"실제 {len(direct)}군데")
+    check("기본값이 «실측» 이다 (흉내는 명시해야 한다)",
+          'default="corpus"' in train_src)
+    check("흉내를 고를 길은 남아 있다 (--augment mimic)",
+          'choices=("corpus", "mimic")' in train_src)
+    check("🔴 사람이 말한 한국어를 음성(negative)으로 넣는다",
+          "speech_negative(" in train_src)
+
+    if not _SKIP:
+        import train_wakeword as T
+
+        check("흉내 모드는 말뭉치를 안 읽는다 (None 을 돌려준다)",
+              T.make_augmenter("mimic") is None)
+
+        # 🚨 말뭉치가 없을 때 **조용히 흉내로 되돌아가면** «실측으로 학습했다» 가 거짓이 된다.
+        #    없으면 예외여야 한다 — 그게 BL-59 의 실패 모양을 막는 자리다.
+        #
+        # ⚠️ 여기서 한 번 헛돌았다(2026-09-18) — 이 파일은 `wakeword_corpus` 로 import 하고
+        #    `train_wakeword` 는 `scripts.wakeword_corpus` 로 import 한다. 이름이 다르면
+        #    **파이썬은 같은 파일을 두 모듈로 따로 들인다.** 한쪽만 바꾸면 다른 쪽은
+        #    진짜 `data/corpora/` 를 그대로 본다 — 테스트가 **조용히 통과**한다.
+        import scripts.wakeword_corpus as SC
+        mods = [m for m in (C, SC) if m is not None]
+        saved = [(m, m.CORPORA, m.INDEX_DIR) for m in mods]
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                for m in mods:
+                    m.CORPORA = os.path.join(td, "corpora")
+                    m.INDEX_DIR = os.path.join(td, "_index")
+                os.makedirs(os.path.join(td, "corpora"))
+                try:
+                    T.make_augmenter("corpus")
+                    ok = False
+                except RuntimeError:
+                    ok = True
+                check("🚨 말뭉치가 없으면 예외다 (조용히 흉내로 안 돌아간다)", ok)
+        finally:
+            for m, c0, i0 in saved:
+                m.CORPORA, m.INDEX_DIR = c0, i0
+
+        # 모델 파일이 «어떻게 학습됐는지» 를 스스로 말한다 — 6단계에서 후보를 나란히 잰다
+        class _Fake:
+            coefs_ = [np.zeros((2, 2), dtype=np.float32)]
+            intercepts_ = [np.zeros(2, dtype=np.float32)]
+
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "m.npz")
+            T.save(_Fake(), out, meta={"augment": "corpus", "corpora": "zeroth 1",
+                                       "speech_neg": 7})
+            # ⚠️ `np.load` 는 파일을 **열어 둔다.** 윈도우에서는 그 상태로 임시폴더를
+            #    지우려다 PermissionError 가 난다 — 테스트가 «통과하고 나서» 죽는다.
+            with np.load(out, allow_pickle=False) as z:
+                keys = set(z.files)
+                got = {k: z[k] for k in ("augment", "corpora", "speech_neg")}
+            check("npz 가 «어느 증강으로 학습했나» 를 담는다",
+                  str(got["augment"]) == "corpus", f"실제 {got['augment']}")
+            check("npz 가 «무슨 말뭉치로» 를 담는다", str(got["corpora"]) == "zeroth 1")
+            check("npz 가 한국어 음성(negative) 개수를 담는다", int(got["speech_neg"]) == 7)
+            for k in ("W0", "b0", "n_layers", "wake_word", "wake_phrases"):
+                check(f"기존 키 «{k}» 가 그대로 있다 (런타임이 읽는다)", k in keys)
+    else:
+        for n in ("흉내 모드는 말뭉치를 안 읽는다 (None 을 돌려준다)",
+                  "🚨 말뭉치가 없으면 예외다 (조용히 흉내로 안 돌아간다)",
+                  "npz 가 «어느 증강으로 학습했나» 를 담는다",
+                  "npz 가 «무슨 말뭉치로» 를 담는다",
+                  "npz 가 한국어 음성(negative) 개수를 담는다"):
+            check(n, True)
+        for k in ("W0", "b0", "n_layers", "wake_word", "wake_phrases"):
+            check(f"기존 키 «{k}» 가 그대로 있다 (런타임이 읽는다)", True)
+
     print(f"{NL}결과: {passed}/{total} 통과")
     return passed == total
 
