@@ -5,6 +5,7 @@
     python scripts/eval_wakeword.py --holdout-only  # 학습에 안 들어간 화자만
     python scripts/eval_wakeword.py --sweep         # 임계 훑기 (FA/시간 ↔ FRR)
     python scripts/eval_wakeword.py --soak a.wav    # 라벨 없는 긴 오디오 → FA/시간만
+    python scripts/eval_wakeword.py --energy-sweep  # 에너지 관문 훑기 (BL-23 완화책 ①)
 
 ## 왜 이 스크립트가 학습보다 먼저인가
 
@@ -66,6 +67,14 @@ MANIFEST = os.path.join(ROOT, "data", "wakeword", "manifest.json")
 
 # 양성으로 세지 않는 라벨 — 이 구간에서 깨면 오탐이다
 NEGATIVE_LABELS = ("negative", "freetalk", "quiet")
+
+#: 에너지 관문 후보 ([BL-23](../docs/BACKLOG.md) 완화책 ① — «관문을 올리면 오탐이 주는가»)
+#:
+#: 🔑 0.008 을 반드시 넣는다. **그 값이 옛 Whisper 관문**이고, 2026-09-08 실기에서
+#:    «무음 스킵» 620번이 찍히는 동안 통과한 2번이 **둘 다 성공**했다 —
+#:    모델이 못 알아들은 게 아니라 **들어볼 기회가 없었다**(services/wakeword.py 의 주석).
+#:    올리는 쪽만 재고 그 대가를 안 재면 그 사고를 그대로 되풀이한다.
+ENERGY_FLOORS = [0.0, 0.0015, 0.003, 0.005, 0.008, 0.012, 0.02, 0.03]
 
 
 # ── 입력 ────────────────────────────────────────────────────────
@@ -154,11 +163,17 @@ def scan(model, audio, energy_gate):
     return frames
 
 
-def replay(frames, threshold):
-    """임계 하나로 쿨다운까지 재생해 «깬 시각» 목록을 만든다."""
+def replay(frames, threshold, floor=0.0):
+    """임계 하나로 쿨다운까지 재생해 «깬 시각» 목록을 만든다.
+
+    `floor` 는 **에너지 관문을 사후에 올려 보는 것**이다. 순서가 런타임과 같아야 하므로
+    (창 → 관문 → 쿨다운 → 추론) **관문에서 막힌 창은 쿨다운도 건드리지 않는다.**
+    관문을 올리면 그만큼 창이 사라질 뿐 남은 창의 확률은 바뀌지 않는다 —
+    추론을 건너뛰는 것은 오디오를 바꾸지 않기 때문이다. 그래서 훑기가 공짜다.
+    """
     fires, last = [], -1e9
-    for t, _e, pr in frames:
-        if pr is None:
+    for t, e, pr in frames:
+        if pr is None or e < floor:
             continue
         if t - last < COOLDOWN_SEC:                 # 런타임은 여기서 추론 자체를 건너뛴다
             continue
@@ -174,7 +189,7 @@ def overlap(a0, a1, b0, b1):
     return max(0.0, min(a1, b1) - max(a0, b0))
 
 
-def score(sessions_frames, threshold):
+def score(sessions_frames, threshold, floor=0.0):
     """FRR 과 FA 를 센다.
 
     깬 시각 t 의 창은 [t-2.0, t] 다. 그 창과 **가장 많이 겹치는 구간**에 귀속시킨다 —
@@ -186,7 +201,7 @@ def score(sessions_frames, threshold):
     sec_by = {k: 0.0 for k in NEGATIVE_LABELS}
     per = []
     for s in sessions_frames:
-        fires = replay(s["frames"], threshold)
+        fires = replay(s["frames"], threshold, floor)
         segs = s["segments"]
         hit = set()
         sess_fa = 0
@@ -222,7 +237,8 @@ def score(sessions_frames, threshold):
     frr = (pos_total - pos_hit) / pos_total if pos_total else float("nan")
     fa_hr = fa / (neg_seconds / 3600.0) if neg_seconds > 0 else float("nan")
     return {
-        "threshold": threshold, "pos_total": pos_total, "pos_hit": pos_hit,
+        "threshold": threshold, "energy_floor": floor,
+        "pos_total": pos_total, "pos_hit": pos_hit,
         "frr": frr, "fa": fa, "neg_sec": neg_seconds, "fa_per_hour": fa_hr,
         "fa_by_label": fa_by, "sec_by_label": sec_by,
         "fa_per_hour_by_label": {
@@ -250,6 +266,8 @@ def main():
     ap.add_argument("--holdout-only", action="store_true", help="학습에 안 들어간 화자만")
     ap.add_argument("--sweep", action="store_true", help="임계 훑기 — FA/시간 ↔ FRR")
     ap.add_argument("--soak", nargs="+", metavar="WAV", help="라벨 없는 긴 오디오 → FA/시간만")
+    ap.add_argument("--energy-sweep", action="store_true",
+                    help="에너지 관문 훑기 — 관문을 올리면 오탐이 주는가 (BL-23 완화책 ①)")
     ap.add_argument("--json", metavar="OUT", help="결과를 JSON 으로 저장")
     a = ap.parse_args()
 
@@ -260,7 +278,16 @@ def main():
     model = KwsModel(a.model)
     print(f"[eval] 학습된 말 «{model.wake_word}» · 창 {WINDOW_SECONDS}s · 홉 {HOP_SECONDS}s "
           f"· 쿨다운 {COOLDOWN_SEC}s")
-    print(f"[eval] 에너지 관문 {gate:.4f} · 임계 {th_default:.2f}  ← 런타임에서 그대로 가져왔다\n")
+    print(f"[eval] 에너지 관문 {gate:.4f} · 임계 {th_default:.2f}  ← 런타임에서 그대로 가져왔다")
+
+    # 🔑 관문을 훑으려면 **관문에 막히지 않은 상태**의 확률이 필요하다. 그래서 스캔은 0으로
+    #    돌려 전부 계산해 두고, 관문은 재생할 때 적용한다(`replay` 의 `floor`). 추론이 늘지만
+    #    훑기가 공짜가 되고, **지금 관문에서의 값이 기준선과 같은지로 검산도 된다.**
+    scan_gate = 0.0 if a.energy_sweep else gate
+    if a.energy_sweep:
+        print(f"[eval] 🔍 관문 훑기 — 스캔은 관문 0 으로 돈다(그만큼 느리다). "
+              f"재생할 때 {', '.join(f'{f:.4f}' for f in ENERGY_FLOORS)} 를 적용한다")
+    print()
 
     # ── 소크 모드: 라벨이 없다. 전부 «안 불렀다»로 보고 FA/시간만 센다 ──
     if a.soak:
@@ -268,18 +295,23 @@ def main():
         frames_all = []
         for p in a.soak:
             audio = read_wav(p)
-            fr = scan(model, audio, gate)
+            fr = scan(model, audio, scan_gate)
             dur = len(audio) / SAMPLE_RATE
             total_sec += dur
             frames_all.append(fr)
             print(f"  {os.path.basename(p):40s} {dur/60:6.1f}분  "
-                  f"깬 횟수 {len(replay(fr, th_default)):3d}")
+                  f"깬 횟수 {len(replay(fr, th_default, gate if a.energy_sweep else 0.0)):3d}")
         if total_sec <= 0:
             sys.exit("[eval] FATAL: 오디오가 비어 있다")
         hours = total_sec / 3600.0
 
-        def fa_at(th):
-            return sum(len(replay(fr, th)) for fr in frames_all)
+        # 🔑 훑기 모드에서는 스캔을 관문 0 으로 돌았으므로, **기준 숫자는 런타임 관문을
+        #    다시 씌워서** 낸다. 안 그러면 «지금 값»이 아닌 것을 기준선이라고 부르게 된다.
+        base_floor = gate if a.energy_sweep else 0.0
+
+        def fa_at(th, floor=None):
+            f = base_floor if floor is None else floor
+            return sum(len(replay(fr, th, f)) for fr in frames_all)
 
         n = fa_at(th_default)
         print(f"\n  합계 {hours:.2f}시간 · 오탐 {n}회 → **FA/시간 {n/hours:.1f}**  (목표 ≤ 1)")
@@ -303,6 +335,25 @@ def main():
             print("\n🔑 FRR(놓침)은 이 오디오로 못 잰다 — **부른 적이 없기 때문이다.**")
             print("   운용점을 고르려면 이 표를 `--sweep`(호출 모드)의 FRR 표와 **같은 임계에서** 읽는다.")
 
+        if a.energy_sweep:
+            print(f"\n── 에너지 관문 훑기 (긴 오디오 {hours:.2f}시간 · 임계 {th_default:.2f} 고정) ──")
+            print("   «관문을 올리면 오탐이 주는가» — BL-23 완화책 ①")
+            print(f"{'관문':>8} {'막힌 창':>9} {'오탐':>6} {'FA/시간':>9}")
+            rows = []
+            n_win = sum(len(fr) for fr in frames_all)
+            for fl in ENERGY_FLOORS:
+                blocked = sum(1 for fr in frames_all for (_t, e, _p) in fr if e < fl)
+                k = fa_at(th_default, fl)
+                rows.append({"energy_floor": fl, "blocked_windows": blocked,
+                             "windows": n_win, "fa": k, "fa_per_hour": k / hours})
+                mark = "  ← 지금" if abs(fl - gate) < 1e-9 else ""
+                print(f"{fl:>8.4f} {blocked*100.0/n_win:>8.1f}% {k:>6} "
+                      f"{k/hours:>9.1f}{mark}")
+            out["energy_sweep"] = rows
+            print("\n🔑 **이 표만 보고 관문을 올리면 안 된다.** 여기엔 «놓침»이 없다 —")
+            print("   부른 적이 없는 오디오라 FRR 을 못 잰다. 대가는 라벨 녹음 쪽 표에 있다")
+            print("   (`--soak` 없이 `--energy-sweep` 만 주면 그 표가 나온다).")
+
         if a.json:
             io.open(a.json, "w", encoding="utf-8").write(
                 json.dumps(out, ensure_ascii=False, indent=2))
@@ -320,13 +371,15 @@ def main():
 
     for s in sessions:
         audio = read_wav(s["wav"])
-        s["frames"] = scan(model, audio, gate)
+        s["frames"] = scan(model, audio, scan_gate)
 
     n_hold = sum(1 for s in sessions if s["holdout"])
     print(f"[eval] 녹음 {len(sessions)}개 · 그중 **미학습 화자 {n_hold}명**"
           f"{' ← 이 숫자가 0이면 자가 거울이다' if n_hold == 0 else ''}\n")
 
-    base = score(sessions, th_default)
+    # 훑기 모드는 관문 0 으로 스캔했으니 기준 표에는 런타임 관문을 다시 씌운다 (소크와 같다)
+    base_floor = gate if a.energy_sweep else 0.0
+    base = score(sessions, th_default, base_floor)
 
     print(f"── 임계 {th_default:.2f} (런타임 값) ─────────────────────────")
     print(f"{'화자':<10} {'학습':<6} {'부름':>5} {'깸':>5} {'FRR':>8} {'오탐':>5} {'음성(초)':>9}")
@@ -369,6 +422,29 @@ def main():
                   f"{str(r['pos_hit']) + '/' + str(r['pos_total']):>10} "
                   f"{r['fa']:>5} {num(r['fa_per_hour']):>9}{mark}")
         out["sweep"] = rows
+
+    if a.energy_sweep:
+        # 🚨 여기가 «관문을 올리자»의 대가를 재는 자리다. 소크 쪽 표에는 놓침이 없다.
+        print(f"\n── 에너지 관문 훑기 — **대가까지 같이 본다** (임계 {th_default:.2f} 고정) ──")
+        print(f"{'관문':>8} {'막힌 창':>9} {'FRR':>8} {'깸/부름':>10} {'오탐':>5} {'FA/시간':>9}")
+        n_win = sum(len(s["frames"]) for s in sessions)
+        rows = []
+        for fl in ENERGY_FLOORS:
+            blocked = sum(1 for s in sessions for (_t, e, _p) in s["frames"] if e < fl)
+            r = score(sessions, th_default, fl)
+            r["blocked_windows"] = blocked
+            r["windows"] = n_win
+            rows.append({k: v for k, v in r.items() if k != "per_session"})
+            mark = "  ← 지금" if abs(fl - gate) < 1e-9 else ""
+            print(f"{fl:>8.4f} {blocked*100.0/n_win:>8.1f}% {pct(r['frr']):>8} "
+                  f"{str(r['pos_hit']) + '/' + str(r['pos_total']):>10} "
+                  f"{r['fa']:>5} {num(r['fa_per_hour']):>9}{mark}")
+        out["energy_sweep"] = rows
+        print("\n🚨 **0.008 줄을 반드시 볼 것.** 그게 2026-09-08까지 쓰던 옛 관문이고,")
+        print("   그때 실기에서 «무음 스킵» 620번 동안 통과한 2번이 **둘 다 성공**했다 —")
+        print("   모델이 못 알아들은 게 아니라 **들어볼 기회가 없었다.** 관문은 그래서 내려갔다.")
+        print("   🔑 이 표의 FRR 은 **조용한 방에서 30cm 거리로 녹음한 것**이라,")
+        print("      실제 거리·목소리 크기에서는 더 나쁘다. 낙관적인 쪽 숫자다.")
 
     if a.json:
         io.open(a.json, "w", encoding="utf-8").write(
