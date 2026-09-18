@@ -26,6 +26,13 @@ from dataclasses import dataclass, asdict, field, fields
 from difflib import SequenceMatcher
 from typing import Optional
 
+from core.logger import get_logger
+
+#: 🚨 **`print` 가 아니라 로거다** (2026-09-16 감사 G-02).
+#:  캐시가 도구를 돌리다 실패하면 그 사실이 `print` 로만 나가서 **`logs/pluiz.log` 에
+#:  한 줄도 안 남았다.** 실기에서 «왜 안 됐지»를 로그로 되짚을 수 없었다는 뜻이다.
+_log = get_logger("CommandCache")
+
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
@@ -974,6 +981,34 @@ class CommandCache:
 
     # ── 도구 직접 실행 ────────────────────────────────────────────
 
+    #: 다 실패했을 때 할 말. `graph_agent._accept_suggestion` 과 **같은 문장**이다 —
+    #: 같은 일(캐시 실행 실패)에 두 가지 말을 만들지 않는다.
+    _FAIL_ALL = "그 명령을 실행하지 못했어요. 직접 다시 말씀해 주시겠어요?"
+
+    @staticmethod
+    def _verdict(entry, results, failed, missing):
+        """돌린 결과를 **사실대로** 문장으로 만든다 (2026-09-16 감사 G-01).
+
+        🚨 **예전에는 도구가 실패하면 `response_template` 을 대신 돌려줬다.**
+        그 템플릿은 *«볼륨 올렸어요»* 같은 **성공 문장**이다 — 즉 실패한 턴이
+        사용자에게 **성공으로 들렸다.** 이 저장소가 일곱 번 고친
+        «확인하지 않고 됐다고 말하는 것»(BL-12·15·19·21·23·26·35)의 캐시 판본이고,
+        하필 **LLM 을 안 거치는 경로**라 그물 넷이 전부 비켜간다.
+
+        🔑 **«못 했어요»도 거짓일 수 있다** — 도구가 여럿이면 앞의 것은 이미 돌았고
+        부작용이 남아 있다. 그래서 «전부 실패»와 «일부만»을 나눠 말한다.
+
+        ⚠️ 예외 원문을 사용자에게 읽어 주지 않는다(감사 G-14와 같은 이유).
+        상세는 로그로 간다.
+        """
+        bad = len(failed) + len(missing)
+        if bad == 0:
+            return "\n".join(results) if results else entry.response_template
+        if results:
+            return (f"일부만 실행됐어요 — {len(results)}개는 됐고 {bad}개는 안 됐어요. "
+                    f"확인해 주시겠어요?")
+        return CommandCache._FAIL_ALL
+
     def _get_tools_map(self) -> dict:
         """BUG-10: 도구 맵을 초기화 시 한 번만 빌드하고 재사용."""
         if not self._tools_map:
@@ -982,41 +1017,66 @@ class CommandCache:
         return self._tools_map
 
     async def execute(self, entry: "CacheEntry") -> str:
-        """캐시 엔트리의 도구 시퀀스를 LLM 없이 직접 실행."""
+        """캐시 엔트리의 도구 시퀀스를 LLM 없이 직접 실행.
+
+        실패를 어떻게 말하는지는 `_verdict` 에 한 곳으로 모여 있다 — 여기와
+        `execute_sync` 가 **서로 다르게 말하면** 경로에 따라 정직함이 갈린다.
+        """
         tools_map = self._get_tools_map()
         results: list[str] = []
+        failed: list[str] = []
+        missing: list[str] = []
 
-        for call in entry.tool_calls:
+        for call in entry.tool_calls or []:
             name = call.get("name", "")
             args = call.get("args", {})
             if name not in tools_map:
-                print(f"[CommandCache] 알 수 없는 도구: {name}")
+                # G-04: 모르는 도구를 **조용히 건너뛰지 않는다.** 건너뛰면 2개짜리
+                #       엔트리가 1개만 돌고도 «다 했어요»가 나간다.
+                missing.append(name or "?")
+                _log.error("[캐시 실행] 실행=실패 | 패턴=%r | 모르는 도구 %r",
+                           entry.pattern, name)
                 continue
             try:
-                result = await tools_map[name].ainvoke(args)
-                results.append(str(result))
-            except Exception as e:
-                print(f"[CommandCache] 도구 실행 오류 ({name}): {e}")
-                results.append(entry.response_template)
-
-        return "\n".join(results) if results else entry.response_template
+                results.append(str(await tools_map[name].ainvoke(args)))
+            except Exception as e:                            # noqa: BLE001
+                failed.append(name)
+                _log.error("[캐시 실행] 실행=실패 | 패턴=%r | 도구=%s | %s: %s",
+                           entry.pattern, name, type(e).__name__, e)
+        if failed or missing:
+            _log.warning("[캐시 실행] 실행=부분실패 | 패턴=%r | 성공 %d · 실패 %d · 모름 %d",
+                         entry.pattern, len(results), len(failed), len(missing))
+        return self._verdict(entry, results, failed, missing)
 
     def execute_sync(self, entry: "CacheEntry") -> str:
         """캐시 엔트리를 동기로 직접 실행 (그래프 sync 경로용, P2).
-        도구가 원래 동기 함수라 .invoke로 호출한다."""
+        도구가 원래 동기 함수라 .invoke로 호출한다.
+
+        🚨 **이 경로가 감사(2026-09-16)에서 가장 큰 구멍이었다** — G-01·02·04 가
+        전부 이 함수 하나에서 나왔다. 그리고 여기는 **빠른 경로**라 LLM 을 안 거친다.
+        """
         tools_map = self._get_tools_map()
         results: list[str] = []
-        for call in entry.tool_calls:
+        failed: list[str] = []
+        missing: list[str] = []
+        for call in entry.tool_calls or []:
             name = call.get("name", "")
             args = call.get("args", {})
             if name not in tools_map:
+                missing.append(name or "?")
+                _log.error("[캐시 실행] 실행=실패 | 패턴=%r | 모르는 도구 %r",
+                           entry.pattern, name)
                 continue
             try:
                 results.append(str(tools_map[name].invoke(args)))
-            except Exception as e:
-                print(f"[CommandCache] 동기 실행 오류 ({name}): {e}")
-                results.append(entry.response_template)
-        return "\n".join(results) if results else entry.response_template
+            except Exception as e:                            # noqa: BLE001
+                failed.append(name)
+                _log.error("[캐시 실행] 실행=실패 | 패턴=%r | 도구=%s | %s: %s",
+                           entry.pattern, name, type(e).__name__, e)
+        if failed or missing:
+            _log.warning("[캐시 실행] 실행=부분실패 | 패턴=%r | 성공 %d · 실패 %d · 모름 %d",
+                         entry.pattern, len(results), len(failed), len(missing))
+        return self._verdict(entry, results, failed, missing)
 
     # ── 캐싱 ──────────────────────────────────────────────────────
 
