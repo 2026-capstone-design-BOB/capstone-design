@@ -5,7 +5,53 @@ URL 열기 / 검색 / 유튜브 / 지도 / 웹 정보 가져오기
 
 import subprocess
 import os
+from typing import Optional
+
 from langchain_core.tools import tool
+
+
+# ── 🚨 BL-58 — 망이 필요한 도구는 **하기 전에** 망을 본다 ────────────────
+#
+# 오프라인에서 *"유튜브에서 아이유 노래 틀어줘"* 를 하면 **브라우저는 뜨고**
+# «인터넷 없음» 오류 페이지가 보이는데, Pluiz 는 **«✓ 유튜브에서 '아이유 노래'
+# 검색했어요»** 라고 답했다. 방어 셋이 한꺼번에 빗나갔기 때문이다:
+#
+#   · BL-46(오프라인이면 LLM 을 안 부른다)  → 라우터가 그보다 **앞**이라 안 걸린다
+#   · verify_output                          → 도구가 `✓` 를 냈으니 **성공**으로 읽는다
+#   · os.startfile                           → «브라우저를 띄우는 데»는 **성공**했다
+#
+# 🔑 그래서 이건 «오프라인 결함»이 아니라 **«말을 잘못하는 결함»** 이다.
+#    Windows 음성 액세스도 같은 상황에서 빈 오류 페이지를 띄운다 — 다른 건
+#    저쪽은 **아무 말도 안 해서** 거짓말이 아니라는 점뿐이다.
+#
+# ⚠️ **판정을 못 하면 막지 않는다.** 멀쩡한 망에 «인터넷이 끊겼어요»라고 하는 것은
+#    반대 방향의 거짓말이고 더 나쁘다(`core/net.looks_offline` 의 규칙과 같다).
+
+#: 오프라인일 때 하는 말. `✗`(MARK_FAIL)로 시작해야 `tool_result` 가 실패로 읽는다.
+_OFFLINE_FAIL = "✗ 인터넷이 끊겨서 지금은 못 해요."
+
+
+def _offline_block(what: str) -> Optional[str]:
+    """망이 필요한 도구가 **일하기 전에** 부른다.
+
+    Returns:
+        막아야 하면 사용자에게 돌려줄 실패 문자열, 아니면 `None`.
+
+    🔑 `offline_confirmed()` 는 **두 번 본다**(TTL 캐시 + 새 탐침). 거절은
+       되돌릴 수 없어서 — «못 해요»라고 말해 버리면 사용자는 다시 말해야 한다 —
+       캐시된 판정 하나로 결정하지 않는다.
+    """
+    try:
+        from core.net import offline_confirmed
+        if not offline_confirmed():
+            return None
+    except Exception:                                         # noqa: BLE001
+        # 🚨 **부르는 것까지 감싼다.** 2026-09-18에 여기서 한 번 틀렸다 —
+        #    `import` 만 감싸 놓고 «판정 실패는 온라인으로 읽는다»고 주석에 적었다.
+        #    탐침이 터지면 **도구가 통째로 죽는다.** 못 잡는 실패가 아니라
+        #    **막지 말아야 할 실패**다.
+        return None
+    return f"{_OFFLINE_FAIL} ({what})"
 
 
 def _open_with_browser(url: str) -> str:
@@ -29,6 +75,9 @@ def open_url(url: str) -> str:
     지정한 URL을 기본 브라우저로 엽니다.
     url: 전체 URL (예: https://www.youtube.com)
     """
+    blocked = _offline_block("URL 열기")
+    if blocked:
+        return blocked
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
     try:
@@ -47,6 +96,9 @@ def web_search(query: str, engine: str = "google") -> str:
     query: 검색어
     engine: 검색 엔진 (google, naver, bing) 기본값 google
     """
+    blocked = _offline_block("웹 검색")
+    if blocked:
+        return blocked
     import urllib.parse
     encoded = urllib.parse.quote(query)
     urls = {
@@ -70,6 +122,9 @@ def youtube_search(query: str) -> str:
     일반 웹 검색(web_search)과 달리 유튜브 전용입니다. 유튜브 관련 명령은 항상 이 도구를 사용하세요.
     query: 검색어 (예: 아이유, BTS, 파이썬 강의)
     """
+    blocked = _offline_block("유튜브 검색")
+    if blocked:
+        return blocked
     import urllib.parse, urllib.request, json
 
     # YouTube Data API v3로 첫 번째 영상 ID 가져오기
@@ -112,6 +167,9 @@ def map_search(destination: str, origin: str = "") -> str:
     destination: 목적지 (예: 강남역, 서울시청)
     origin: 출발지 (비워두면 장소 검색만)
     """
+    blocked = _offline_block("지도 검색")
+    if blocked:
+        return blocked
     import urllib.parse
     if origin:
         url = f"https://www.google.com/maps/dir/{urllib.parse.quote(origin)}/{urllib.parse.quote(destination)}"
