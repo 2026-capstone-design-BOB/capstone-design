@@ -18,7 +18,10 @@ V2에서 **torch를 의도적으로 제거**했다(→ docs/presentation/pluiz_e
 그래서 런타임에 추가되는 의존성이 없다.
 
 ## 산출물
-`services/wakeword_model.npz` — 가중치 + 메타데이터. 작아서 저장소에 커밋한다.
+**기본은 `services/wakeword_model_candidate.npz` 다 — 런타임 모델이 아니다.**
+평가([`eval_wakeword.py`](eval_wakeword.py))를 통과한 뒤에 `--replace-runtime` 으로 바꾼다.
+학습과 교체를 나눠 두지 않으면 **실수로 한 번 돌렸을 때 지금 도는 모델이 사라진다.**
+(가중치 + 메타데이터. 작아서 저장소에 커밋한다.)
 """
 
 import argparse
@@ -228,13 +231,37 @@ def save(clf, path):
     print(f"⑥ 저장: {path} ({size:.0f} KB)")
 
 
+#: 학습 결과의 **기본 저장 위치**. 런타임 모델(`MODEL_PATH`)이 아니다.
+#:
+#: 🚨 **2026-09-18에 기본값을 바꿨다.** 예전에는 이 스크립트가 `services/wakeword_model.npz`
+#:    를 **바로 덮어썼다.** 실수로 한 번 돌리면 지금 도는 모델이 사라진다 —
+#:    9/22 시연을 앞두고는 그게 그날을 잃는 것과 같다.
+#:    [M7 §6](../docs/design/M7_웨이크워드_재구축.md)도 «7단계: 통과하면 런타임 교체»로
+#:    **학습과 교체를 나눠** 놨다. 코드가 그 순서를 따르게 했다.
+#:    바꾸려면 `--replace-runtime` 을 **명시적으로** 준다.
+CANDIDATE_PATH = os.path.join(ROOT, "services", "wakeword_model_candidate.npz")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--user-audio", default="", help="실제 녹음 .npy (16kHz float32)")
     ap.add_argument("--aug", type=int, default=3,
                     help="클립당 증강 개수 (목소리 14개로 늘면서 8 → 3. 창 수는 비슷하다)")
+    ap.add_argument("--out", default=None,
+                    help=f"저장 위치 (기본: {os.path.relpath(CANDIDATE_PATH, ROOT)})")
+    ap.add_argument("--replace-runtime", action="store_true",
+                    help="⚠️ 런타임 모델을 바로 덮어쓴다. 평가를 통과한 뒤에만 쓸 것")
     args = ap.parse_args()
+
+    out = args.out or (MODEL_PATH if args.replace_runtime else CANDIDATE_PATH)
+    if out == MODEL_PATH:
+        print("⚠️ 런타임 모델을 덮어쓴다: " + os.path.relpath(out, ROOT))
+        print("   되돌리려면: git checkout services/wakeword_model.npz")
+    else:
+        print("후보로 저장한다: " + os.path.relpath(out, ROOT))
+        print("   재려면: python scripts/eval_wakeword.py --model " +
+              os.path.relpath(out, ROOT).replace("\\", "/"))
 
     X, y = build_dataset(args.user_audio or None, aug_per_clip=args.aug)
     clf = train(X, y)
-    save(clf, MODEL_PATH)
+    save(clf, out)
