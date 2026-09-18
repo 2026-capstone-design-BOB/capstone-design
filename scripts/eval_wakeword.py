@@ -6,6 +6,8 @@
     python scripts/eval_wakeword.py --sweep         # 임계 훑기 (FA/시간 ↔ FRR)
     python scripts/eval_wakeword.py --soak a.wav    # 라벨 없는 긴 오디오 → FA/시간만
     python scripts/eval_wakeword.py --energy-sweep  # 에너지 관문 훑기 (BL-23 완화책 ①)
+    python scripts/eval_wakeword.py --compare 후보.npz          # 🔴 되돌림 판단 (M7 6단계)
+    python scripts/eval_wakeword.py --compare 후보.npz --soak 긴오디오.wav   # ← 이게 진짜 판정이다
 
 ## 왜 이 스크립트가 학습보다 먼저인가
 
@@ -30,6 +32,21 @@
 |---|---|---|
 | FA / 시간 | 안 불렀는데 깨어난 횟수 | ≤ 1회 |
 | FRR | 불렀는데 안 깨어난 비율 | ≤ 10% |
+
+## 🔴 `--compare` — **한 임계에서 비교하면 틀린 결론이 나온다** (M7 6단계)
+
+2026-09-18에 실제로 겪었다. 후보 모델을 런타임 임계(0.80) 한 지점에서 재니
+**FRR 19.2% → 6.7%** 였다. 거기서 멈췄으면 *«개선»* 이라고 적었을 것이다.
+그런데 임계를 훑으니 **곡선이 교차했고**, 정작 우리가 필요한 쪽(FA 가 낮은 쪽)에서는
+후보가 낫지 않았다.
+
+🔑 **임계는 모델의 성질이 아니라 «운용점»이다.** 두 모델의 임계 0.80은 서로 다른
+운용점이고, 임계 하나를 고르면 **어느 쪽이든 이기게 만들 수 있다.** 그건 비교가 아니다.
+그래서 이 모드는 **FA/시간을 맞춰 놓고 그때의 FRR 을 비교한다.**
+
+⚠️ **`--soak` 를 같이 주는 것이 진짜 판정이다.** 라벨 녹음의 FA/시간은 분모가 몇 분이고
+절반이 **오탐을 유도하려고 만든 문장**이라 전시회 값이 아니다. 긴 오디오가 없으면
+이 모드는 **그렇게 적고**, 판정을 «참고»라고 부른다.
 
 ## ⚠️ 건너뛰지 않는다
 
@@ -75,6 +92,13 @@ NEGATIVE_LABELS = ("negative", "freetalk", "quiet")
 #:    모델이 못 알아들은 게 아니라 **들어볼 기회가 없었다**(services/wakeword.py 의 주석).
 #:    올리는 쪽만 재고 그 대가를 안 재면 그 사고를 그대로 되풀이한다.
 ENERGY_FLOORS = [0.0, 0.0015, 0.003, 0.005, 0.008, 0.012, 0.02, 0.03]
+
+#: `--compare` 가 훑는 임계. 9칸짜리 `--sweep` 보다 촘촘하다 —
+#: **FA/시간을 맞추려면** 그 값에 닿는 임계를 찾아야 하기 때문이다.
+COMPARE_THRESHOLDS = [round(0.30 + 0.01 * i, 2) for i in range(70)] + [0.995, 0.999]
+
+#: 맞춰 놓고 비교할 FA/시간. **1회가 맨 앞인 것이 이 표의 요점이다** — 전시회 목표다.
+COMPARE_FA_TARGETS = [1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0, 200.0]
 
 
 # ── 입력 ────────────────────────────────────────────────────────
@@ -259,6 +283,142 @@ def num(x):
     return "—" if x != x else f"{x:.1f}"
 
 
+def _curve(model, sessions, soak_paths):
+    """모델 하나의 곡선. **프레임을 모델마다 새로 뜬다** — 확률이 다르기 때문이다."""
+    for sess in sessions:
+        sess["frames"] = scan(model, read_wav(sess["wav"]), 0.0)
+    soak_frames, soak_hours = [], 0.0
+    for sp in soak_paths or []:
+        audio = read_wav(sp)
+        soak_frames.append(scan(model, audio, 0.0))
+        soak_hours += len(audio) / SAMPLE_RATE / 3600.0
+    rows = []
+    for th in COMPARE_THRESHOLDS:
+        r = score(sessions, th, 0.0)
+        fa_soak = (sum(len(replay(fr, th, 0.0)) for fr in soak_frames) / soak_hours
+                   if soak_hours > 0 else float("nan"))
+        rows.append({"threshold": th, "frr": r["frr"], "fa_rec": r["fa_per_hour"],
+                     "fa_soak": fa_soak, "pos_hit": r["pos_hit"],
+                     "pos_total": r["pos_total"]})
+    return rows, soak_hours
+
+
+def _best_under(rows, target, fa_key):
+    """FA/시간이 `target` 이하인 운용점 중 **FRR 이 가장 낮은 것**.
+
+    🔑 «임계를 올리면 FA 가 준다»가 대체로 맞지만 **단조롭지 않다** — 그래서
+       «가장 높은 임계»가 아니라 **실제로 가장 좋은 점**을 고른다.
+    못 가면 None 이다. 그 경우 «그 예산으로는 못 간다»고 적어야 한다.
+    """
+    ok = [r for r in rows if r[fa_key] == r[fa_key] and r[fa_key] <= target]
+    return min(ok, key=lambda r: r["frr"]) if ok else None
+
+
+def cmd_compare(base_model, cand_path, sessions, soak_paths, th_default):
+    """두 모델을 **같은 FA/시간에서** 비교한다 (M7 6단계 · 되돌림 판단)."""
+    print(f"[eval] 🔴 되돌림 판단 — 두 모델을 **같은 FA/시간에서** 비교한다")
+    print(f"       기준 {os.path.relpath(base_model.path if hasattr(base_model, 'path') else MODEL_PATH, ROOT)}")
+    print(f"       후보 {os.path.relpath(cand_path, ROOT)}")
+    cand = KwsModel(cand_path)
+    if cand.wake_word != base_model.wake_word:
+        print(f"  ⚠️ 학습된 말이 다르다 — 기준 «{base_model.wake_word}» · 후보 «{cand.wake_word}»")
+
+    # 🔑 후보가 «어떻게 학습됐는지»를 파일에서 읽어 찍는다. 기억이나 파일명에 안 기댄다.
+    try:
+        with np.load(cand_path, allow_pickle=False) as z:
+            meta = {k: str(z[k]) for k in ("augment", "corpora", "speech_neg", "trained_at")
+                    if k in z.files}
+        if meta:
+            print(f"       후보 학습 정보 — " + " · ".join(f"{k}={v}" for k, v in meta.items()))
+        else:
+            print("       ⚠️ 후보 npz 에 학습 정보가 없다 (예전 형식이다)")
+    except Exception:                                        # noqa: BLE001
+        pass
+
+    if soak_paths:
+        print(f"\n[eval] 긴 오디오 {len(soak_paths)}개를 **두 모델로 각각** 돈다 (그만큼 걸린다)")
+    else:
+        print("\n🚨 `--soak` 가 없다 — FA/시간이 **라벨 녹음**에서 나온다.")
+        print("   그 분모는 몇 분이고 절반이 오탐을 유도하려고 만든 문장이다.")
+        print("   **이 판정은 «참고»다.** 되돌림을 정하려면 긴 오디오를 같이 줘라.")
+
+    print("\n  ① 기준 모델을 훑는다 …", flush=True)
+    base_rows, hours = _curve(base_model, sessions, soak_paths)
+    print("  ② 후보 모델을 훑는다 …", flush=True)
+    cand_rows, _ = _curve(cand, sessions, soak_paths)
+
+    fa_key = "fa_soak" if soak_paths else "fa_rec"
+    src = f"긴 오디오 {hours:.2f}시간" if soak_paths else f"라벨 녹음(참고)"
+    n_calls = base_rows[0]["pos_total"]
+
+    print(f"\n── 같은 FA/시간에서의 FRR — FA 출처: {src} · 호출 {n_calls}회 ──")
+    print(f"{'FA/시간':>8} | {'기준 FRR':>12} | {'후보 FRR':>12} | 판정")
+    print("-" * 62)
+    wins = {"cand": 0, "base": 0, "tie": 0}
+    low_fa_verdict = None
+    any_row = False
+    for tgt in COMPARE_FA_TARGETS:
+        b = _best_under(base_rows, tgt, fa_key)
+        c = _best_under(cand_rows, tgt, fa_key)
+        if b is None and c is None:
+            print(f"{tgt:>8.0f} | {'못 간다':>12} | {'못 간다':>12} | 둘 다 이 예산으로 못 간다")
+            continue
+        any_row = True
+        # 🔑 소수 셋째 자리까지 — 0.999 를 «1.00» 으로 적으면 **없는 임계**를 말하게 된다
+        bs = f"{pct(b['frr'])} ({b['threshold']:.3f})" if b else "못 간다"
+        cs = f"{pct(c['frr'])} ({c['threshold']:.3f})" if c else "못 간다"
+        if b is None:
+            verdict, who = "🟢 후보만 간다", "cand"
+        elif c is None:
+            verdict, who = "🔴 후보는 못 간다", "base"
+        elif abs(b["frr"] - c["frr"]) < 1e-9:
+            verdict, who = "= 같다", "tie"
+        elif c["frr"] < b["frr"]:
+            verdict, who = "🟢 후보가 낫다", "cand"
+        else:
+            verdict, who = "🔴 기준이 낫다", "base"
+        wins[who] += 1
+        if low_fa_verdict is None:
+            low_fa_verdict = (tgt, who)          # 도달 가능한 **가장 낮은 FA** 에서의 판정
+        print(f"{tgt:>8.0f} | {bs:>12} | {cs:>12} | {verdict}")
+
+    print("\n── 판정 ──────────────────────────────────────")
+    if not any_row:
+        print("  ❌ **두 모델 다 어떤 FA 예산에도 못 간다.** 표를 넓히거나 자를 의심할 것")
+        return 1
+    goal = _best_under(cand_rows, 1.0, fa_key)
+    goal_b = _best_under(base_rows, 1.0, fa_key)
+    print(f"  전시회 목표(FA ≤ 1회/시간): "
+          f"기준 {'FRR ' + pct(goal_b['frr']) if goal_b else '**못 간다**'} · "
+          f"후보 {'FRR ' + pct(goal['frr']) if goal else '**못 간다**'}")
+    print(f"  칸 수 — 후보 우세 {wins['cand']} · 기준 우세 {wins['base']} · 같음 {wins['tie']}")
+    tgt, who = low_fa_verdict
+    말 = {"cand": "**후보가 낫다**", "base": "**기준이 낫다**", "tie": "**둘이 같다**"}[who]
+    print(f"  🔴 도달 가능한 가장 낮은 FA({tgt:.0f}회/시간)에서는 {말}.")
+    if wins["cand"] and wins["base"]:
+        print("  ⚠️ **곡선이 교차한다.** «전체적으로 낫다»고 적지 않는다 —")
+        print("     우리가 필요한 쪽은 **FA 가 낮은 쪽**이고, 위 한 줄이 그 답이다.")
+
+    # ── 🔴 권고 — 이 도구가 존재하는 이유다. «누가 나은가»에서 멈추지 않는다 ──
+    #    M7 § 되돌림 기준: «FA/시간이 현행보다 나쁘면 즉시 되돌린다».
+    #    그 기준에 **어느 임계에서 비교하는지가 없었고**, 그래서 여기서 정한다 —
+    #    같은 FA 예산에 맞춰 놓고 FRR 이 나쁘면 나쁜 것이다.
+    print()
+    if wins["base"] and not wins["cand"]:
+        print("  🚨 **되돌림 권고: 후보를 버린다.** 도달 가능한 모든 FA 예산에서 기준이 낫다.")
+        print("     `git checkout services/wakeword_model.npz` (아직 안 바꿨다면 바꾸지 않는다)")
+    elif wins["cand"] and not wins["base"]:
+        print("  ✅ **채택 권고: 후보가 낫다.** 도달 가능한 모든 FA 예산에서 후보가 낫다.")
+        print("     ⚠️ 그래도 **목표(FA ≤ 1)에 닿았는지는 따로 본다** — 위 첫 줄이 그 답이다.")
+    else:
+        print("  ⏸️ **자동으로 못 정한다.** 곡선이 교차하거나 판정이 엇갈린다 —")
+        print("     **사람이 운용점을 먼저 고르고**(FA 예산을 정하고) 그 줄만 본다.")
+    if not soak_paths:
+        print("\n  🚨 **이 판정으로 되돌림을 정하지 않는다.** FA 출처가 라벨 녹음이다.")
+        print("     `--soak <긴 오디오>` 를 같이 줘야 전시회 값이 나온다.")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="웨이크워드 평가 하네스 (M7 1단계)")
     ap.add_argument("--model", default=MODEL_PATH)
@@ -268,6 +428,9 @@ def main():
     ap.add_argument("--soak", nargs="+", metavar="WAV", help="라벨 없는 긴 오디오 → FA/시간만")
     ap.add_argument("--energy-sweep", action="store_true",
                     help="에너지 관문 훑기 — 관문을 올리면 오탐이 주는가 (BL-23 완화책 ①)")
+    ap.add_argument("--compare", metavar="후보.npz",
+                    help="🔴 두 모델을 **같은 FA/시간에서** 비교한다 (M7 6단계 되돌림 판단). "
+                         "--soak 를 같이 주는 것이 진짜 판정이다")
     ap.add_argument("--json", metavar="OUT", help="결과를 JSON 으로 저장")
     a = ap.parse_args()
 
@@ -288,6 +451,14 @@ def main():
         print(f"[eval] 🔍 관문 훑기 — 스캔은 관문 0 으로 돈다(그만큼 느리다). "
               f"재생할 때 {', '.join(f'{f:.4f}' for f in ENERGY_FLOORS)} 를 적용한다")
     print()
+
+    # ── 비교 모드: 되돌림 판단. **FRR 은 라벨 녹음에서만 나온다** ──
+    if a.compare:
+        sessions, _have = load_sessions(a.holdout_only)
+        if not sessions:
+            sys.exit("[eval] FATAL: 잴 녹음이 없다 — FRR 을 못 재면 비교가 안 된다")
+        model.path = a.model
+        return cmd_compare(model, a.compare, sessions, a.soak, th_default)
 
     # ── 소크 모드: 라벨이 없다. 전부 «안 불렀다»로 보고 FA/시간만 센다 ──
     if a.soak:

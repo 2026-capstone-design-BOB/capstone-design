@@ -81,6 +81,11 @@ E.ENERGY_FLOORS = eval(
 exec(compile(_src[_src.index("def replay("):_src.index("# ── 출력")],
              "eval_pure", "exec"), E.__dict__)
 
+# 🔴 되돌림 판단(`--compare`)의 고르는 규칙도 같은 방식으로 떼어낸다.
+#    여기가 틀리면 **«어느 모델이 나은가»가 틀린다** — 그리고 오류는 안 난다.
+exec(compile(_src[_src.index("def _best_under("):_src.index("def cmd_compare(")],
+             "eval_pure", "exec"), E.__dict__)
+
 
 def frames(*triples):
     """(시각, 에너지, 확률) 목록을 그대로 만든다. None 은 «관문에 막힘»."""
@@ -191,6 +196,52 @@ def run():
           hi["fa"] == 0 and hi["pos_hit"] == 0)
     check("«놓침»이 FRR 에 그대로 나타난다 (대가를 숨기지 않는다)", hi["frr"] == 1.0)
     check("결과에 어느 관문으로 쟀는지가 남는다", hi["energy_floor"] == 0.005)
+
+    print("=== ⑩-B 🔴 되돌림 판단 — 같은 FA/시간에서 고르는 규칙 ===")
+    # 🚨 2026-09-18에 실제로 겪었다. 후보를 런타임 임계 **한 지점**에서 재니
+    #    FRR 19.2% → 6.7% 였고, 거기서 멈췄으면 «개선»이라고 적었을 것이다.
+    #    임계를 훑으니 곡선이 교차했고 정작 필요한 쪽(FA 낮은 쪽)에서는 낫지 않았다.
+    #    임계 하나를 고르면 **어느 쪽이든 이기게 만들 수 있다** — 그건 비교가 아니다.
+    def row(th, frr, fa):
+        return {"threshold": th, "frr": frr, "fa_rec": fa, "fa_soak": fa}
+
+    # 🔑 일부러 **단조롭지 않게** 만든다. 임계가 높다고 FA 가 꼭 줄지는 않는다.
+    curve = [row(0.50, 0.05, 300.0), row(0.70, 0.30, 40.0),
+             row(0.90, 0.12, 45.0), row(0.99, 0.60, 20.0)]
+
+    best = E._best_under(curve, 50.0, "fa_rec")
+    check("🚨 예산 안에서 **FRR 이 가장 낮은 점**을 고른다 (가장 높은 임계가 아니다)",
+          best is not None and abs(best["frr"] - 0.12) < 1e-9,
+          f"실제 {best}")
+    check("그 점의 임계도 같이 돌려준다 (사람이 재현할 수 있어야 한다)",
+          best is not None and abs(best["threshold"] - 0.90) < 1e-9)
+
+    check("🚨 예산에 못 가면 None 이다 (아무 운용점이나 고르지 않는다)",
+          E._best_under(curve, 1.0, "fa_rec") is None)
+    check("빠듯한 예산도 정확히 가른다 (20 이하는 0.99 하나뿐)",
+          (E._best_under(curve, 20.0, "fa_rec") or {}).get("threshold") == 0.99)
+
+    # NaN 은 «재지 못한 값»이다. 비교 후보로 새어 들어가면 «못 간다»가 «간다»가 된다.
+    nan = float("nan")
+    check("🚨 못 잰 값(NaN)은 후보에서 빠진다",
+          E._best_under([row(0.80, 0.01, nan)], 1.0, "fa_rec") is None)
+
+    print("=== ⑩-C 🚨 비교가 «한 지점»으로 결론내지 않는가 (소스 계약) ===")
+    check("FA/시간 목표에 **1회**(전시회 목표)가 들어 있다",
+          re.search(r"COMPARE_FA_TARGETS\s*=\s*\[\s*1\.0", _src) is not None)
+    check("임계를 훑는 칸이 `--sweep`(9칸)보다 촘촘하다",
+          len(eval(re.search(r"^COMPARE_THRESHOLDS\s*=\s*(.+)$", _src, re.M).group(1))) > 20)
+    check("🚨 곡선이 교차하면 «교차한다»고 말한다", "곡선이 교차한다" in _src)
+    check("🚨 «전체적으로 낫다»고 적지 말라고 코드가 말한다",
+          "«전체적으로 낫다»고 적지 않는다" in _src)
+    check("🚨 --soak 가 없으면 «참고»라고 부르고 되돌림 근거로 쓰지 말라고 한다",
+          "이 판정으로 되돌림을 정하지 않는다" in _src)
+    check("못 가는 예산은 «못 간다»라고 적는다 (빈칸으로 두지 않는다)",
+          '"못 간다"' in _src)
+    check("🔑 임계를 소수 셋째 자리로 찍는다 (0.999 를 «1.00» 으로 적지 않는다)",
+          "threshold']:.3f" in _src)
+    check("후보 npz 의 학습 정보를 같이 찍는다 (파일명으로는 구별이 안 된다)",
+          '"augment", "corpora", "speech_neg", "trained_at"' in _src)
 
     print("=== ⑩ 하네스가 런타임 값을 베껴 적지 않았는가 ===")
     # 여기가 «자가 런타임과 같은 것인가»를 지키는 자리다.
