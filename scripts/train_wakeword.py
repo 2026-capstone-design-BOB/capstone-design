@@ -2,8 +2,24 @@
 웨이크워드 모델 학습
 ====================
 실행:
-    python scripts/train_wakeword.py                      # 합성음만 (기본 · 이걸로 충분하다)
+    python scripts/train_wakeword.py                      # 실측 증강 (기본 · 말뭉치가 있어야 한다)
+    python scripts/train_wakeword.py --augment mimic      # 옛 «흉내» 증강 (말뭉치 없이)
     python scripts/train_wakeword.py --user-audio a.npy   # 실제 녹음 추가 (선택)
+
+## 🆕 2026-09-18 — 증강이 «흉내»에서 «실측»으로 바뀌었다 (M7 4단계)
+
+예전 증강은 방을 **흉내** 냈다 — 백색잡음을 더하고 반사를 한 번 섞었다.
+그래서 조용한 방에서 만든 자로 재면 검증 95%가 나오고 **실기는 10번 중 2번**이었다.
+이제 기본값은 [`wakeword_corpus.Augmenter`](wakeword_corpus.py) 이고, 잡음·잔향이
+실제 녹음이다(MUSAN · RIR and Noises). 여기에 **사람이 실제로 말한 한국어**를
+음성(negative)으로 넣는다(Zeroth · AI Hub) — 🔴 기준선에서 밝혀진 오탐의 모양이
+«발음에 속는 게 아니라 음성이면 깬다» 였고, 그 자리를 직접 치는 것이 이것이다.
+
+🚨 **말뭉치가 없으면 죽는다. 조용히 흉내로 되돌아가지 않는다.**
+«실측으로 학습했다»고 적어 놓고 실제로는 옛 흉내로 학습한 모델이 나오는 것이
+[BL-59](../docs/BACKLOG.md)로 적어 둔 실패 모양의 가장 비싼 판본이다.
+흉내로 돌리려면 `--augment mimic` 을 **명시한다**.
+받기: `python scripts/fetch_wakeword_corpora.py --list`
 
 ## 구조
     오디오 → melspec → Google 음성 임베딩(96차원 × 16프레임) → 우리가 학습한 분류기
@@ -45,6 +61,26 @@ MODEL_PATH = os.path.join(ROOT, "services", "wakeword_model.npz")
 WIN_SEC = 2.0
 
 
+def make_augmenter(kind, refresh=False):
+    """증강기를 고른다. **어느 쪽으로 학습하는지 반드시 찍는다.**
+
+    🚨 «없으면 조용히 흉내로» 를 만들지 않는다. 말뭉치가 모자라면
+    `require()` 가 무엇이 없는지 말하고 예외를 던진다 — 그게 이 함수의 전부다.
+    나중에 모델 파일만 보고도 알 수 있게 `save()` 가 이 선택을 npz 에 박는다.
+    """
+    if kind == "mimic":
+        print("  ⚠️ 증강: «흉내» (백색잡음 + 반사 1회) — 명시적으로 고른 것이다")
+        print("     실측으로 바꾸려면 옵션을 빼면 된다 (기본값이 --augment corpus)")
+        return None
+    from scripts.wakeword_corpus import Augmenter
+    a = Augmenter(refresh=refresh).require()
+    print(f"  증강: **실측** — {a.describe()}")
+    if a.missing:
+        # 있는 것만 세고 넘어가지 않는다. 없는 것도 이름을 부른다.
+        print(f"     (없는 것: {', '.join(a.missing)} — 있으면 더 좋다)")
+    return a
+
+
 def extract_features(windows, af, batch_label=""):
     """창 리스트 → 임베딩 행렬 (N × 1536)."""
     feats = []
@@ -57,10 +93,19 @@ def extract_features(windows, af, batch_label=""):
     return np.array(feats, dtype=np.float32)
 
 
-def build_dataset(user_audio_path=None, aug_per_clip=3, seed=0):
+def build_dataset(user_audio_path=None, aug_per_clip=3, seed=0,
+                  augmenter=None, speech_negatives=0):
     from openwakeword.utils import AudioFeatures
 
     rng = np.random.default_rng(seed)
+
+    def aug(a, n):
+        """클립 하나 → 변형 n개. **자리는 하나다** — 실측이든 흉내든 여기로만 지나간다.
+
+        🔑 호출부를 네 군데에서 갈아끼우지 않고 여기 한 곳만 갈아끼운다.
+           한 군데를 빠뜨리면 «절반만 실측»이 되는데 **오류가 안 난다.**
+        """
+        return augmenter.many(a, rng, n) if augmenter else augment(a, rng, n)
     print("① 음성 합성 (이미 있으면 재사용)")
     # 목소리가 14개라 전 조합은 양성 1400 · 음성 12950이다. 표본을 뽑아 쓴다 —
     # `limit_combos`는 **무작위 균등 추출**이라 목소리가 골고루 섞인다(앞에서 자르지 않는다).
@@ -74,17 +119,38 @@ def build_dataset(user_audio_path=None, aug_per_clip=3, seed=0):
     pos_wins, neg_wins = [], []
     for p in pos_paths:
         a = _load(p)
-        for v in augment(a, rng, n=aug_per_clip):
+        for v in aug(a, aug_per_clip):
             pos_wins.append(to_window(v, rng, WIN_SEC))
     for p in neg_paths:
         a = _load(p)
-        for v in augment(a, rng, n=max(2, aug_per_clip // 3)):
+        for v in aug(a, max(2, aug_per_clip // 3)):
             neg_wins.append(to_window(v, rng, WIN_SEC))
 
     # 순수 잡음/무음도 음성 샘플이다 — 없으면 조용할 때 오탐이 난다
     for _ in range(400):
         lvl = rng.uniform(0.0002, 0.02)
         neg_wins.append((rng.normal(0, lvl, int(SR * WIN_SEC))).astype(np.float32))
+
+    # ── 🔴 사람이 실제로 말한 한국어 (M7 4단계의 핵심) ──────────────
+    # 기준선에서 밝혀진 오탐의 모양은 «발음에 속는 게 아니라 **음성이면 깬다**» 였다
+    # (자유 발화 214건 > 헷갈리는 말 157건). 지금 음성(negative)은 **전부 TTS** 라
+    # 목소리가 14개고 녹음 환경이 하나다 — 그 분포로는 이 자리를 못 메운다.
+    #   → docs/research/2026-09_웨이크워드_기준선.md §3
+    #
+    # 🔑 뽑은 한국어도 **증강을 거쳐야 한다.** 깨끗한 낭독 그대로 넣으면 모델이
+    #    «말인가»가 아니라 «깨끗한 녹음인가»를 배울 수 있다 — 2026-09-09에 겪은
+    #    지름길(아래 ══ 블록)과 **정확히 같은 모양**이다.
+    if augmenter and speech_negatives > 0:
+        print(f"  🔴 한국어 말소리 음성(negative) {speech_negatives}개")
+        for i in range(speech_negatives):
+            seg = augmenter.speech_negative(rng, WIN_SEC)
+            neg_wins.append(to_window(augmenter.one(seg, rng), rng, WIN_SEC))
+            if (i + 1) % 500 == 0:
+                print(f"    {i + 1}/{speech_negatives}")
+    elif speech_negatives > 0:
+        # 흉내 모드에서 조용히 «0개 넣고 넣었다고» 하지 않는다
+        print(f"  ⚠️ 한국어 말소리 음성(negative) {speech_negatives}개를 건너뛴다 "
+              f"— 흉내 모드라 말뭉치를 안 읽는다")
 
     # ══════════════════════════════════════════════════════════════
     # 🚨 2026-09-09 — `--user-audio`만으로는 **모델이 망가진다**. 반드시 읽을 것.
@@ -133,7 +199,7 @@ def build_dataset(user_audio_path=None, aug_per_clip=3, seed=0):
         i = 0
         while len(neg_wins) < target:
             a = _load(neg_paths[i % len(neg_paths)])
-            for v in augment(a, rng, n=2):
+            for v in aug(a, 2):
                 neg_wins.append(to_window(v, rng, WIN_SEC))
                 if len(neg_wins) >= target:
                     break
@@ -153,7 +219,7 @@ def build_dataset(user_audio_path=None, aug_per_clip=3, seed=0):
                 loud.append(seg)
         print(f"  발화 구간 {len(loud)}개 → 증강")
         for seg in loud:
-            for v in augment(seg, rng, n=aug_per_clip * 2):
+            for v in aug(seg, aug_per_clip * 2):
                 pos_wins.append(to_window(v, rng, WIN_SEC))
     else:
         print("③ 실제 녹음 없음 — 목소리 14개로 학습한다 "
@@ -209,12 +275,19 @@ def train(X, y, seed=0):
     return clf
 
 
-def save(clf, path):
+def save(clf, path, meta=None):
     """sklearn MLP의 가중치만 저장한다 — 추론은 numpy로 직접 한다.
 
     sklearn을 런타임 의존성으로 만들지 않기 위해서다. MLP 추론은
     `relu(x@W1+b1) @ W2+b2 …` 로 끝난다.
+
+    🆕 **어떻게 학습됐는지도 같이 박는다**(`augment` · `corpora` · `trained_at`).
+    6단계에서 후보 여럿을 나란히 재게 되는데, 그때 «이 npz 가 흉내로 학습된 것인가
+    실측으로 학습된 것인가»를 **파일만 보고** 알 수 있어야 한다. 기억이나 DEVLOG 에
+    기대면 어긋난다 — 이 저장소가 이미 겪은 실패 모양이다.
+    ⚠️ 런타임(`services/wakeword.py`)은 이 키들을 안 읽는다. 읽을 필요도 없다.
     """
+    m = meta or {}
     np.savez_compressed(
         path,
         **{f"W{i}": w.astype(np.float32) for i, w in enumerate(clf.coefs_)},
@@ -226,6 +299,10 @@ def save(clf, path):
         wake_phrases=np.array(COVERED_WAKE_WORDS),
         win_sec=np.array(WIN_SEC),
         sample_rate=np.array(SR),
+        augment=np.array(m.get("augment", "")),
+        corpora=np.array(m.get("corpora", "")),
+        speech_neg=np.array(int(m.get("speech_neg", 0))),
+        trained_at=np.array(time.strftime("%Y-%m-%dT%H:%M:%S")),
     )
     size = os.path.getsize(path) / 1024
     print(f"⑥ 저장: {path} ({size:.0f} KB)")
@@ -249,6 +326,13 @@ if __name__ == "__main__":
                     help="클립당 증강 개수 (목소리 14개로 늘면서 8 → 3. 창 수는 비슷하다)")
     ap.add_argument("--out", default=None,
                     help=f"저장 위치 (기본: {os.path.relpath(CANDIDATE_PATH, ROOT)})")
+    ap.add_argument("--augment", choices=("corpus", "mimic"), default="corpus",
+                    help="corpus=실측(MUSAN·RIR·Zeroth · 기본) · mimic=옛 흉내(말뭉치 없이)")
+    ap.add_argument("--speech-neg", type=int, default=2000,
+                    help="🔴 사람이 말한 한국어를 음성(negative)으로 몇 개 넣나 "
+                         "(--augment corpus 일 때만). 0 이면 안 넣는다")
+    ap.add_argument("--refresh-index", action="store_true",
+                    help="말뭉치 파일 목록 캐시를 다시 만든다 (받는 중이었다면 필요하다)")
     ap.add_argument("--replace-runtime", action="store_true",
                     help="⚠️ 런타임 모델을 바로 덮어쓴다. 평가를 통과한 뒤에만 쓸 것")
     args = ap.parse_args()
@@ -262,6 +346,12 @@ if __name__ == "__main__":
         print("   재려면: python scripts/eval_wakeword.py --model " +
               os.path.relpath(out, ROOT).replace("\\", "/"))
 
-    X, y = build_dataset(args.user_audio or None, aug_per_clip=args.aug)
+    augmenter = make_augmenter(args.augment, refresh=args.refresh_index)
+    X, y = build_dataset(args.user_audio or None, aug_per_clip=args.aug,
+                         augmenter=augmenter, speech_negatives=args.speech_neg)
     clf = train(X, y)
-    save(clf, out)
+    save(clf, out, meta={
+        "augment": args.augment,
+        "corpora": augmenter.describe() if augmenter else "",
+        "speech_neg": args.speech_neg if augmenter else 0,
+    })
