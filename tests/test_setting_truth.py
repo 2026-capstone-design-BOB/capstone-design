@@ -322,6 +322,61 @@ def run():
               opened == ["https://example.com"] and not never.calls,
               f"→ {opened} · 셸 {len(never.calls)}회")
 
+    # ── §5-B 🚨 COM — **서버에서는 지금까지 한 번도 못 읽었다** ──────────
+    #
+    # 2026-09-19 라이브 점검에서 잡혔다. 로그가 원인을 **이름으로** 말해 줬다:
+    #   `x_wmi_uninitialised_thread: … without first calling pythoncom.CoInitialize[Ex]`
+    # 그래프는 도구를 `asyncio.to_thread` 로 **워커 스레드**에서 돌리는데, COM 은
+    # **스레드마다** 켜야 한다. 그래서 진단 스크립트(메인 스레드)에서는 읽히고
+    # 서버에서는 -1 이었다 — 🔑 **BL-47 의 안 착륙한 절반이다.**
+    print(chr(10) + "§5-B COM — 워커 스레드에서도 읽혀야 한다 (BL-47의 나머지 절반)")
+    if not has_mod:
+        cannot_judge(["읽기 전에 COM 을 켠다", "스레드당 한 번만 켠다",
+                      "🔑 초기화가 실패해도 죽지 않는다",
+                      "세 자리가 전부 COM 을 켠다"],
+                     "tools 를 못 불러왔다")
+    else:
+        calls = []
+
+        class _Ole:
+            def CoInitializeEx(self, a, b):
+                calls.append(b)
+                return 0
+
+        fake_ct = FakeCtypes()
+        fake_ct.windll.ole32 = _Ole()
+        dead = types.ModuleType("wmi")
+        dead.WMI = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("no wmi"))
+        saved = sys.modules.get("wmi")
+        sys.modules["wmi"] = dead
+        try:
+            sysmod._com_ready = types.SimpleNamespace()       # 이 «스레드»를 새로 본다
+            with with_patch(sys_={"ctypes": fake_ct}):
+                sysmod._get_brightness()
+                sysmod._get_brightness()
+        finally:
+            if saved is None:
+                sys.modules.pop("wmi", None)
+            else:
+                sys.modules["wmi"] = saved
+        check("읽기 전에 COM 을 켠다", len(calls) >= 1, f"→ {calls}")
+        check("스레드당 한 번만 켠다 (두 번 불러도 한 번)", len(calls) == 1, f"→ {calls}")
+
+        boom_ct = FakeCtypes()
+
+        class _Boom:
+            def CoInitializeEx(self, a, b):
+                raise OSError("COM 없음")
+        boom_ct.windll.ole32 = _Boom()
+        sysmod._com_ready = types.SimpleNamespace()
+        with with_patch(sys_={"ctypes": boom_ct}):
+            got = sysmod._ensure_com()
+        check("🔑 초기화가 실패해도 죽지 않는다 (읽기가 -1 이 될 뿐)", got is None)
+        sysmod._com_ready = types.SimpleNamespace()           # 원래대로 돌려 둔다
+
+    check("세 자리가 전부 COM 을 켠다 (볼륨 읽기·밝기 읽기·밝기 쓰기)",
+          sys_src.count("_ensure_com()") >= 4, f"→ {sys_src.count('_ensure_com()')}군데")
+
     # ── §6 구조 — 고친 자리가 그대로 있는지 ────────────────────────
     print("\n§6 구조 — 다음 사람이 되돌리지 못하게")
     # 🔑 «왜 Popen 이면 안 되는지»는 docstring 에 남아 있어야 한다. 남으면 안 되는

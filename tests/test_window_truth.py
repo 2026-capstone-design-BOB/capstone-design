@@ -45,7 +45,8 @@ def check(name, cond, detail=""):
 
 
 from tools.app_control import (is_window_cloaked, _is_real_window, _await_window,
-                               _launched_or_honest, find_hwnd_for_app)
+                               _launched_or_honest, find_hwnd_for_app,
+                               _window_class, _SHELL_WINDOW_CLASSES)
 
 # ── ① cloaked 판정이 안전한가 ──────────────────────────────────────
 print("=== ① cloaked 판정 — 실패해도 죽지 않는다 ===")
@@ -77,7 +78,7 @@ import ctypes
 import ctypes.wintypes as w
 
 u = ctypes.windll.user32
-ghosts, reals = [], []
+ghosts, reals, shells = [], [], []
 
 
 def _scan(hwnd, _):
@@ -86,19 +87,35 @@ def _scan(hwnd, _):
     n = u.GetWindowTextLengthW(hwnd)
     if not n:
         return True
-    (ghosts if is_window_cloaked(hwnd) else reals).append(hwnd)
+    # 🆕 2026-09-19 — **셸 창을 따로 센다.** 예전엔 «cloaked 가 아니면 진짜 창»이었는데,
+    #   그 기준으로는 **바탕화면(`Progman`)이 «진짜 탐색기 창»** 이 된다.
+    #   실기에서 *"탐색기 최대화해줘"* 가 바탕화면을 집고 `✓` 라고 답했다.
+    if _window_class(hwnd) in _SHELL_WINDOW_CLASSES:
+        shells.append(hwnd)
+    elif is_window_cloaked(hwnd):
+        ghosts.append(hwnd)
+    else:
+        reals.append(hwnd)
     return True
 
 
 P = ctypes.WINFUNCTYPE(ctypes.c_bool, w.HWND, w.LPARAM)
 u.EnumWindows(P(_scan), 0)
-print(f"    (이 PC: IsWindowVisible=True인 제목 있는 창 {len(ghosts) + len(reals)}개 "
-      f"— 그중 유령 {len(ghosts)}개)")
+print(f"    (이 PC: IsWindowVisible=True인 제목 있는 창 "
+      f"{len(ghosts) + len(reals) + len(shells)}개 — 유령 {len(ghosts)} · 셸 {len(shells)})")
 
 check("유령 창은 _is_real_window가 False로 본다",
       all(not _is_real_window(h) for h in ghosts))
 check("진짜 창은 _is_real_window가 True로 본다",
       all(_is_real_window(h) for h in reals))
+# 🆕 2026-09-19 라이브 점검이 잡은 것 — 바탕화면·작업표시줄은 «앱 창»이 아니다.
+#   `explorer.exe` 가 파일 탐색기와 **바탕화면을 같이** 띄우기 때문에,
+#   이걸 안 거르면 «탐색기»를 찾을 때 바탕화면이 먼저 걸린다.
+check("🆕 셸 창(바탕화면·작업표시줄)은 _is_real_window가 False로 본다",
+      all(not _is_real_window(h) for h in shells),
+      f"→ 셸 창 {len(shells)}개")
+if not shells:
+    print("    ⚠️ 셸 창을 하나도 못 봤다 — «확인 못 함»이다(보통 Progman이 하나는 있다).")
 # ⚠️ 유령이 0개인 PC(설정을 한 번도 안 연 상태 등)에서도 스위트는 통과해야 한다 —
 #   위 두 검사는 빈 목록이면 자동으로 참이다. 그건 «못 봤다»이지 «없다»가 아니다.
 if not ghosts:

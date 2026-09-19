@@ -237,7 +237,12 @@ def run():
     if not has_mod:
         cannot_judge(["유령 창은 후보에서 빠진다",
                       "진짜 창은 그대로 찾는다",
-                      "🔑 `IsWindowVisible` 이 아니라 `_is_real_window` 를 쓴다"],
+                      "🚨 전부 유령이면 «창이 없다»가 된다",
+                      "🚨 바탕화면(`Progman`)은 «앱 창»이 아니다",
+                      "작업표시줄도 아니다",
+                      "🔑 진짜 파일 탐색기 창은 그대로 통과한다 (반대 방향)",
+                      "클래스를 못 읽으면 거르지 않는다",
+                      "🚨 바탕화면이 먼저 걸려도 **진짜 창**을 고른다"],
                      "tools 를 못 불러왔다")
     else:
         # hwnd 301 = 유령 · 302 = 진짜. 둘 다 같은 프로세스(pid 9)다.
@@ -256,6 +261,34 @@ def run():
         check("🚨 전부 유령이면 «창이 없다»가 된다 (예전엔 유령을 집었다)",
               hwnd == 0 and running is True, f"→ hwnd={hwnd} running={running}")
 
+        # 🚨 2026-09-19 라이브 점검이 잡은 것 — **바탕화면을 «탐색기 창»으로 집었다.**
+        #   `explorer.exe` 는 파일 탐색기만이 아니라 바탕화면(`Progman`)과 작업표시줄도
+        #   띄운다. 바탕화면은 `IsZoomed` 가 **원래 True** 라, 오늘 넣은 되묻기가
+        #   **엉뚱한 창에 대해 정확히 확인하고 ✓ 를 줬다.**
+        with patch(ac, ctypes=FakeCtypes(), is_window_cloaked=lambda h: False,
+                   _window_class=lambda h: "Progman"):
+            check("🚨 바탕화면(`Progman`)은 «앱 창»이 아니다", ac._is_real_window(1) is False)
+        with patch(ac, ctypes=FakeCtypes(), is_window_cloaked=lambda h: False,
+                   _window_class=lambda h: "Shell_TrayWnd"):
+            check("작업표시줄도 아니다", ac._is_real_window(1) is False)
+        with patch(ac, ctypes=FakeCtypes(), is_window_cloaked=lambda h: False,
+                   _window_class=lambda h: "CabinetWClass"):
+            check("🔑 진짜 파일 탐색기 창은 그대로 통과한다 (반대 방향)",
+                  ac._is_real_window(1) is True)
+        with patch(ac, ctypes=FakeCtypes(), is_window_cloaked=lambda h: False,
+                   _window_class=lambda h: ""):
+            check("클래스를 못 읽으면 거르지 않는다 (판정 실패로 멀쩡한 창을 죽이지 않는다)",
+                  ac._is_real_window(1) is True)
+
+        # 셸 창이 **먼저** 걸려도 진짜 창을 고른다 — 실기에서 난 순서 그대로다.
+        fc = FakeCtypes(windows={401: 9, 402: 9})
+        cls = {401: "Progman", 402: "CabinetWClass"}
+        with patch(ac, ctypes=fc, psutil=FakePsutil([("explorer.exe", 9)]),
+                   is_window_cloaked=lambda h: False,
+                   _window_class=lambda h: cls.get(h, "")):
+            hwnd, _ = ac._find_app_window("explorer", "탐색기")
+        check("🚨 바탕화면이 먼저 걸려도 **진짜 창**을 고른다", hwnd == 402, f"→ hwnd={hwnd}")
+
     # ── §4 구조 — 복사본 둘을 한 자리로 모았다 ─────────────────────
     #
     # 🔑 예전엔 `maximize_window` 와 `minimize_window` 가 **같은 코드 두 벌**이었다.
@@ -269,6 +302,8 @@ def run():
     check("🔑 `ShowWindow` 뒤에 상태를 되묻는다 (`IsZoomed`/`IsIconic`)",
           "IsZoomed" in ac_src and "IsIconic" in ac_src)
     check("근거가 코드에 적혀 있다 (감사 G-08)", "G-08" in ac_src)
+    check("🆕 셸 창 목록이 한 자리에 있다 (호출부마다 붙이지 않았다)",
+          ac_src.count("_SHELL_WINDOW_CLASSES") == 2, "목록이 흩어졌다")
 
     # ── §5 키 입력 — 어디로 가는지 보고 말한다 (G-09) ──────────────
     print("\n§5 키 입력 — `type_text` 가 받은 수선을 `press_key` 도 받는다")
