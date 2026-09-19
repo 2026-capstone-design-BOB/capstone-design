@@ -662,63 +662,134 @@ def close_app(app: str) -> str:
             f"저장하지 않은 내용이 있는지 확인하고 창에서 직접 닫아 주세요.")
 
 
+# ── 창 상태 바꾸기 — **바꾸고 나서 본다** (감사 G-08) ──────────────
+#
+# 🚨 예전에는 `maximize_window` 와 `minimize_window` 가 **복사본 둘**이었고,
+#   둘 다 같은 구멍 둘을 갖고 있었다:
+#
+#     ① `IsWindowVisible` 만 봤다 → **cloaked(유령) 창이 True 를 준다.**
+#        BL-26 원인③으로 `is_window_cloaked()` 를 만들어 놓고 **여기엔 안 붙였다.**
+#        정지된 UWP(설정·계산기)에 «최대화해줘» 하면 아무 일도 없이 «✓» 가 나갔다.
+#     ② `ShowWindow` 를 부르고 **결과를 안 봤다.**
+#
+# ⚠️ **`ShowWindow` 의 반환값은 «성공»이 아니다** — «이전에 보이는 창이었나»다.
+#   감사는 «반환값도 안 본다»라고 적었지만, 반환값을 봐도 답이 안 나온다.
+#   진짜 답은 **창에 되묻는 것**이다: `IsZoomed`(최대화됨) · `IsIconic`(최소화됨).
+#
+# 🔑 그리고 **둘을 한 함수로 합쳤다.** 같은 결함이 두 벌로 있으면 한쪽만 고쳐진다 —
+#   이 저장소가 반복해 데인 모양이고, 실제로 여기가 그렇게 됐다.
+
+_SW_MAXIMIZE = 3
+_SW_MINIMIZE = 6
+
+
+def _window_state_is(hwnd: int, kind: str) -> bool:
+    """창이 실제로 그 상태인가. (`max` → IsZoomed · `min` → IsIconic)"""
+    try:
+        u = ctypes.windll.user32
+        return bool(u.IsZoomed(hwnd)) if kind == "max" else bool(u.IsIconic(hwnd))
+    except Exception:                                         # noqa: BLE001
+        return False
+
+
+def _await_window_state(hwnd: int, kind: str, timeout: float = 0.8) -> bool:
+    """상태가 **바뀔 때까지** 잠깐 기다린다. `_await_window`·`_await_gone` 과 같은 자리.
+
+    최소화는 애니메이션이 있어 즉시 반영되지 않을 수 있다. 그렇다고 `sleep` 을
+    박아 두면 되는 경우에도 매번 그만큼 느려진다 — 그래서 **폴링**이다.
+    """
+    deadline = time.monotonic() + max(0.0, timeout)
+    while True:
+        if _window_state_is(hwnd, kind):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
+def _find_app_window(app_key: str, app: str) -> "tuple[int, bool]":
+    """앱의 **사용자가 실제로 볼 수 있는** 창 하나.
+
+    Returns:
+        `(hwnd, 실행중인가)`. 창이 없으면 hwnd 가 0이다.
+    """
+    targets = {t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
+
+    # 매칭 프로세스 PID 전체 수집 (Chrome 등 멀티 프로세스 대응)
+    target_pids: set[int] = set()
+    for proc in psutil.process_iter(["name", "pid"]):
+        try:
+            pname = (proc.info.get("name") or "")
+        except Exception:                                     # noqa: BLE001
+            continue
+        if pname.lower() in targets:
+            target_pids.add(proc.info["pid"])
+    if not target_pids:
+        return (0, False)
+
+    found = ctypes.c_void_p(0)
+
+    def callback(h, _):
+        # 🚨 여기가 G-08 의 본체다. 예전엔 `IsWindowVisible` 이었다 —
+        #   유령 창이 그 검사를 **통과한다.**
+        if not _is_real_window(h):
+            return True
+        buf = ctypes.wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(h, ctypes.byref(buf))
+        if buf.value in target_pids:
+            found.value = h
+            return False
+        return True
+
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND,
+                                     ctypes.wintypes.LPARAM)
+    ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), 0)
+    if found.value:
+        return (int(found.value), True)
+
+    # UWP 앱 폴백: 창 제목으로 (ApplicationFrameHost 등).
+    # ⚠️ 이 폴백은 **이미** cloaked 를 거른다 — `_find_hwnd_by_title` 안에 있다.
+    display = APP_DISPLAY_NAMES.get(app_key, app)
+    return (_find_hwnd_by_title([display, app, app_key]), True)
+
+
+def _change_window_state(app: str, cmd: int, kind: str, verb: str) -> str:
+    """창 상태를 바꾸고 **정말 그렇게 됐는지 보고** 말한다."""
+    if not app:
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        if not hwnd:
+            return f"⚠️ 지금 앞에 있는 창을 찾지 못해 {verb}하지 못했어요."
+        ctypes.windll.user32.ShowWindow(hwnd, cmd)
+        if _await_window_state(hwnd, kind):
+            return f"✓ 현재 창을 {verb}했습니다."
+        _log.warning("[창] %s 실패 | 대상=현재 창 | hwnd=%s", verb, hwnd)
+        return f"⚠️ 지금 앞에 있는 창을 {verb}하지 못했어요."
+
+    app_key = _normalize(app)
+    hwnd, running = _find_app_window(app_key, app)
+    if not running:
+        return f"✗ {app}이(가) 실행 중이지 않습니다."
+    if not hwnd:
+        # 프로세스는 있는데 **보이는 창이 없다.** (크롬처럼 창을 다 닫아도
+        # 백그라운드가 남는 앱 · 정지된 UWP) "실행 중인지 확인하세요"는
+        # 사실과 달라 사용자를 헷갈리게 하므로 정확히 말한다. (P3-3 정직 보고)
+        return (f"⚠️ {app}은(는) 실행 중이지만 열려 있는 창이 없어요. "
+                f"먼저 {app}을(를) 열어 주세요.")
+
+    ctypes.windll.user32.ShowWindow(hwnd, cmd)
+    if _await_window_state(hwnd, kind):
+        return f"✓ {app} 창을 {verb}했습니다."
+    _log.warning("[창] %s 실패 | 앱=%s | hwnd=%s", verb, app, hwnd)
+    return (f"⚠️ {app} 창을 {verb}하지 못했어요. 창이 응답하지 않는 것 같아요.")
+
+
 @tool
 def maximize_window(app: str = "") -> str:
     """
     앱 창을 최대화합니다.
     app: 앱 이름 (비워두면 현재 활성 창)
     """
-    SW_MAXIMIZE = 3
-
-    if app:
-        app_key = _normalize(app)
-        targets = {t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
-
-        # 매칭 프로세스 PID 전체 수집 (Chrome 등 멀티 프로세스 대응)
-        target_pids: set[int] = set()
-        for proc in psutil.process_iter(["name", "pid"]):
-            if proc.info["name"].lower() in targets:
-                target_pids.add(proc.info["pid"])
-
-        if not target_pids:
-            return f"✗ {app}이(가) 실행 중이지 않습니다."
-
-        found = False
-        def callback(h, _):
-            nonlocal found
-            if found:
-                return False  # 첫 번째 창 찾으면 중단
-            if not ctypes.windll.user32.IsWindowVisible(h):
-                return True
-            buf = ctypes.wintypes.DWORD()
-            ctypes.windll.user32.GetWindowThreadProcessId(h, ctypes.byref(buf))
-            if buf.value in target_pids:
-                ctypes.windll.user32.ShowWindow(h, SW_MAXIMIZE)
-                found = True
-                return False
-            return True
-        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
-        ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), 0)
-
-        if found:
-            return f"✓ {app} 창을 최대화했습니다."
-
-        # UWP 앱 fallback: 창 제목으로 검색 (ApplicationFrameHost 등)
-        display = APP_DISPLAY_NAMES.get(app_key, app)
-        hwnd = _find_hwnd_by_title([display, app, app_key])
-        if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, SW_MAXIMIZE)
-            return f"✓ {app} 창을 최대화했습니다."
-
-        # 여기 왔다는 건 프로세스는 있는데 보이는 창이 없다는 뜻이다.
-        # (크롬처럼 창을 다 닫아도 백그라운드 프로세스가 남는 앱이 있다)
-        # "실행 중인지 확인하세요"는 사실과 달라 사용자를 헷갈리게 하므로 정확히 말한다. (P3-3 정직 보고)
-        return (f"⚠️ {app}은(는) 실행 중이지만 열려 있는 창이 없어요. "
-                f"먼저 {app}을(를) 열어 주세요.")
-    else:
-        hwnd = ctypes.windll.user32.GetForegroundWindow()
-        ctypes.windll.user32.ShowWindow(hwnd, SW_MAXIMIZE)
-        return "✓ 현재 창을 최대화했습니다."
+    return _change_window_state(app, _SW_MAXIMIZE, "max", "최대화")
 
 
 @tool
@@ -727,54 +798,7 @@ def minimize_window(app: str = "") -> str:
     앱 창을 최소화합니다.
     app: 앱 이름 (비워두면 현재 활성 창)
     """
-    SW_MINIMIZE = 6
-
-    if app:
-        app_key = _normalize(app)
-        targets = {t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
-
-        target_pids: set[int] = set()
-        for proc in psutil.process_iter(["name", "pid"]):
-            if proc.info["name"].lower() in targets:
-                target_pids.add(proc.info["pid"])
-
-        if not target_pids:
-            return f"✗ {app}이(가) 실행 중이지 않습니다."
-
-        found = False
-        def callback(h, _):
-            nonlocal found
-            if found:
-                return False
-            if not ctypes.windll.user32.IsWindowVisible(h):
-                return True
-            buf = ctypes.wintypes.DWORD()
-            ctypes.windll.user32.GetWindowThreadProcessId(h, ctypes.byref(buf))
-            if buf.value in target_pids:
-                ctypes.windll.user32.ShowWindow(h, SW_MINIMIZE)
-                found = True
-                return False
-            return True
-        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
-        ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), 0)
-
-        if found:
-            return f"✓ {app} 창을 최소화했습니다."
-
-        # UWP 앱 fallback: 창 제목으로 검색
-        display = APP_DISPLAY_NAMES.get(app_key, app)
-        hwnd = _find_hwnd_by_title([display, app, app_key])
-        if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, SW_MINIMIZE)
-            return f"✓ {app} 창을 최소화했습니다."
-
-        # 프로세스는 있는데 보이는 창이 없는 경우 — 정확히 보고한다. (P3-3 정직 보고)
-        return (f"⚠️ {app}은(는) 실행 중이지만 열려 있는 창이 없어요. "
-                f"먼저 {app}을(를) 열어 주세요.")
-    else:
-        hwnd = ctypes.windll.user32.GetForegroundWindow()
-        ctypes.windll.user32.ShowWindow(hwnd, SW_MINIMIZE)
-        return "✓ 현재 창을 최소화했습니다."
+    return _change_window_state(app, _SW_MINIMIZE, "min", "최소화")
 
 
 @tool
