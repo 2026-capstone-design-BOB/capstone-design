@@ -90,7 +90,7 @@ FastAPI 서버(:8765) + Electron 오버레이 UI + LangGraph `StateGraph` 에이
 9. **클릭 도구에 좌표 인자(`x`, `y`)를 추가하지 말 것** — `click_ui_element`가
    `(target, window)`만 받는 건 실수가 아니다. LLM이 좌표를 넘길 수 있으면 언젠가
    지어내고, 그러면 **틀린 좌표를 정확히 클릭하는** 도구가 된다. 클릭은 되돌릴 수 없다.
-   → [ARCHITECTURE § 도구](docs/ARCHITECTURE.md#도구-41개)
+   → [ARCHITECTURE § 도구](docs/ARCHITECTURE.md#도구-44개)
 
 10. **`main.py`의 `allow_origins=["null"]`과 OPTIONS 면제를 "정리"하지 말 것** —
    둘 다 오타가 아니라 **UI가 돌기 위한 조건**입니다. 렌더러는 `file://`이라 `Origin: null`을

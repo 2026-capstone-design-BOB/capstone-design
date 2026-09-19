@@ -253,7 +253,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 
 ---
 
-## 도구 (41개)
+## 도구 (44개)
 
 [`core/tool_registry.py`](../core/tool_registry.py)에 단일 등록.
 
@@ -286,7 +286,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 | 웹 | 6 | `open_url` `web_search` `youtube_search` `map_search` `fetch_web_info` `crawl_page` |
 | **날씨** | **1** | **`get_weather`** — 검색이 아니라 **실제 기상 자료**(open-meteo)로 답한다. 어제·오늘·내일 · **출처를 밝힌다** (BL-34) |
 | 파일 | 7 | `create_file` `create_folder` `find_file` **`list_directory`** `open_recent_file` `open_file` `write_excel` |
-| 시스템 | 10 | `volume_up/down/set` `mute_toggle` `brightness_up/down` `take_screenshot` `get_battery_status` `get_current_time` `get_running_apps` |
+| 시스템 | **13** | `volume_up/down/set` `mute_toggle` `brightness_up/down` **`set_brightness`** · 🆕 **읽는 도구** `get_volume` `get_brightness` · `take_screenshot` `get_battery_status` `get_current_time` `get_running_apps`<br>🚨 **읽는 도구가 없던 것이 결함이었다** — *"지금 밝기 얼마야"* 가 갈 곳이 없어 LLM 의 **잡담**으로 끝났고, 그러다 «✓ 밝기: 40% → 80%» 를 **지어냈다**([BL-61](BACKLOG.md)). 지어내는 것은 그물로 막았지만 **답은 여전히 없었다**([BL-60](BACKLOG.md))<br>🔑 이 셋은 [캐시의 조회 게이트](#캐시--2단계-매칭)와 **한 쌍**이다. 게이트만 있으면 «안 바뀌지만 답도 못 하는» 상태가 되고, 도구만 있으면 캐시가 먼저 채 가서 여기까지 오지도 못한다 |
 | 입력 | 3 | `type_text` `press_key` `get_clipboard_text` |
 | 캘린더 | 1 | `create_calendar_event` |
 | 화면 이해 | 3 | `describe_screen`(무엇이 보이나) · `find_ui_element`(어디에 있나 — **화면 좌표**) · **`point_at_element`**(그 자리를 **화면에 직접 표시**, `zoom=True`면 확대본도 — M4) — ⚠️ 셋 다 **화면 내용을 외부 LLM로 전송** (아래 참조) |
@@ -804,6 +804,29 @@ entity 하나만 집어서 「메모장 **말고** 계산기 열어줘」에 **�
 ⚠️ `_CONTRAST_TOKENS`가 어절의 **끝**을 보는 것과 정확히 반대다(한국어는 조사가 뒤에 붙어
 지시어가 머리에 온다 — 「그거를」·「여기에」).
 
+**Stage 0-c — 조회 게이트**(BL-60, 2026-09-19): **묻는 말**인데 걸린 도구가 **상태를
+바꾸면** 캐시를 포기한다. 라이브에서 *"밝기 알려줘"* 한 마디에 **화면이 70%로 바뀌었다** —
+`'밝기 알려줘'` ↔ `'밝기 올려줘'` 가 **한 글자 차이**로 유사도 0.83이고 임계가 정확히
+0.83이다. 볼륨도 같았고, 고치다 하나가 더 나왔다: **`'음소거됐어?'` → `mute_toggle`**
+(상태를 물었는데 소리가 꺼진다).
+
+> 🔑 **앞의 두 게이트와 달리 «매칭 뒤»에 놓인다.** 판정에 **걸린 도구**가 들어가기
+> 때문이다. 발화만 보면 *"시간 알려줘"* 가 같이 죽고(읽는 도구로 잘 가고 있었다),
+> 도구만 보면 *"밝기 올려줘"* 가 막힌다. **둘이 같이** 성립할 때만 막는다.
+>
+> 🚨 **목록은 «조작 도구»가 아니라 «조회 도구»(`_QUERY_SAFE_TOOLS`)로 적는다.**
+> 여집합으로 두면 도구가 하나 늘 때마다 조용히 샌다. 빠뜨렸을 때 —
+> 조작을 빠뜨리면 **묻는 말이 실행되고**, 조회를 빠뜨리면 **LLM으로 갈 뿐**이다.
+>
+> 🔴 **«바꾸라는 말»이 실제로 있으면 안 막는다**(`_COMMANDING_ACTIONS`).
+> *"소리 얼마나 줄여줘"* 는 「얼마」가 있어도 명령이다. 이게 없으면 **오프라인에서
+> 죽는다** — 온라인이면 LLM이 받아 주지만 오프라인은 캐시 미스에서 그냥 끝난다(BL-46).
+>
+> 🔑 **게이트만으로는 반쪽이다.** 막으면 «안 바뀌지만 답도 못 하는» 상태가 되므로
+> **읽는 도구**(`get_brightness`·`get_volume`)를 같이 만들었다. 한 쌍이다.
+> 게이트는 찾기 두 단계·학습(L5)·**가져오기**에 다 걸린다 — 한 곳만 막으면 다른
+> 입구로 샌다(BL-27·BL-50이 같은 값을 치렀다).
+
 
 ### 동적 학습
 
@@ -814,6 +837,9 @@ entity 하나만 집어서 「메모장 **말고** 계산기 열어줘」에 **�
 - 학습 금지 **②발화 쪽**(`is_learnable_utterance`, BL-27 2026-09-10):
   **L1** 캐시가 아는 낱말(entity 또는 action)이 하나도 없으면 · **L2** 3글자 미만 ·
   **L3** 부정·대조 표지 · **L4** 지시대명사(BL-50). 거절 사유가 로그에 남는다
+- 학습 금지 **③짝 쪽**(`query_conflict`, BL-60 2026-09-19): **묻는 말**을 **조작
+  도구**로 굳히지 않는다. 🔑 발화만 보는 ②에 못 넣는다 — `'밝기 알려줘' → get_brightness`
+  는 **학습해야 맞고** `brightness_up` 만 막아야 하기 때문이다. 도구를 같이 봐야 갈린다
   > 🚨 **왜 생겼나:** 도구만 보고 발화를 안 봐서 **승인 응답 `'그래'`가 `close_app`으로
   > 학습돼 있었다.** 승인 대기가 아닐 때 「그래」라고 하면 시킨 적 없는 앱 종료가
   > 실행됐다(캐시는 HITL을 안 거친다). STT 오인식 `'오시가 된거야 다시'`도 패턴이었다.
