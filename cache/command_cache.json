@@ -46,11 +46,11 @@
       }
     ],
     "response_template": "✓ 메모장을 종료했습니다.",
-    "hit_count": 11,
+    "hit_count": 12,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-10T10:18:55",
+    "last_used": "2026-09-19T20:01:12",
     "imported": false
   },
   "계산기 열어줘": {
@@ -272,11 +272,11 @@
       }
     ],
     "response_template": "✓ 볼륨을 높였습니다.",
-    "hit_count": 15,
+    "hit_count": 16,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-10T10:19:07",
+    "last_used": "2026-09-19T20:05:10",
     "imported": false
   },
   "소리 올려줘": {
@@ -368,11 +368,11 @@
       }
     ],
     "response_template": "✓ 화면 밝기를 높였습니다.",
-    "hit_count": 1,
+    "hit_count": 4,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-12T12:35:45",
+    "last_used": "2026-09-19T20:04:21",
     "imported": false
   },
   "화면 밝게 해줘": {
@@ -705,6 +705,22 @@
     "source": "dynamic",
     "learned_at": "2026-09-12T12:29:07",
     "last_used": "2026-09-12T12:29:07",
+    "imported": false
+  },
+  "최대화 해줘": {
+    "pattern": "최대화 해줘",
+    "tool_calls": [
+      {
+        "name": "maximize_window",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 실행했어요.",
+    "hit_count": 1,
+    "is_seed": false,
+    "source": "dynamic",
+    "learned_at": "2026-09-19T19:59:21",
+    "last_used": "2026-09-19T19:59:21",
     "imported": false
   }
 }

@@ -6,6 +6,7 @@
 import os
 import subprocess
 import ctypes
+import threading
 import time
 from datetime import datetime
 from langchain_core.tools import tool
@@ -15,6 +16,48 @@ from core.logger import get_logger
 
 #: 설정이 **안 먹었을 때**를 셀 수 있게 한다 (감사 G-11). 예전엔 조용히 넘어갔다.
 _log = get_logger("System")
+
+
+# ── 🚨 COM 초기화 — **서버에서는 지금까지 밝기·볼륨을 한 번도 못 읽었다** ──────
+#
+# 2026-09-19 라이브 점검에서 잡혔다. 로그가 원인을 **이름으로** 말해 줬다:
+#
+#     x_wmi_uninitialised_thread: WMI returned a syntax error: you're probably
+#     running inside a thread without first calling pythoncom.CoInitialize[Ex]
+#
+# 그래프는 도구를 `asyncio.to_thread` 로 **워커 스레드**에서 돌린다(절대규칙 1 —
+# interrupt 때문에 sync 경로를 쓰고, 이벤트 루프를 막지 않으려고 스레드로 뺀다).
+# **COM 은 스레드마다 초기화해야 한다.** 메인 스레드에서만 `comtypes` 가 알아서
+# 해 주고 있었다 — 그래서 **테스트·진단 스크립트에서는 읽히고 서버에서는 -1** 이었다.
+#
+# 🔑 **이게 [BL-47](../docs/BACKLOG.md)의 안 착륙한 절반이다.** 그때 `wmi` 를 깔아
+#   «읽을 수 있는 PC» 가 됐다고 적었는데, **제품 경로에서는 여전히 못 읽고 있었다.**
+#   그래서 밝기가 계속 `_last_brightness` 기억값으로 돌았고, 사용자가 손으로 밝기를
+#   내려도 우리는 옛 값을 믿었다(«30%로 줄였는데 60이라고 한다» — 실기 보고).
+#
+# ⚠️ `CoUninitialize` 를 부르지 않는다. 스레드풀은 스레드를 **재사용**하고,
+#   그 위에 만든 COM 객체가 살아 있을 수 있다. 스레드당 한 번만 켠다.
+_com_ready = threading.local()
+
+#: COINIT_APARTMENTTHREADED. WMI·pycaw 둘 다 이 모드에서 돈다.
+_COINIT_APARTMENTTHREADED = 0x2
+#: 이미 다른 모드로 초기화돼 있다는 뜻 — **실패가 아니다.** 스레드는 이미 준비됐다.
+_RPC_E_CHANGED_MODE = -2147417850          # 0x80010106
+
+
+def _ensure_com() -> None:
+    """이 스레드에서 COM 을 한 번 켠다. 실패해도 죽지 않는다(읽기가 -1 이 될 뿐)."""
+    if getattr(_com_ready, "done", False):
+        return
+    try:
+        hr = ctypes.windll.ole32.CoInitializeEx(None, _COINIT_APARTMENTTHREADED)
+        if hr < 0 and hr != _RPC_E_CHANGED_MODE:
+            _log.warning("[COM] 초기화 실패 | hr=0x%08X", hr & 0xFFFFFFFF)
+            return
+    except Exception as e:                                    # noqa: BLE001
+        _log.warning("[COM] 초기화 실패 | %s: %s", type(e).__name__, e)
+        return
+    _com_ready.done = True
 
 
 # ── 🔑 이 파일의 규칙 — «맞췄다»와 «맞았다»는 다른 말이다 (감사 G-11) ──────
@@ -54,6 +97,7 @@ def _endpoint_volume():
     🔑 **두 API 를 다 받는다.** 버전을 못 박는 것보다 싸고, 어느 쪽이든 도는 편이
       «이 PC 에서만 된다»를 안 만든다.
     """
+    _ensure_com()          # 🚨 워커 스레드에서는 이게 없으면 항상 실패한다
     try:
         from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
         dev = AudioUtilities.GetSpeakers()
@@ -242,6 +286,7 @@ _BRIGHTNESS_FALLBACK_START = 50
 
 def _get_brightness() -> int:
     """현재 밝기(0-100) 반환. WMI 사용."""
+    _ensure_com()          # 🚨 워커 스레드에서는 이게 없으면 항상 -1 이다
     try:
         import wmi
         c = wmi.WMI(namespace="wmi")
@@ -271,6 +316,7 @@ def _set_brightness(level: int) -> bool:
     """
     global _last_brightness
     level = max(0, min(100, level))
+    _ensure_com()          # 🚨 없으면 WMI 가 죽고 PowerShell 폴백(4.5초)으로 샌다
     try:
         import wmi
         c = wmi.WMI(namespace="wmi")

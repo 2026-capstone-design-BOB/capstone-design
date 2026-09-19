@@ -107,11 +107,44 @@ def is_window_cloaked(hwnd: int) -> bool:
         return False
 
 
+#: 윈도우 **셸 자신**의 창들. 사용자는 이걸 «앱 창»이라고 부르지 않는다.
+#
+# 🚨 **2026-09-19 라이브 점검에서 잡혔다.** *"탐색기 최대화해줘"* 가
+#   `✓ 탐색기 창을 최대화했습니다` 라고 답하는데 **아무 일도 안 일어났다.**
+#   `explorer.exe` 는 파일 탐색기만이 아니라 **바탕화면(`Progman`)과 작업표시줄**도
+#   띄운다. 창 목록에서 **먼저 걸리는 것이 바탕화면**이었고, 바탕화면은
+#   `IsZoomed` 가 **원래 True** 라 — 오늘 넣은 되묻기가 **엉뚱한 창에 대해 정확히
+#   확인하고 ✓ 를 줬다.** 검증이 거짓말을 인증한 셈이다.
+#
+# 🔑 **여기(한 자리)에서 거른다.** `find_hwnd_for_app`(열기·포커스)도,
+#   `_find_app_window`(최대화·최소화)도, 캡처 경로도 전부 이 함수를 지난다 —
+#   오늘 배운 «호출부마다 붙이면 다음에 또 샌다»를 그대로 적용한다.
+_SHELL_WINDOW_CLASSES = frozenset({
+    "Progman",                  # 바탕화면
+    "WorkerW",                  # 바탕화면 배경 레이어
+    "Shell_TrayWnd",            # 작업표시줄
+    "Shell_SecondaryTrayWnd",   # 보조 모니터 작업표시줄
+    "DV2ControlHost",           # 시작 메뉴 호스트
+})
+
+
+def _window_class(hwnd: int) -> str:
+    """창 클래스 이름. 못 읽으면 빈 문자열(= 거르지 않는다)."""
+    try:
+        buf = ctypes.create_unicode_buffer(256)
+        ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
+        return buf.value or ""
+    except Exception:                                         # noqa: BLE001
+        return ""
+
+
 def _is_real_window(hwnd: int) -> bool:
-    """사용자가 **실제로 볼 수 있는** 최상위 창인가."""
+    """사용자가 **실제로 볼 수 있는** 최상위 «앱» 창인가."""
     u = ctypes.windll.user32
     if not u.IsWindowVisible(hwnd):
         return False
+    if _window_class(hwnd) in _SHELL_WINDOW_CLASSES:
+        return False              # 바탕화면·작업표시줄은 «앱 창»이 아니다
     return not is_window_cloaked(hwnd)
 
 
