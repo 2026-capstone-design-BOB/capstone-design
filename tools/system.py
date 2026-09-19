@@ -11,6 +11,31 @@ from datetime import datetime
 from langchain_core.tools import tool
 import psutil
 
+from core.logger import get_logger
+
+#: 설정이 **안 먹었을 때**를 셀 수 있게 한다 (감사 G-11). 예전엔 조용히 넘어갔다.
+_log = get_logger("System")
+
+
+# ── 🔑 이 파일의 규칙 — «맞췄다»와 «맞았다»는 다른 말이다 (감사 G-11) ──────
+#
+# 볼륨·밝기는 **설정한 값을 되읽을 수 있는 몇 안 되는 자리**다. 그런데 예전 코드는
+# 실행 **전** 값만 읽고 `✓ 볼륨: 40% → 50%` 라고 답했다 — 뒤의 50%는 **의도이지
+# 결과가 아니다.** 설정이 실패해도(pycaw 없음 · WMI 거부 · PowerShell 폴백 실패)
+# 같은 문장이 나갔다.
+#
+# 그래서 세 가지를 나눠 말한다:
+#   ✓ 되읽었고 맞다        → `✓ 볼륨: 40% → 50%`  (50%는 **읽은 값**이다)
+#   ✓ 됐지만 못 읽는 PC다  → `✓ … (확인은 못 했어요)`  ← 실패가 아니다. 모르는 것이다
+#   ⚠️ 되읽었는데 다르다   → `⚠️ …로 맞추려 했는데 지금 …%입니다`
+#
+# ⚠️ **«못 읽는다»를 실패(✗·⚠️)로 만들지 말 것.** 그러면 읽기가 안 되는 PC에서
+#   볼륨 명령이 통째로 «실패»가 되어 [캐시 학습](../core/command_cache.py)에서
+#   빠지고, 매번 LLM 을 타게 된다. 모르는 것은 모른다고만 한다.
+#
+# 📏 되읽기 허용 오차. 모니터·사운드 장치가 **단계로 반올림**하는 경우가 있다.
+_SETTING_TOLERANCE = 2
+
 
 # ── 볼륨 ─────────────────────────────────────────────────────────
 
@@ -28,8 +53,14 @@ def _get_volume() -> int:
         return -1
 
 
-def _set_volume_level(level: int):
-    """볼륨을 0-100 사이 값으로 설정."""
+def _set_volume_level(level: int) -> bool:
+    """볼륨을 0-100 사이 값으로 설정.
+
+    Returns:
+        **정확한 값으로 설정했는가.** 키보드 시뮬레이션 폴백은 `False` 다 —
+        2단계씩 눌러 맞추는 것이라 목표값에 닿았는지 이 함수는 모른다.
+        🚨 예전에는 **항상 `True`** 였다(감사 G-11).
+    """
     level = max(0, min(100, level))
     try:
         from ctypes import cast, POINTER
@@ -40,8 +71,9 @@ def _set_volume_level(level: int):
         volume = cast(interface, POINTER(IAudioEndpointVolume))
         volume.SetMasterVolumeLevelScalar(level / 100, None)
         return True
-    except Exception:
-        pass
+    except Exception as e:                                    # noqa: BLE001
+        _log.warning("[볼륨] pycaw 설정 실패 → 키보드 폴백 | %s: %s",
+                     type(e).__name__, e)
 
     # keybd_event fallback: 0으로 내린 후 목표까지 올리기 (volume_up/down과 동일 방식)
     # WScript.Shell SendKeys는 미디어 키를 지원하지 않으므로 직접 keybd_event 사용
@@ -51,7 +83,27 @@ def _set_volume_level(level: int):
     for _ in range(level // 2):
         ctypes.windll.user32.keybd_event(0xAF, 0, 0, 0)  # VK_VOLUME_UP
         ctypes.windll.user32.keybd_event(0xAF, 0, 2, 0)
-    return True
+    return False              # 눌렀을 뿐이다. 맞았는지는 모른다
+
+
+def _readback(what: str, before: int, target: int, read, *,
+              eul_reul: str) -> str:
+    """설정한 **뒤** 다시 읽고, 본 대로 말한다. (감사 G-11)
+
+    `close_app` 의 `_await_gone()` · `open_app` 의 `_await_window()` 와 같은 자리다 —
+    이 저장소가 아홉 번 고친 «확인하지 않고 의도를 보고한다»를 **설정 쪽**에서 막는다.
+    """
+    actual = read()
+    if actual < 0:
+        # 읽을 수 없는 PC. **모르는 것이지 실패가 아니다** — ✓ 를 유지하되 말을 보탠다.
+        return f"✓ {what}{eul_reul} {target}%로 맞췄어요. (이 PC는 값을 읽지 못해 확인은 못 했어요)"
+    if abs(actual - target) <= _SETTING_TOLERANCE:
+        if before < 0:                 # 전 값을 못 읽었다 — 화살표로 말하지 않는다
+            return f"✓ {what}{eul_reul} {actual}%로 맞췄어요."
+        return f"✓ {what}: {before}% → {actual}%"
+    _log.warning("[%s] 설정=%d%% ↔ 되읽기=%d%% (이전 %d%%)", what, target, actual, before)
+    return (f"⚠️ {what}{eul_reul} {target}%로 맞추려 했는데 지금 {actual}%입니다. "
+            f"다시 해볼까요?")
 
 
 @tool
@@ -66,11 +118,11 @@ def volume_up(amount: int = 10) -> str:
         for _ in range(max(1, amount // 2)):
             ctypes.windll.user32.keybd_event(0xAF, 0, 0, 0)  # VK_VOLUME_UP
             ctypes.windll.user32.keybd_event(0xAF, 0, 2, 0)
-        return f"✓ 볼륨을 올렸습니다."
+        return "✓ 볼륨을 올렸어요. (이 PC는 볼륨을 읽지 못해 확인은 못 했어요)"
 
     new_level = min(100, current + amount)
     _set_volume_level(new_level)
-    return f"✓ 볼륨: {current}% → {new_level}%"
+    return _readback("볼륨", current, new_level, _get_volume, eul_reul="을")
 
 
 @tool
@@ -84,11 +136,11 @@ def volume_down(amount: int = 10) -> str:
         for _ in range(max(1, amount // 2)):
             ctypes.windll.user32.keybd_event(0xAE, 0, 0, 0)  # VK_VOLUME_DOWN
             ctypes.windll.user32.keybd_event(0xAE, 0, 2, 0)
-        return f"✓ 볼륨을 내렸습니다."
+        return "✓ 볼륨을 내렸어요. (이 PC는 볼륨을 읽지 못해 확인은 못 했어요)"
 
     new_level = max(0, current - amount)
     _set_volume_level(new_level)
-    return f"✓ 볼륨: {current}% → {new_level}%"
+    return _readback("볼륨", current, new_level, _get_volume, eul_reul="을")
 
 
 @tool
@@ -99,16 +151,42 @@ def set_volume(level: int) -> str:
     """
     if not 0 <= level <= 100:
         return f"✗ 볼륨은 0에서 100 사이 값이어야 합니다. (입력: {level})"
+    before = _get_volume()
     _set_volume_level(level)
-    return f"✓ 볼륨을 {level}%로 설정했습니다."
+    # 🚨 여기는 예전에 **되읽기조차 없었다.** 설정을 못 해도 «설정했습니다»가 나갔다.
+    return _readback("볼륨", before, level, _get_volume, eul_reul="을")
+
+
+def _get_mute() -> int:
+    """음소거 상태. 1=음소거 · 0=아님 · -1=읽을 수 없음."""
+    try:
+        from ctypes import cast, POINTER
+        from comtypes import CLSCTX_ALL
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        volume = cast(interface, POINTER(IAudioEndpointVolume))
+        return int(bool(volume.GetMute()))
+    except Exception:
+        return -1
 
 
 @tool
 def mute_toggle() -> str:
     """볼륨을 음소거하거나 음소거를 해제합니다."""
+    # 🚨 «전환했습니다»도 의도였다 (감사 G-11과 같은 자리). 키를 눌렀을 뿐이고,
+    #   상태가 정말 바뀌었는지는 보지 않았다. 볼륨과 달리 여기는 **어느 쪽이
+    #   됐는지**가 사용자에게 중요하다 — «껐어요»와 «켰어요»는 반대말이다.
+    before = _get_mute()
     ctypes.windll.user32.keybd_event(0xAD, 0, 0, 0)  # VK_VOLUME_MUTE
     ctypes.windll.user32.keybd_event(0xAD, 0, 2, 0)
-    return "✓ 음소거 상태를 전환했습니다."
+    after = _get_mute()
+    if before < 0 or after < 0:
+        return "✓ 음소거 키를 눌렀어요. (이 PC는 상태를 읽지 못해 확인은 못 했어요)"
+    if after == before:
+        _log.warning("[음소거] 눌렀는데 상태가 그대로다 (%d)", before)
+        return "⚠️ 음소거 키를 눌렀는데 상태가 그대로예요. 다시 해볼까요?"
+    return "✓ 음소거했어요." if after else "✓ 음소거를 해제했어요."
 
 
 # ── 밝기 ─────────────────────────────────────────────────────────
@@ -160,23 +238,48 @@ def _brightness_base() -> int:
     return _BRIGHTNESS_FALLBACK_START
 
 
-def _set_brightness(level: int):
-    """밝기 설정. WMI 사용."""
+def _set_brightness(level: int) -> bool:
+    """밝기 설정. WMI 사용.
+
+    Returns:
+        **설정이 받아들여졌는가** (감사 G-11). 예전에는 아무것도 안 돌려줬고,
+        PowerShell 폴백의 **종료코드도 보지 않았다** — 그래서 밝기가 안 바뀌어도
+        `✓ 밝기: 40% → 50%` 가 그대로 나갔다.
+    """
     global _last_brightness
     level = max(0, min(100, level))
-    _last_brightness = level          # 읽기가 안 되는 PC를 위해 기억해 둔다
     try:
         import wmi
         c = wmi.WMI(namespace="wmi")
         methods = c.WmiMonitorBrightnessMethods()[0]
         methods.WmiSetBrightness(level, 0)
-    except Exception:
-        # PowerShell fallback
-        subprocess.run(
+        _last_brightness = level      # 읽기가 안 되는 PC를 위해 기억해 둔다
+        return True
+    except Exception as e:                                    # noqa: BLE001
+        _log.warning("[밝기] WMI 설정 실패 → PowerShell 폴백 | %s: %s",
+                     type(e).__name__, e)
+
+    # PowerShell fallback
+    try:
+        p = subprocess.run(
             ["powershell", "-Command",
              f"(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{level})"],
-            capture_output=True
+            capture_output=True, timeout=10
         )
+    except Exception as e:                                    # noqa: BLE001
+        _log.error("[밝기] PowerShell 폴백 실행 실패 | %s: %s", type(e).__name__, e)
+        return False
+    # 🔑 종료코드만 보면 안 된다. PowerShell 은 **비종료 오류**(개체가 null 이라
+    #   메서드를 못 부르는 경우)에도 0 으로 끝난다 — 그게 이 폴백의 흔한 실패 모양이다.
+    err = (p.stderr or b"").decode("utf-8", "replace").strip()
+    if p.returncode != 0 or err:
+        _log.error("[밝기] PowerShell 폴백 실패 | 종료코드=%s | %s",
+                   p.returncode, err[:200])
+        return False
+    # 🚨 **실패했으면 기억하지 않는다.** 기억해 버리면 다음 «밝기 올려»가
+    #   «안 먹은 값»을 기준으로 움직여, 한 번 실패한 뒤로 계속 어긋난다.
+    _last_brightness = level
+    return True
 
 
 @tool
@@ -189,8 +292,9 @@ def brightness_up(amount: int = 10) -> str:
     new_level = min(100, current + amount)
     if new_level == current:
         return f"⚠️ 이미 가장 밝아요 ({current}%)."
-    _set_brightness(new_level)
-    return f"✓ 밝기: {current}% → {new_level}%"
+    if not _set_brightness(new_level):
+        return "⚠️ 밝기를 바꾸지 못했어요. 이 PC가 밝기 조절을 지원하지 않을 수 있어요."
+    return _readback("밝기", current, new_level, _get_brightness, eul_reul="를")
 
 
 @tool
@@ -203,8 +307,9 @@ def brightness_down(amount: int = 10) -> str:
     new_level = max(0, current - amount)
     if new_level == current:
         return f"⚠️ 이미 가장 어두워요 ({current}%)."
-    _set_brightness(new_level)
-    return f"✓ 밝기: {current}% → {new_level}%"
+    if not _set_brightness(new_level):
+        return "⚠️ 밝기를 바꾸지 못했어요. 이 PC가 밝기 조절을 지원하지 않을 수 있어요."
+    return _readback("밝기", current, new_level, _get_brightness, eul_reul="를")
 
 
 # ── 시스템 정보 ───────────────────────────────────────────────────

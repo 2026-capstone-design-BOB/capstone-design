@@ -63,6 +63,11 @@ class _Fake:
             S._last_brightness = level
             if self.readable is not None:     # 읽히는 PC는 실제로 값이 따라간다
                 self.readable = level
+            # 🆕 2026-09-19 — `_set_brightness` 는 이제 **성공 여부를 돌려준다**
+            #   (감사 G-11). 대역도 계약을 따라야 한다 — None 을 돌려주면
+            #   제품 코드가 «설정 실패»로 읽는다. 실패 쪽은
+            #   `tests/test_setting_truth.py` §4가 따로 본다.
+            return True
         S._set_brightness = _set
         return self
 
@@ -84,8 +89,14 @@ with _Fake(readable=None) as f:
           30 not in f.written and set(f.written) == {60, 70},
           f"→ {f.written}")
     check("퍼센트를 말해 준다 (예전엔 '밝기를 올렸습니다'뿐이었다)",
-          "%" in r1 and "→" in r1, f"→ {r1!r}")
+          "60" in r1 and "%" in r1, f"→ {r1!r}")
     check("내릴 때도 퍼센트를 말한다", "%" in r3, f"→ {r3!r}")
+    # 🆕 2026-09-19 (감사 G-11) — **여기서 화살표가 사라진 것은 의도다.**
+    #   `✓ 밝기: 50% → 60%` 의 50% 는 «기억한 값», 60% 는 «시키려는 값»이라
+    #   **둘 다 읽은 적이 없다.** 읽을 수 없는 PC에서 읽은 것처럼 말하는 것이
+    #   G-11 의 본체였다. 퍼센트(체감 — BL-45가 요구한 것)는 그대로 남는다.
+    check("🆕 못 읽는 PC에서는 «읽은 것처럼» 말하지 않는다",
+          "→" not in r1 and "확인" in r1, f"→ {r1!r}")
 
 with _Fake(readable=None) as f:
     # 🔑 기억이 이어지는가 — 이게 없으면 매번 중앙값에서 다시 출발한다.
