@@ -1563,9 +1563,17 @@ def build_pluiz_graph(
             try:
                 result = fast_resolve(text)
             except Exception as e:
-                print(f"[graph.fast_path] 오류(무시): {type(e).__name__}: {e}")
+                # `print` 가 아니다 — 빠른 경로의 실패는 `logs/pluiz.log` 로 간다
+                # (감사 G-02의 쌍둥이. 안 남기면 «턴 완료»만 찍혀 영영 못 센다).
+                _log.error("[빠른경로] 실패(LLM으로 계속) | %r | %s: %s",
+                           text, type(e).__name__, e)
                 result = None
         if result is not None:
+            # 🚨 **이 문장은 그물을 하나도 안 지나고 사용자에게 간다** (감사 G-03).
+            #   `output_guard` 의 넷 중 둘은 여기서 «검사할 ToolMessage 가 없다»는
+            #   이유로 구조적으로 무력하고, 하나는 명시적으로 제외된다(아래 output_guard).
+            #   정직함을 지는 자리는 `core/fast_path.py` 머리의 **계약 둘**이다.
+            #   여기서 문자열을 손보지 말 것 — 손보면 그게 마지막 검사 없는 말이 된다.
             return {"messages": [AIMessage(content=str(result))], "decision": "fast_hit"}
         if plan_decompose is not None and _is_plannable(text):
             return {"decision": "to_plan"}
@@ -1777,6 +1785,11 @@ def build_pluiz_graph(
         # ⚠️ 캐시 히트는 제외한다. fast_path는 도구를 **실제로 실행하고도** messages에는
         #    AIMessage 하나만 남겨서(절대규칙 2) 여기서는 "도구 0개"로 보인다.
         #    거르지 않으면 멀쩡히 실행된 캐시 응답을 거짓말로 몰아 덮어쓴다.
+        # 🚨 **이 한 줄이 «빠른 경로엔 그물이 없다»(감사 G-03)의 전부가 아니다.**
+        #    아래 `verify_output`은 제외하지 않는데도 **구조적으로 무력**하다 —
+        #    ToolMessage가 없어 `tool_errors`가 항상 빈 리스트이기 때문이다.
+        #    그래서 이 줄을 지워도 «그물이 생기지» 않는다. 정직함은 fast_path 쪽
+        #    계약 둘이 진다 → `core/fast_path.py` 머리 · `tests/test_fast_hit_contract.py`
         lie = (None if state.get("decision") == "fast_hit"
                else detect_watch_lie(state["messages"], watching=is_watching()))
         if lie is not None:

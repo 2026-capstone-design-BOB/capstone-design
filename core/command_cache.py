@@ -1000,6 +1000,13 @@ class CommandCache:
 
         ⚠️ 예외 원문을 사용자에게 읽어 주지 않는다(감사 G-14와 같은 이유).
         상세는 로그로 간다.
+
+        📜 **계약 (감사 G-03) — 캐시 히트 턴에서 정직함을 지는 자리는 여기 하나다.**
+        그 턴은 `decision == "fast_hit"` 이라 `output_guard` 의 그물 넷이 전부
+        비켜간다(구조적으로 무력하다 — 검사할 `ToolMessage` 가 없다).
+        그러니 **여기서 나간 문장이 곧 사용자가 듣는 말이고, 뒤에 아무 검사도 없다.**
+        계약 전문은 [`core/fast_path.py`](fast_path.py) 머리에 있고
+        `tests/test_fast_hit_contract.py` 가 지킨다.
         """
         bad = len(failed) + len(missing)
         if bad == 0:

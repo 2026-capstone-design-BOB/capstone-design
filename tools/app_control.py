@@ -13,6 +13,11 @@ import ctypes.wintypes
 import psutil
 from langchain_core.tools import tool
 
+from core.logger import get_logger
+
+#: 종료 **요청조차 못 한** 경우를 셀 수 있게 한다. 예전엔 `except: pass` 였다 (감사 G-02 모양).
+_log = get_logger("AppControl")
+
 # ── 앱 정보 매핑 ──────────────────────────────────────────────────
 
 APP_ALIASES: dict[str, str] = {
@@ -461,6 +466,34 @@ def _await_window(app_key: str, timeout: float = 5.0, poll: float = 0.25) -> int
         _t.sleep(poll)
 
 
+def _await_gone(procs: list, timeout: float = 3.0) -> tuple[list, list]:
+    """종료를 요청한 **뒤** 실제로 사라졌는지 기다려 확인한다. (감사 G-07)
+
+    🚨 **`_await_window` 의 대칭이다.** 여는 쪽은 2026-09-09에 «창이 떴는지 본다»로
+      고쳤는데(BL-26), **닫는 쪽은 만들어지지 않았다.** `terminate()` 는
+      **요청이지 결과가 아니다** — 받아들여지기만 하면 «✓ 종료했습니다»가 나갔다.
+
+    ⚠️ **모르면 «사라졌다»고 하지 않는다.** 기다리다 실패하면 살아 있는 쪽으로 센다 —
+      이 함수가 틀리는 방향은 «못 닫았는데 닫았다고 말하는» 쪽이면 안 된다.
+
+    Returns: (사라진 것, 아직 살아 있는 것)
+    """
+    if not procs:
+        return [], []
+    try:
+        gone, alive = psutil.wait_procs(procs, timeout=max(0.0, timeout))
+        return list(gone), list(alive)
+    except Exception as e:                                    # noqa: BLE001
+        _log.error("[close_app] 종료 확인 실패 | %s: %s", type(e).__name__, e)
+        gone, alive = [], []
+        for p in procs:
+            try:
+                (alive if p.is_running() else gone).append(p)
+            except Exception:                                 # noqa: BLE001
+                alive.append(p)      # 판정 못 하면 «아직 있다» 쪽이다
+        return gone, alive
+
+
 def _launched_or_honest(app_key: str, name: str, eul_reul: str,
                         timeout: float = 5.0) -> str:
     """실행을 시도한 **뒤** 창을 확인하고, 본 대로 답한다.
@@ -564,9 +597,14 @@ def open_app(app: str, new: bool = False) -> str:
 @tool
 def close_app(app: str) -> str:
     """
-    실행 중인 앱을 종료합니다.
+    실행 중인 앱을 종료합니다. **정말 닫혔는지 확인한 뒤** 답합니다 —
+    닫히지 않았으면 그렇게 말하니 결과를 그대로 전하세요.
     app: 앱 이름 (예: chrome, notepad, calculator 등)
     """
+    # ⚠️ **저장 안 한 내용은 여전히 사라진다.** `terminate()` 는 Windows 에서
+    #   `TerminateProcess` 라 저장 대화상자를 띄우지 않는다. 감사 G-07은 그것도
+    #   같이 지적했는데, **여기서 고치지 않았다** — «언제 강제로 꺼도 되나»는
+    #   값 판단이라 G-05처럼 결정이 먼저다. → 감사 G-19
     app_key = _normalize(app)
 
     # BUG-11: explorer.exe는 Windows 셸 프로세스 — 종료 시 바탕화면·작업표시줄 전체 소멸
@@ -577,23 +615,51 @@ def close_app(app: str) -> str:
             "(열기는 가능합니다 — open_app 도구를 사용하세요)"
         )
 
-    targets = APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])
+    targets = {t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
 
-    killed = []
+    # 🚨 `killed` 라는 이름이 결함의 절반이었다 (감사 G-07). 여기서 알 수 있는 것은
+    #   «종료를 **요청**했다»뿐이고, 죽었는지는 `_await_gone` 이 답한다.
+    found: list = []
+    denied: list = []
     for proc in psutil.process_iter(["name", "pid"]):
-        if proc.info["name"].lower() in [t.lower() for t in targets]:
-            try:
-                proc.terminate()
-                killed.append(proc.info["name"])
-            except Exception:
-                pass
+        try:
+            pname = (proc.info.get("name") or "")
+        except Exception:                                     # noqa: BLE001
+            continue                  # 훑는 중에 사라진 프로세스 — 우리 대상도 아니다
+        if pname.lower() not in targets:
+            continue
+        found.append(proc)
+        try:
+            proc.terminate()
+        except Exception as e:                                # noqa: BLE001
+            # 🚨 예전엔 여기가 `except: pass` 였다. 권한이 없어 **종료를 요청조차
+            #   못 한** 프로세스는 `killed` 에 안 들어갔고, 전부 그러면
+            #   «실행 중이지 않습니다»가 나갔다 — **켜져 있는데도.**
+            denied.append(proc)
+            _log.error("[close_app] 종료 요청 실패 | 앱=%s | pid=%s | %s: %s",
+                       pname, getattr(proc, "pid", "?"), type(e).__name__, e)
 
     name = _display_name(app_key, app)
-    if killed:
-        eul_reul = _korean_particle(name, "을", "를")
-        return f"✓ {name}{eul_reul} 종료했습니다."
+    eul_reul = _korean_particle(name, "을", "를")
     i_ga = _korean_particle(name, "이", "가")
-    return f"✗ '{name}'{i_ga} 실행 중이지 않습니다."
+
+    if not found:
+        return f"✗ '{name}'{i_ga} 실행 중이지 않습니다."
+
+    gone, alive = _await_gone(found)
+    if not alive:
+        return f"✓ {name}{eul_reul} 종료했습니다."
+
+    # ⚠️ 여기서 **개수를 말하지 않는다.** 사용자가 보는 것은 창이고 우리가 센 것은
+    #   프로세스다 — 크롬은 창 하나에 프로세스가 여럿이다([BL-55](../docs/BACKLOG.md)와 같은 함정).
+    if len(denied) == len(found):
+        return (f"⚠️ {name} 종료 요청이 거부됐어요. 관리자 권한이 필요한 앱일 수 있어요. "
+                f"창에서 직접 닫아 주세요.")
+    if gone:
+        return (f"⚠️ {name}{eul_reul} 완전히 닫지 못했어요 — 일부가 아직 실행 중입니다. "
+                f"저장하지 않은 내용이 있는지 확인해 주세요.")
+    return (f"⚠️ {name} 종료를 요청했지만 아직 닫히지 않았습니다. "
+            f"저장하지 않은 내용이 있는지 확인하고 창에서 직접 닫아 주세요.")
 
 
 @tool
