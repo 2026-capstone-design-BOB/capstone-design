@@ -9,6 +9,11 @@ from typing import Optional
 
 from langchain_core.tools import tool
 
+from core.logger import get_logger
+
+#: 브라우저가 **안 떴을 때**를 셀 수 있게 한다 (감사 G-17·G-02 모양).
+_log = get_logger("Web")
+
 
 # ── 🚨 BL-58 — 망이 필요한 도구는 **하기 전에** 망을 본다 ────────────────
 #
@@ -55,16 +60,40 @@ def _offline_block(what: str) -> Optional[str]:
 
 
 def _open_with_browser(url: str) -> str:
-    """기본 브라우저로 URL 열기."""
+    """기본 브라우저로 URL 열기.
+
+    🚨 **폴백이 실패해도 조용했다** (감사 G-17). 예전 코드는 `subprocess.Popen` 을
+      썼는데, `Popen` 은 **셸을 띄우는 데만** 성공하면 돌아온다 — 브라우저가 안 떠도
+      `✓ … 열었습니다` 가 나갔다. 부르는 쪽이 셋(`open_url`·`web_search`·
+      `youtube_search`)이라 한 자리에서 새면 셋이 같이 샌다.
+
+    ⚠️ **«떴다»까지만 확인한다. «페이지가 보인다»는 아니다** — 그건 [BL-58](../docs/BACKLOG.md)이
+      망 판정으로 따로 막는다. 여기서 아는 것은 «여는 명령이 받아들여졌나»뿐이고,
+      그것조차 예전에는 안 봤다.
+    """
     try:
         os.startfile(url)
         return url
-    except Exception:
-        try:
-            subprocess.Popen(["start", url], shell=True)
-            return url
-        except Exception as e:
-            raise RuntimeError(f"URL 열기 실패: {e}")
+    except Exception as e:                                    # noqa: BLE001
+        _log.warning("[열기] os.startfile 실패 → 셸 폴백 | %s: %s",
+                     type(e).__name__, e)
+
+    if '"' in url:
+        # 셸에 넘길 수 없는 모양. 조용히 이상한 것을 열지 않는다.
+        raise RuntimeError("URL 에 따옴표가 있어 열 수 없습니다")
+    try:
+        # `start "" "<url>"` 가 cmd 의 올바른 형태다 — 첫 인자는 **창 제목**이라
+        # 비워 두지 않으면 URL 이 제목으로 먹힌다. 따옴표는 `&` 가 든 주소를 지킨다.
+        p = subprocess.run(f'start "" "{url}"', shell=True,
+                           capture_output=True, timeout=10)
+    except Exception as e:                                    # noqa: BLE001
+        _log.error("[열기] 셸 폴백 실행 실패 | %s: %s", type(e).__name__, e)
+        raise RuntimeError(f"URL 열기 실패: {e}")
+    if p.returncode != 0:
+        err = (p.stderr or b"").decode("utf-8", "replace").strip()
+        _log.error("[열기] 셸 폴백 실패 | 종료코드=%s | %s", p.returncode, err[:200])
+        raise RuntimeError(f"브라우저를 열지 못했습니다 (종료코드 {p.returncode})")
+    return url
 
 
 # ── 도구 정의 ─────────────────────────────────────────────────────
