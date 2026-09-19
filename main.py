@@ -21,9 +21,13 @@ _bg_tasks: set = set()
 from config.settings import get_settings
 from core import auth
 from core.graph_agent import get_graph_agent
+from core.logger import get_logger
 from core.security import check_security
 from services.tts import get_tts
 from services.stt import get_stt
+
+#: 감시 알림처럼 **에이전트를 안 거치고 나가는 길**의 실패를 남긴다 (감사 G-13).
+_log = get_logger("Server")
 
 # 서버가 이번 기동에 발급한 토큰. lifespan에서 채워진다.
 _AUTH_TOKEN = ""
@@ -689,6 +693,16 @@ async def _broadcast(payload: dict) -> None:
     실제로 전달된다. TTS가 실패해도 텍스트는 보낸다(기존 /ws end 페이로드와 같은 방식).
     """
     if payload.get("type") == "notify" and payload.get("text"):
+        # 🚨 **4층 마스킹의 사각이었다** (감사 G-13). 감시 알림은 에이전트를 안 거치고
+        #   여기서 곧장 나간다 — 그런데 이 문장은 **Vision 이 화면에서 읽은 글자**다.
+        #   화면에 주민번호·카드번호·키가 떠 있으면 그대로 실려 **소리로도 나간다.**
+        #   에이전트 쪽 관문(`run_async`)은 이 길을 못 덮는다. 그래서 여기 한 번 더 건다.
+        try:
+            from core.security import mask_sensitive_output
+            payload = {**payload, "text": mask_sensitive_output(payload["text"])}
+        except Exception as e:                                # noqa: BLE001
+            _log.error("[Monitor] 알림 마스킹 실패 — **가리지 않은 채로 나간다** | %s: %s",
+                       type(e).__name__, e)
         try:
             import base64
             spoken = payload["text"].replace(chr(0x1F441), " ").strip()
