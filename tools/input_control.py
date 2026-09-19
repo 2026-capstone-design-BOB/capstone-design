@@ -10,6 +10,12 @@ Pluiz 키보드 입력 도구
 import time
 from langchain_core.tools import tool
 
+from core.logger import get_logger
+
+#: 포커스 확인이 **왜 실패했는지**를 셀 수 있게 한다 (감사 G-02 모양).
+#: 이 실패는 «엉뚱한 창에 입력했다»의 직전 순간이라 `print` 로 흘리면 안 된다.
+_log = get_logger("Input")
+
 
 # 한국어 키 이름 → pyautogui 키 이름 매핑
 _KEY_MAP: dict[str, str] = {
@@ -113,7 +119,8 @@ def _ensure_target_focused(target: str) -> tuple[bool, str]:
         from tools.app_control import find_hwnd_for_app, _focus_window, _normalize
     except Exception as e:
         # 확인할 수단이 없으면 막지는 않는다(예전 동작). 다만 조용히 넘어가지 않는다.
-        print(f"[type_text] 대상 창 확인 불가(그대로 진행): {type(e).__name__}: {e}")
+        _log.error("[포커스] 대상 창 확인 불가(그대로 진행) | %r | %s: %s",
+                   target, type(e).__name__, e)
         return (True, "")
 
     hwnd = find_hwnd_for_app(target)
@@ -129,7 +136,8 @@ def _ensure_target_focused(target: str) -> tuple[bool, str]:
     try:
         _focus_window(_normalize(target))
     except Exception as e:
-        print(f"[type_text] 포커스 시도 실패: {type(e).__name__}: {e}")
+        _log.warning("[포커스] 앞으로 가져오기 실패 | %r | %s: %s",
+                     target, type(e).__name__, e)
     time.sleep(0.25)
 
     fg, title = _foreground_window()
@@ -218,7 +226,7 @@ def get_clipboard_text() -> str:
 
 
 @tool
-def press_key(key: str) -> str:
+def press_key(key: str, target: str = "") -> str:
     """
     키보드 키 입력. 단일 키 또는 단축키 지원.
     한국어 키 이름도 인식함.
@@ -231,9 +239,34 @@ def press_key(key: str) -> str:
 
     Args:
         key: 키 이름 또는 단축키 (예: 'enter', 'ctrl+c', '엔터')
+        target: 어느 앱 창에 보낼지 (예: "메모장", "크롬"). **어디에 보낼지 알면
+                반드시 지정하세요.** 지정하면 그 창이 실제로 앞에 와 있는지 확인한
+                뒤에만 누르고, 확인이 안 되면 **누르지 않고** 그 사실을 알립니다.
+                비워두면 지금 앞에 있는 창에 갑니다.
     """
+    # ── 🚨 감사 G-09 — BL-12의 수선을 여기는 못 받았다 ──────────────
+    #
+    # BL-12은 `type_text` 에 `_ensure_target_focused()` 를 넣어 *«확인이 안 되면
+    # 입력하지 않는다»* 로 고쳤다. **`press_key` 는 그대로였다.**
+    #   · `target` 인자 자체가 없어 **어디로 가는지 모르고 눌렀고**
+    #   · 어느 창에 갔는지 **말하지도 않았다**(`type_text` 는 말한다)
+    #   · `alt+f4`·`ctrl+s`·`ctrl+w` 가 **엉뚱한 창에서** 눌리면 되돌릴 수 없다
+    #
+    # 🔑 BL-12의 실기 사고가 정확히 이것이었다 — 글자가 **Pluiz 오버레이 입력창**에
+    #   들어갔다. `pyautogui` 는 «그때 포커스된 창»에 보내므로 **키도 같은 길로 간다.**
+    #
+    # ⚠️ `target` 을 **필수로 만들지는 않았다.** *"엔터 눌러줘"* 처럼 «지금 이 창»이
+    #   맞는 경우가 실제로 많고, 필수로 하면 그 평범한 명령이 전부 막힌다.
+    #   대신 **어디로 갔는지 항상 말한다** — 그러면 틀렸을 때 사용자가 안다.
     try:
         pyautogui = _get_pyautogui()
+
+        if target.strip():
+            ok, reason = _ensure_target_focused(target.strip())
+            if not ok:
+                # 🚨 누르지 않고 끝낸다. 문구의 «입력»을 «키»로 바꿔 준다 —
+                #   같은 함수가 두 도구를 지키므로 말만 도구에 맞춘다.
+                return reason.replace("입력하지 않았습니다", "키를 누르지 않았습니다")
 
         normalized = key.strip().lower()
         actual_key = _KEY_MAP.get(normalized, normalized)
@@ -245,6 +278,11 @@ def press_key(key: str) -> str:
         else:
             pyautogui.press(actual_key)
 
+        # **어느 창에 갔는지 함께 보고한다.** 예전엔 "✓ 키 입력 완료"뿐이라
+        # 엉뚱한 창에서 눌려도 사용자가 알 방법이 없었다.
+        _, title = _foreground_window()
+        if title:
+            return f"✓ '{title}' 창에서 '{key}' 키를 눌렀습니다."
         return f"✓ '{key}' 키 입력 완료"
     except ImportError as e:
         return f"✗ 키를 누르지 못했습니다: {e}"
