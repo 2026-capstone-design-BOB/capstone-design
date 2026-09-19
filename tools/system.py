@@ -39,17 +39,47 @@ _SETTING_TOLERANCE = 2
 
 # ── 볼륨 ─────────────────────────────────────────────────────────
 
-def _get_volume() -> int:
-    """현재 볼륨(0-100) 반환."""
+def _endpoint_volume():
+    """스피커의 볼륨 인터페이스. 못 얻으면 `None`.
+
+    🚨 **2026-09-19 — pycaw 의 API 가 굴러갔다.** 예전 pycaw 는
+    `AudioUtilities.GetSpeakers()` 가 COM 장치를 그대로 줘서 `.Activate(...)` 로
+    인터페이스를 꺼냈는데, **지금 버전(20251023)은 `AudioDevice` 래퍼를 준다** —
+    `.Activate` 가 아예 없고 `.EndpointVolume` 프로퍼티가 대신 있다.
+
+    그래서 이 PC 에서 볼륨이 **계속 «못 읽음»(-1)** 이었다. [BL-57](../docs/BACKLOG.md)
+    (모델 별칭이 굴러가 모든 명령이 죽었다)과 **같은 모양**이다 — 우리 코드는 한 줄도
+    안 바뀌었는데 밖이 움직였다.
+
+    🔑 **두 API 를 다 받는다.** 버전을 못 박는 것보다 싸고, 어느 쪽이든 도는 편이
+      «이 PC 에서만 된다»를 안 만든다.
+    """
     try:
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        dev = AudioUtilities.GetSpeakers()
+        ep = getattr(dev, "EndpointVolume", None)       # 새 API (20251023~)
+        if ep is not None:
+            return ep
         from ctypes import cast, POINTER
         from comtypes import CLSCTX_ALL
-        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        volume = cast(interface, POINTER(IAudioEndpointVolume))
-        return int(volume.GetMasterVolumeLevelScalar() * 100)
-    except Exception:
+        interface = dev.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        return cast(interface, POINTER(IAudioEndpointVolume))   # 옛 API
+    except Exception as e:                                    # noqa: BLE001
+        # ⚠️ 여기가 조용하면 «이 PC 는 볼륨을 못 읽는다»가 **이유 없이** 굳는다.
+        #   실제로 그렇게 굳어 있었다 — 2026-09-19에 읽기 점검을 돌려서야 드러났다.
+        _log.warning("[볼륨] 인터페이스를 못 얻었다 (키보드 시늉으로 간다) | %s: %s",
+                     type(e).__name__, e)
+        return None
+
+
+def _get_volume() -> int:
+    """현재 볼륨(0-100) 반환. 못 읽으면 -1."""
+    ep = _endpoint_volume()
+    if ep is None:
+        return -1
+    try:
+        return int(ep.GetMasterVolumeLevelScalar() * 100)
+    except Exception:                                         # noqa: BLE001
         return -1
 
 
@@ -62,18 +92,14 @@ def _set_volume_level(level: int) -> bool:
         🚨 예전에는 **항상 `True`** 였다(감사 G-11).
     """
     level = max(0, min(100, level))
-    try:
-        from ctypes import cast, POINTER
-        from comtypes import CLSCTX_ALL
-        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        volume = cast(interface, POINTER(IAudioEndpointVolume))
-        volume.SetMasterVolumeLevelScalar(level / 100, None)
-        return True
-    except Exception as e:                                    # noqa: BLE001
-        _log.warning("[볼륨] pycaw 설정 실패 → 키보드 폴백 | %s: %s",
-                     type(e).__name__, e)
+    ep = _endpoint_volume()
+    if ep is not None:
+        try:
+            ep.SetMasterVolumeLevelScalar(level / 100, None)
+            return True
+        except Exception as e:                                # noqa: BLE001
+            _log.warning("[볼륨] 설정 실패 → 키보드 폴백 | %s: %s",
+                         type(e).__name__, e)
 
     # keybd_event fallback: 0으로 내린 후 목표까지 올리기 (volume_up/down과 동일 방식)
     # WScript.Shell SendKeys는 미디어 키를 지원하지 않으므로 직접 keybd_event 사용
@@ -159,15 +185,12 @@ def set_volume(level: int) -> str:
 
 def _get_mute() -> int:
     """음소거 상태. 1=음소거 · 0=아님 · -1=읽을 수 없음."""
+    ep = _endpoint_volume()
+    if ep is None:
+        return -1
     try:
-        from ctypes import cast, POINTER
-        from comtypes import CLSCTX_ALL
-        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        volume = cast(interface, POINTER(IAudioEndpointVolume))
-        return int(bool(volume.GetMute()))
-    except Exception:
+        return int(bool(ep.GetMute()))
+    except Exception:                                         # noqa: BLE001
         return -1
 
 
