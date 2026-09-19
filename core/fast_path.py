@@ -14,6 +14,40 @@ Fast Path 어댑터 (M1-P1.5-a)
 반환:
   - str  : 캐시/라우터가 처리한 결과 텍스트 (그래프는 이걸 messages에 기록)
   - None : 처리 불가 → 그래프는 agent(LLM) 노드로 진행
+
+## 🚨 이 경로에는 **그물이 없다** — 여기서 지어낸 말은 아무도 안 잡는다 (감사 G-03)
+
+여기가 문자열을 돌려주면 그래프는 그걸 그대로 `AIMessage` 로 만들고
+`decision = "fast_hit"` 으로 턴을 끝낸다. 그 턴에 `output_guard` 의 방어 넷은 이렇다:
+
+| 그물 | 캐시/라우터 히트 턴에서 | 왜 |
+|---|---|---|
+| `watch_notice_to_deliver` | 해당 없음 | 감시 도구는 빠른 경로 대상이 아니다 |
+| `detect_watch_lie` | ❌ **명시적으로 제외** | 도구를 그래프 **밖에서** 돌려 «도구 0개»로 보인다 — 안 거르면 멀쩡히 실행된 응답을 거짓말로 몬다 |
+| `verify_output` ① 빈 응답 | ❌ 무력 | 응답이 비지 않는다 |
+| `verify_output` ② 도구 오류 | ❌ **구조적으로 무력** | `ToolMessage` 가 없어 `tool_errors` 가 **항상 빈 리스트**다 |
+
+누가 빠뜨린 게 아니라 **절대규칙 2**(캐시 결과도 `messages` 에 누적한다)의 그림자다 —
+AIMessage 하나만 남기기로 한 설계가 «검사할 재료»도 같이 없앤다. 그물을 새로 치려면
+그 규칙을 건드려야 하고, 거기가 **맥락 붕괴 버그가 났던 자리**다.
+
+## 📜 그래서 계약으로 못 박는다 — 진실을 아는 자리는 **정확히 둘**
+
+| # | 자리 | 무엇을 지는가 |
+|---|---|---|
+| ① | `CommandCache._verdict` | 돌린 도구들의 **다 됨 / 일부 / 전부 실패**를 사실대로 말한다 (감사 G-01) |
+| ② | 각 도구의 반환값 (`core/tool_result.py` 의 ✓/✗) | **라우터는 그걸 그대로 돌려준다** |
+
+🚫 **이 파일도 `router.py` 도 결과 문장을 만들지 않는다.** 여기서 «✓ …했어요»를
+지어내는 순간 그걸 검사할 그물이 **하나도 없다.**
+→ [`tests/test_fast_hit_contract.py`](../tests/test_fast_hit_contract.py) 가 이 계약을 지킨다.
+
+🔑 **감사가 «유일하게 진실을 아는 자리는 `execute_sync` 자신»이라고 적었는데 둘이었다** —
+라우터가 같은 `fast_hit` 을 만든다. 2026-09-19에 바로잡았다.
+
+⚠️ **실패는 전부 로그로 간다**(`logs/pluiz.log`). 2026-09-18까지 이 파일의 실패는
+`print` 라 한 줄도 안 남았다 — 감사 G-02를 `command_cache.py` 에서만 메웠기 때문이다.
+**빈도를 모르면 «고칠까»를 판단할 수 없다**(BL-23의 교훈).
 """
 
 from __future__ import annotations
@@ -86,7 +120,7 @@ def has_uncovered_command(cache: Any, text: str) -> bool:
     try:
         return bool(fn(text))
     except Exception as e:
-        print(f"[fast_path] 잔여명령 검사 오류(무시): {type(e).__name__}: {e}")
+        _log.error("[잔여명령 검사] 실패(무시) | %r | %s: %s", text, type(e).__name__, e)
         return False
 
 
@@ -151,7 +185,11 @@ def resolve_fast_path(
                     pass
                 return str(result)
         except Exception as e:
-            print(f"[fast_path] 캐시 오류(무시): {type(e).__name__}: {e}")
+            # ⚠️ 여기로 오면 **라우터가 같은 발화에 다시 행동할 수 있다**(감사 G-18).
+            #   지금은 흐름을 그대로 두고 **세기만 한다** — 빈도를 모르는 채
+            #   빠른 경로의 제어 흐름을 바꾸는 것이 더 위험하다(BL-23).
+            _log.error("[캐시] 실행=실패(라우터로 계속) | %r | %s: %s",
+                       text, type(e).__name__, e)
 
     # 3. 결정론적 라우터
     if router_resolve is not None:
@@ -160,6 +198,7 @@ def resolve_fast_path(
             if routed is not None:
                 return str(routed)
         except Exception as e:
-            print(f"[fast_path] 라우터 오류(무시): {type(e).__name__}: {e}")
+            _log.error("[라우터] 실행=실패(LLM으로 계속) | %r | %s: %s",
+                       text, type(e).__name__, e)
 
     return None
