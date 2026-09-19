@@ -5,6 +5,19 @@
     python scripts/train_wakeword.py                      # 실측 증강 (기본 · 말뭉치가 있어야 한다)
     python scripts/train_wakeword.py --augment mimic      # 옛 «흉내» 증강 (말뭉치 없이)
     python scripts/train_wakeword.py --user-audio a.npy   # 실제 녹음 추가 (선택)
+    python scripts/train_wakeword.py --jobs 1             # 한 코어만 (기본은 전부)
+
+## 🆕 2026-09-19 — 코어를 전부 쓴다 (M7 §6-1)
+
+예전에는 **전부 `for` 루프**였다. 32코어 서버를 빌려도 31개가 논다.
+이제 «클립 하나 → 증강 → 창 → 임베딩»을 **일감**으로 쪼개
+[`wakeword_parallel.pmap`](wakeword_parallel.py) 이 코어에 나눠 준다.
+
+🔑 **`--jobs` 가 결과를 안 바꾼다.** 난수를 워커끼리 나눠 쓰면 «어느 일감이 먼저
+끝났나»가 데이터셋에 새고, 그러면 노트북에서 만든 후보와 서버에서 만든 후보가
+**다른 물건인데 둘 다 «같은 설정»이라고 적힌다.** 그래서 씨앗을 일감마다 미리
+박아 둔다(`plan_dataset`) — 왜 이게 이 저장소에서 특히 위험한지는
+[`wakeword_parallel.py`](wakeword_parallel.py) 머리에 적어 뒀다.
 
 ## 🆕 2026-09-18 — 증강이 «흉내»에서 «실측»으로 바뀌었다 (M7 4단계)
 
@@ -45,6 +58,7 @@ import asyncio
 import os
 import sys
 import time
+from collections import namedtuple
 
 import numpy as np
 
@@ -53,6 +67,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.wakeword_data import (           # noqa: E402
     SR, POSITIVE_PHRASES, NEGATIVE_PHRASES, COVERED_WAKE_WORDS,
     synthesize_set, augment, to_window, _load,
+)
+from scripts.wakeword_parallel import (       # noqa: E402
+    child_seeds, pmap, resolve_jobs,
 )
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -93,93 +110,108 @@ def extract_features(windows, af, batch_label=""):
     return np.array(feats, dtype=np.float32)
 
 
-def build_dataset(user_audio_path=None, aug_per_clip=3, seed=0,
-                  augmenter=None, speech_negatives=0):
-    from openwakeword.utils import AudioFeatures
+def _aug(augmenter, a, rng, n):
+    """클립 하나 → 변형 n개. **자리는 하나다** — 실측이든 흉내든 여기로만 지나간다.
 
-    rng = np.random.default_rng(seed)
+    🔑 호출부를 네 군데에서 갈아끼우지 않고 여기 한 곳만 갈아끼운다.
+       한 군데를 빠뜨리면 «절반만 실측»이 되는데 **오류가 안 난다.**
+       (`tests/test_wakeword_corpus.py` 가 이 파일에서 옛 증강 함수를 직접 부르는
+       자리가 **딱 여기 하나**인지 센다. 그래서 그 이름을 다른 데 적으면 안 된다 —
+       주석에 적어도 걸린다)
+    """
+    return augmenter.many(a, rng, n) if augmenter else augment(a, rng, n)
 
-    def aug(a, n):
-        """클립 하나 → 변형 n개. **자리는 하나다** — 실측이든 흉내든 여기로만 지나간다.
 
-        🔑 호출부를 네 군데에서 갈아끼우지 않고 여기 한 곳만 갈아끼운다.
-           한 군데를 빠뜨리면 «절반만 실측»이 되는데 **오류가 안 난다.**
-        """
-        return augmenter.many(a, rng, n) if augmenter else augment(a, rng, n)
-    print("① 음성 합성 (이미 있으면 재사용)")
-    # 목소리가 14개라 전 조합은 양성 1400 · 음성 12950이다. 표본을 뽑아 쓴다 —
-    # `limit_combos`는 **무작위 균등 추출**이라 목소리가 골고루 섞인다(앞에서 자르지 않는다).
-    pos_paths = asyncio.run(synthesize_set(
-        POSITIVE_PHRASES, os.path.join(CACHE_DIR, "pos"), "pos", limit_combos=700))
-    neg_paths = asyncio.run(synthesize_set(
-        NEGATIVE_PHRASES, os.path.join(CACHE_DIR, "neg"), "neg", limit_combos=900))
-    print(f"  양성 클립 {len(pos_paths)} · 음성 클립 {len(neg_paths)}")
+# ── 일감 ───────────────────────────────────────────────────────────
+#: 일감 하나 — «무엇으로 창을 몇 개 만들고 어느 쪽인가».
+#:
+#: 🔑 **씨앗이 일감 안에 들어 있다.** 워커는 이것만 보고 일하며 공유 난수를
+#:    쓰지 않는다 — 그래서 몇 코어로 돌든 결과가 같다(→ `wakeword_parallel` 머리).
+#: ⚠️ `namedtuple` 이라 피클된다(윈도우는 `spawn` 이다). 여기에 열린 파일이나
+#:    `Augmenter` 같은 무거운 것을 넣지 말 것 — 일감마다 다시 보내게 된다.
+Recipe = namedtuple("Recipe", "kind ref n label seed")
 
-    print("② 증강 + 창 배치")
-    pos_wins, neg_wins = [], []
+#: 순수 잡음/무음 창 — 없으면 **조용할 때** 오탐이 난다.
+NOISE_WINDOWS = 400
+
+#: 잡음 일감 하나가 만드는 창 수. 일감이 너무 잘면 왕복 비용만 는다.
+_NOISE_PER_TASK = 50
+#: 한국어 말소리 일감 하나가 만드는 창 수.
+_SPEECH_PER_TASK = 25
+
+
+def plan_dataset(pos_paths, neg_paths, loud_starts, aug_per_clip,
+                 speech_negatives, seed=0, has_augmenter=True, quiet=False):
+    """**무거운 일을 하기 전에 일감 목록을 전부 만든다.**
+
+    예전에는 증강하면서 창을 리스트에 붙이고, 다 붙인 뒤 개수를 보고 «음성이 모자라면
+    더 만든다»(`_balance_negatives`)를 했다. 그 모양이면 **다 해 봐야 얼마나 할지
+    알 수 있어서** 코어에 나눠 줄 수가 없다.
+
+    개수는 전부 **미리 셀 수 있다** — 클립 수 × 증강 수다. 그래서 계획을 먼저 세우고
+    나눠 준다. 덤으로 «이번 학습이 창 몇 개짜리인가»를 **시작할 때** 말할 수 있게 됐다
+    (예전에는 7분을 기다려야 나왔다).
+
+    ══════════════════════════════════════════════════════════════
+    🚨 2026-09-09 — `--user-audio`만으로는 **모델이 망가진다**. 반드시 읽을 것.
+
+    실제 녹음 143초를 양성으로 넣고 학습했더니, 검증 성적은 멀쩡한데
+    (감지 93.6% · 오탐 2.35%) **실기에서 아무 말에나 깨어났다.**
+    에너지 관문을 통과한 창의 **86.7%**를 「플루이즈」라고 답했고 대부분 prob=1.000이었다.
+
+    원인은 임계값도 균형도 아니라 **데이터셋 구성**이다:
+
+        실제 마이크 · 양성 : 1,722개  ← 사용자 녹음
+        실제 마이크 · 음성 :     0개  ← **여기가 비어 있다**
+        TTS 합성음         : 양성 2,100 · 음성 3,822
+
+    학습셋에서 «진짜 마이크 오디오»는 전부 양성이다. 그러면 모델이 단어를 배울
+    이유가 없다 — **«합성음이냐 실제 마이크냐»만 구분해도 만점**이기 때문이다.
+    지름길을 놔두고 어려운 길로 가지 않는다.
+
+    ⚠️ **검증셋은 이걸 못 잡는다.** 검증셋의 음성 표본도 전부 TTS라 지름길이
+      거기서도 통한다. **학습셋과 같은 편향을 공유하는 검증셋은 결함을 볼 수 없는
+      눈이다.** 「93.6%」는 아무것도 보증하지 않고 있었다.
+      → 실기 확인 없이 이 표를 근거로 «좋아졌다»고 말하지 말 것.
+
+    **고치려면 같은 마이크로 「플루이즈가 아닌 말」을 녹음해 음성에 넣어야 한다.**
+    아래 균형 조정은 필요하지만 **충분하지 않다** — 개수를 맞출 뿐 지름길은 그대로다.
+    → docs/BACKLOG.md BL-23 · docs/design/M2_웨이크워드_전용모델.md §7
+    ══════════════════════════════════════════════════════════════
+    """
+    neg_aug = max(2, aug_per_clip // 3)
+    out = []
+
+    # ── 양성 ──────────────────────────────────────────────────────
     for p in pos_paths:
-        a = _load(p)
-        for v in aug(a, aug_per_clip):
-            pos_wins.append(to_window(v, rng, WIN_SEC))
-    for p in neg_paths:
-        a = _load(p)
-        for v in aug(a, max(2, aug_per_clip // 3)):
-            neg_wins.append(to_window(v, rng, WIN_SEC))
+        out.append(Recipe("clip", p, aug_per_clip, 1, 0))
+    # 실제 녹음 (사용자 목소리) — 합성음 과적합을 막는 핵심
+    for st in loud_starts:
+        out.append(Recipe("user", int(st), aug_per_clip * 2, 1, 0))
+    pos_n = sum(r.n for r in out)
 
-    # 순수 잡음/무음도 음성 샘플이다 — 없으면 조용할 때 오탐이 난다
-    for _ in range(400):
-        lvl = rng.uniform(0.0002, 0.02)
-        neg_wins.append((rng.normal(0, lvl, int(SR * WIN_SEC))).astype(np.float32))
+    # ── 음성 ──────────────────────────────────────────────────────
+    neg = [Recipe("clip", p, neg_aug, 0, 0) for p in neg_paths]
+    for i in range(0, NOISE_WINDOWS, _NOISE_PER_TASK):
+        neg.append(Recipe("noise", None, min(_NOISE_PER_TASK, NOISE_WINDOWS - i), 0, 0))
 
-    # ── 🔴 사람이 실제로 말한 한국어 (M7 4단계의 핵심) ──────────────
+    # ── 🔴 사람이 실제로 말한 한국어 (M7 4단계의 핵심) ─────────────
     # 기준선에서 밝혀진 오탐의 모양은 «발음에 속는 게 아니라 **음성이면 깬다**» 였다
-    # (자유 발화 214건 > 헷갈리는 말 157건). 지금 음성(negative)은 **전부 TTS** 라
-    # 목소리가 14개고 녹음 환경이 하나다 — 그 분포로는 이 자리를 못 메운다.
-    #   → docs/research/2026-09_웨이크워드_기준선.md §3
+    # (자유 발화 214건 > 헷갈리는 말 157건). TTS 음성은 목소리가 14개고 녹음 환경이
+    # 하나라 그 분포로는 이 자리를 못 메운다. → docs/research/2026-09_웨이크워드_기준선.md §3
     #
-    # 🔑 뽑은 한국어도 **증강을 거쳐야 한다.** 깨끗한 낭독 그대로 넣으면 모델이
-    #    «말인가»가 아니라 «깨끗한 녹음인가»를 배울 수 있다 — 2026-09-09에 겪은
-    #    지름길(아래 ══ 블록)과 **정확히 같은 모양**이다.
-    if augmenter and speech_negatives > 0:
-        print(f"  🔴 한국어 말소리 음성(negative) {speech_negatives}개")
-        for i in range(speech_negatives):
-            seg = augmenter.speech_negative(rng, WIN_SEC)
-            neg_wins.append(to_window(augmenter.one(seg, rng), rng, WIN_SEC))
-            if (i + 1) % 500 == 0:
-                print(f"    {i + 1}/{speech_negatives}")
-    elif speech_negatives > 0:
+    # 🔑 뽑은 한국어도 **증강을 거친다.** 깨끗한 낭독 그대로 넣으면 모델이
+    #    «말인가»가 아니라 «깨끗한 녹음인가»를 배울 수 있다 — 위 ══ 블록과 같은 모양이다.
+    if has_augmenter and speech_negatives > 0:
+        for i in range(0, speech_negatives, _SPEECH_PER_TASK):
+            neg.append(Recipe("speech", None,
+                              min(_SPEECH_PER_TASK, speech_negatives - i), 0, 0))
+    elif speech_negatives > 0 and not quiet:
         # 흉내 모드에서 조용히 «0개 넣고 넣었다고» 하지 않는다
         print(f"  ⚠️ 한국어 말소리 음성(negative) {speech_negatives}개를 건너뛴다 "
               f"— 흉내 모드라 말뭉치를 안 읽는다")
 
-    # ══════════════════════════════════════════════════════════════
-    # 🚨 2026-09-09 — `--user-audio`만으로는 **모델이 망가진다**. 반드시 읽을 것.
-    #
-    # 실제 녹음 143초를 양성으로 넣고 학습했더니, 검증 성적은 멀쩡한데
-    # (감지 93.6% · 오탐 2.35%) **실기에서 아무 말에나 깨어났다.**
-    # 에너지 관문을 통과한 창의 **86.7%**를 「플루이즈」라고 답했고 대부분 prob=1.000이었다.
-    #
-    # 원인은 임계값도 균형도 아니라 **데이터셋 구성**이다:
-    #
-    #     실제 마이크 · 양성 : 1,722개  ← 사용자 녹음
-    #     실제 마이크 · 음성 :     0개  ← **여기가 비어 있다**
-    #     TTS 합성음         : 양성 2,100 · 음성 3,822
-    #
-    # 학습셋에서 «진짜 마이크 오디오»는 전부 양성이다. 그러면 모델이 단어를 배울
-    # 이유가 없다 — **«합성음이냐 실제 마이크냐»만 구분해도 만점**이기 때문이다.
-    # 지름길을 놔두고 어려운 길로 가지 않는다.
-    #
-    # ⚠️ **검증셋은 이걸 못 잡는다.** 검증셋의 음성 표본도 전부 TTS라 지름길이
-    #   거기서도 통한다. **학습셋과 같은 편향을 공유하는 검증셋은 결함을 볼 수 없는
-    #   눈이다.** 「93.6%」는 아무것도 보증하지 않고 있었다.
-    #   → 실기 확인 없이 이 표를 근거로 «좋아졌다»고 말하지 말 것.
-    #
-    # **고치려면 같은 마이크로 「플루이즈가 아닌 말」을 녹음해 음성에 넣어야 한다.**
-    # 아래 균형 조정은 필요하지만 **충분하지 않다** — 개수를 맞출 뿐 지름길은 그대로다.
-    # → docs/BACKLOG.md BL-23 · docs/design/M2_웨이크워드_전용모델.md §7
-    # ══════════════════════════════════════════════════════════════
-
-    # ── 클래스 균형 맞추기 (2026-09-09) ────────────────────────────
+    # ── 클래스 균형 맞추기 (2026-09-09) ───────────────────────────
     # 🚨 실제 녹음을 넣으면 양성이 급증한다. 2026-09-09 실측:
     #      양성 3,822 : 음성 2,200  →  감지율 95.0 → 97.1%지만
     #      **오탐율 1.82 → 7.05%** (4배). 실사용에서 오탐은 놓침보다 나쁘다 —
@@ -190,53 +222,146 @@ def build_dataset(user_audio_path=None, aug_per_clip=3, seed=0,
     # 존재 이유이고, TTS 양성을 줄이면 미학습 화자 일반화(98.1%)를 잃는다.
     # 늘리는 쪽도 «순수 잡음»이 아니라 **말소리 음성 클립**이어야 한다 —
     # 경계는 «다른 말»과의 사이에 있지 무음과의 사이에 있지 않다.
-    def _balance_negatives(target: int):
-        """음성 표본을 `target`까지 채운다(말소리 클립을 더 증강해서)."""
-        need = target - len(neg_wins)
-        if need <= 0:
-            return
-        print(f"  ⚖️  음성 {len(neg_wins)} → {target} (양성과 맞춘다)")
+    neg_n = sum(r.n for r in neg)
+    need = pos_n - neg_n
+    if need > 0 and neg_paths:
+        if not quiet:
+            print(f"  ⚖️  음성 {neg_n} → {pos_n} (양성과 맞춘다)")
         i = 0
-        while len(neg_wins) < target:
-            a = _load(neg_paths[i % len(neg_paths)])
-            for v in aug(a, 2):
-                neg_wins.append(to_window(v, rng, WIN_SEC))
-                if len(neg_wins) >= target:
-                    break
+        while need > 0:
+            neg.append(Recipe("clip", neg_paths[i % len(neg_paths)],
+                              min(2, need), 0, 0))
+            need -= min(2, need)
             i += 1
 
-    # 실제 녹음 (사용자 목소리) — 합성음 과적합을 막는 핵심
+    out.extend(neg)
+
+    # 🔑 씨앗은 **마지막에 한꺼번에** 박는다. 일감 순서만으로 정해지므로
+    #    코어 수·끝난 순서와 무관하다(→ `wakeword_parallel.child_seeds`).
+    seeds = child_seeds(seed, len(out))
+    return [r._replace(seed=s) for r, s in zip(out, seeds)]
+
+
+# ── 워커 ───────────────────────────────────────────────────────────
+#: 워커 프로세스가 **한 번만** 차리는 것들. 일감마다 다시 만들면 ONNX 로딩이
+#: 일감 수만큼 붙는다. `pmap(initializer=…)` 이 프로세스당 한 번 부른다.
+_W = {}
+
+
+def init_worker(augmenter, user_audio_path=""):
+    """워커 하나를 차린다 — ONNX 임베딩 모델 · 증강기 · 사용자 녹음.
+
+    ⚠️ `ncpu=1` 을 **명시한다.** 워커를 16개 띄워 놓고 각자 스레드를 여러 개 쓰면
+       서로 코어를 뺏는다(oversubscription) — 병렬화가 **느려지는** 고전적 모양이다.
+    """
+    from openwakeword.utils import AudioFeatures
+    _W["af"] = AudioFeatures(ncpu=1)
+    _W["augmenter"] = augmenter
+    _W["ua"] = np.load(user_audio_path) if user_audio_path else None
+
+
+def _windows(rec, rng):
+    """일감 하나 → 창 리스트. **증강은 전부 `_aug()` 한 자리를 지난다.**"""
+    aug = _W["augmenter"]
+    if rec.kind == "clip":
+        a = _load(rec.ref)
+        return [to_window(v, rng, WIN_SEC) for v in _aug(aug, a, rng, rec.n)]
+    if rec.kind == "user":
+        # 발화 구간(에너지 높은 곳)만 골라 양성으로 쓴다 — 자리는 계획에서 정해졌다
+        seg = _W["ua"][rec.ref:rec.ref + int(SR * WIN_SEC)]
+        return [to_window(v, rng, WIN_SEC) for v in _aug(aug, seg, rng, rec.n)]
+    if rec.kind == "noise":
+        out = []
+        for _ in range(rec.n):
+            lvl = rng.uniform(0.0002, 0.02)
+            out.append(rng.normal(0, lvl, int(SR * WIN_SEC)).astype(np.float32))
+        return out
+    if rec.kind == "speech":
+        out = []
+        for _ in range(rec.n):
+            seg = aug.speech_negative(rng, WIN_SEC)
+            out.append(to_window(aug.one(seg, rng), rng, WIN_SEC))
+        return out
+    # 🚨 모르는 종류를 조용히 «창 0개» 로 넘기지 않는다. 그러면 학습셋이
+    #    말없이 작아지고 오류는 안 난다 — 이 저장소가 반복해서 겪은 모양이다.
+    raise ValueError(f"[train] 모르는 일감 종류: {rec.kind!r}")
+
+
+def cook(rec):
+    """일감 하나 → (양성/음성, 임베딩 행렬). **증강부터 임베딩까지 워커 안에서 끝낸다.**
+
+    🔑 창(2초 · 128KB)은 프로세스 경계를 **안 넘는다.** 넘기면 기본 설정에서
+       6,300 × 128KB = 800MB 를 직렬화하는데, 그게 병렬로 번 시간을 도로 먹는다.
+       넘어가는 것은 일감 한 줄이고 돌아오는 것은 임베딩(1536 float = 6KB)이다.
+    """
+    rng = np.random.default_rng(rec.seed)
+    return rec.label, extract_features(_windows(rec, rng), _W["af"])
+
+
+def loud_segments(user_audio_path):
+    """실제 녹음에서 **발화 구간의 시작 위치**만 고른다 (창은 워커가 뜬다).
+
+    계획을 세우려면 «몇 개인지»를 먼저 알아야 해서 여기만 부모가 한다.
+    numpy 슬라이스 몇 번이라 싸다 — 143초에 수십 ms 다.
+    """
+    ua = np.load(user_audio_path)
+    hop, win = int(SR * 0.25), int(SR * WIN_SEC)
+    starts = [st for st in range(0, max(1, len(ua) - win), hop)
+              if float(np.sqrt(np.mean(ua[st:st + win] ** 2))) > 0.006]
+    return len(ua) / SR, starts
+
+
+def build_dataset(user_audio_path=None, aug_per_clip=3, seed=0,
+                  augmenter=None, speech_negatives=0, jobs=1):
+    print("① 음성 합성 (이미 있으면 재사용)")
+    # 목소리가 14개라 전 조합은 양성 1400 · 음성 12950이다. 표본을 뽑아 쓴다 —
+    # `limit_combos`는 **무작위 균등 추출**이라 목소리가 골고루 섞인다(앞에서 자르지 않는다).
+    pos_paths = asyncio.run(synthesize_set(
+        POSITIVE_PHRASES, os.path.join(CACHE_DIR, "pos"), "pos", limit_combos=700))
+    neg_paths = asyncio.run(synthesize_set(
+        NEGATIVE_PHRASES, os.path.join(CACHE_DIR, "neg"), "neg", limit_combos=900))
+    print(f"  양성 클립 {len(pos_paths)} · 음성 클립 {len(neg_paths)}")
+
+    # ② 실제 녹음 (사용자 목소리) — 합성음 과적합을 막는 핵심.
+    #    계획을 세우려면 **몇 개인지 먼저** 알아야 해서 여기만 부모가 훑는다.
+    loud_starts = []
     if user_audio_path and os.path.exists(user_audio_path):
-        ua = np.load(user_audio_path)
-        print(f"③ 실제 녹음 추가: {len(ua)/SR:.1f}초")
-        # 발화 구간(에너지 높은 곳)만 골라 양성으로 쓴다
-        hop = int(SR * 0.25)
-        win = int(SR * WIN_SEC)
-        loud = []
-        for st in range(0, max(1, len(ua) - win), hop):
-            seg = ua[st:st + win]
-            if float(np.sqrt(np.mean(seg ** 2))) > 0.006:
-                loud.append(seg)
-        print(f"  발화 구간 {len(loud)}개 → 증강")
-        for seg in loud:
-            for v in aug(seg, aug_per_clip * 2):
-                pos_wins.append(to_window(v, rng, WIN_SEC))
+        secs, loud_starts = loud_segments(user_audio_path)
+        print(f"② 실제 녹음 추가: {secs:.1f}초 · 발화 구간 {len(loud_starts)}개")
     else:
-        print("③ 실제 녹음 없음 — 목소리 14개로 학습한다 "
+        print("② 실제 녹음 없음 — 목소리 14개로 학습한다 "
               "(2026-09-08 측정: 미학습 화자 98.1%. 녹음은 선택이다)")
 
-    # 녹음이 없을 때는 원래도 균형에 가까웠으므로(2100 : 2200) 아무 일도 하지 않는다.
-    _balance_negatives(len(pos_wins))
+    # ③ 일감을 **먼저 전부** 만든다 — 그래야 코어에 나눠 줄 수 있고,
+    #    «이번 학습이 창 몇 개짜리인가»를 시작할 때 말할 수 있다.
+    recipes = plan_dataset(pos_paths, neg_paths, loud_starts, aug_per_clip,
+                           speech_negatives, seed=seed,
+                           has_augmenter=augmenter is not None)
+    n_pos = sum(r.n for r in recipes if r.label == 1)
+    n_neg = sum(r.n for r in recipes if r.label == 0)
+    jobs = resolve_jobs(jobs, cap=len(recipes))
+    print(f"③ 증강 + 임베딩 — 창 {n_pos + n_neg}개 (양성 {n_pos} · 음성 {n_neg}) "
+          f"· 일감 {len(recipes)}개 · **{jobs} 코어**")
+    if jobs == 1:
+        print("   (한 코어다. `--jobs 0` 이면 전부 쓴다 — 결과는 같다)")
 
-    print(f"④ 임베딩 추출 (양성 {len(pos_wins)} · 음성 {len(neg_wins)})")
-    af = AudioFeatures()
     t0 = time.time()
-    Xp = extract_features(pos_wins, af, "양성")
-    Xn = extract_features(neg_wins, af, "음성")
-    print(f"  완료 {time.time()-t0:.0f}초")
+    # ⚠️ 녹음 구간이 없으면 **경로를 안 넘긴다.** 넘기면 워커 16개가 전부
+    #    `np.load` 를 하는데, 파일이 없으면 «일감이 아니라 워커가» 죽는다 —
+    #    쓰지도 않을 파일 때문에.
+    ua_path = user_audio_path if loud_starts else ""
+    done = pmap(cook, recipes, jobs=jobs, initializer=init_worker,
+                initargs=(augmenter, ua_path), label="일감")
+    el = time.time() - t0
+    print(f"  완료 {el:.0f}초 ({(n_pos + n_neg) / max(el, 1e-9):.0f} 창/초)")
 
-    X = np.vstack([Xp, Xn])
-    y = np.hstack([np.ones(len(Xp)), np.zeros(len(Xn))])
+    # 🔑 `pmap` 이 **일감 순서**로 돌려주므로 여기서 다시 정렬할 일이 없다 —
+    #    X 의 줄 순서가 코어 수에 안 달리는 자리가 그것이다.
+    Xp = [f for lab, f in done if lab == 1]
+    Xn = [f for lab, f in done if lab == 0]
+    X = np.vstack(Xp + Xn)
+    y = np.hstack([np.ones(sum(len(f) for f in Xp)),
+                   np.zeros(sum(len(f) for f in Xn))])
     return X, y
 
 
@@ -248,7 +373,7 @@ def train(X, y, seed=0):
     Xtr, Xte, ytr, yte = train_test_split(
         X, y, test_size=0.2, random_state=seed, stratify=y)
 
-    print(f"⑤ 학습 (학습 {len(Xtr)} · 검증 {len(Xte)})")
+    print(f"④ 학습 (학습 {len(Xtr)} · 검증 {len(Xte)})")
     clf = MLPClassifier(
         hidden_layer_sizes=(96, 32),
         activation="relu",
@@ -305,7 +430,7 @@ def save(clf, path, meta=None):
         trained_at=np.array(time.strftime("%Y-%m-%dT%H:%M:%S")),
     )
     size = os.path.getsize(path) / 1024
-    print(f"⑥ 저장: {path} ({size:.0f} KB)")
+    print(f"⑤ 저장: {path} ({size:.0f} KB)")
 
 
 #: 학습 결과의 **기본 저장 위치**. 런타임 모델(`MODEL_PATH`)이 아니다.
@@ -333,6 +458,9 @@ if __name__ == "__main__":
                          "(--augment corpus 일 때만). 0 이면 안 넣는다")
     ap.add_argument("--refresh-index", action="store_true",
                     help="말뭉치 파일 목록 캐시를 다시 만든다 (받는 중이었다면 필요하다)")
+    ap.add_argument("--jobs", type=int, default=0,
+                    help="몇 코어로 나눠 할까 (0=전부 · 1=한 코어). "
+                         "🔑 결과는 이 값에 안 달렸다 — 씨앗이 일감마다 따로다")
     ap.add_argument("--replace-runtime", action="store_true",
                     help="⚠️ 런타임 모델을 바로 덮어쓴다. 평가를 통과한 뒤에만 쓸 것")
     args = ap.parse_args()
@@ -348,7 +476,8 @@ if __name__ == "__main__":
 
     augmenter = make_augmenter(args.augment, refresh=args.refresh_index)
     X, y = build_dataset(args.user_audio or None, aug_per_clip=args.aug,
-                         augmenter=augmenter, speech_negatives=args.speech_neg)
+                         augmenter=augmenter, speech_negatives=args.speech_neg,
+                         jobs=args.jobs)
     clf = train(X, y)
     save(clf, out, meta={
         "augment": args.augment,
