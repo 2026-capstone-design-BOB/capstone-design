@@ -41,7 +41,7 @@ from core.logger import get_logger
 # 복합 명령 감지는 fast_path에 이미 있다(BL-15 때 만든 것). 여기서 다시 쓰지 않는다 —
 # 두 벌이 되면 한쪽만 고쳐진다. (core.fast_path는 core.logger 외에 아무것도 끌어오지 않는다)
 from core.fast_path import has_negation, is_compound_command
-from core.tool_result import tool_failed, tool_succeeded
+from core.tool_result import tool_failed, tool_succeeded, MARK_OK
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode
@@ -701,6 +701,42 @@ _SUCCESS_LIKE_RE = re.compile(
 #    사용자가 "안 됐는데"라고 해서야 다시 시도해 열렸다.
 #    도구가 거짓 성공을 보고하던 것(BL-12)과 **같은 계열의 결함**이다.
 _NOTHING_HAPPENED_MSG = "죄송해요, 방금 건 처리하지 못했어요. 다시 한 번 말씀해 주시겠어요?"
+
+
+def detect_fabricated_result(messages: list[AnyMessage]) -> Optional[str]:
+    """도구를 **하나도 안 부르고** 도구 결과처럼 답한 경우. (BL-61)
+
+    🚨 **2026-09-19 라이브 점검에서 실제로 나왔다.**
+
+        🎤 밝기 80% 해 줘
+        🤖 ✓ 밝기: 40% → 80%          ← 도구를 안 불렀다. 밝기는 40% 그대로였다
+        🎤 지금 밝기 알려줘
+        🤖 ✓ 현재 밝기는 80%입니다.     ← 기기를 읽은 적이 없다. 방금 제가 한 말을 되풀이한 것이다
+
+    로그가 증인이다 — 두 턴 다 `요청=없음 | 실행=없음 | 사유=잡담` 이다.
+    **LLM 이 도구 결과 문장을 통째로 지어냈다.**
+
+    🔑 **`✓` 는 장식이 아니라 계약이다**([`core/tool_result.py`](tool_result.py)) —
+    «도구가 의도한 일을 해냈다»는 뜻이고, **도구만 쓸 수 있는 표시**다.
+    그러니 *«이번 턴에 도구가 0개인데 응답이 `✓` 로 시작한다»* 는 **지어낸 것**이다.
+    문구를 판정하지 않는다(G-12가 동사 목록으로 실패한 자리다) — **마커와 도구 수**만 본다.
+
+    ⚠️ **캐시 히트에는 부르지 말 것.** 빠른 경로는 도구를 그래프 **밖에서** 돌려
+      (절대규칙 2) 여기서는 «도구 0개»로 보인다 — `detect_watch_lie` 와 같은 이유다.
+
+    ⚠️ **이 그물은 «왜 못 했는지»를 모른다.** 그래서 [BL-60](../docs/BACKLOG.md)
+      (읽는 도구가 아예 없다)을 대신하지 못한다. 거짓말을 막을 뿐, **답을 주지는 않는다.**
+    """
+    if turn_tool_call_count(messages) > 0:
+        return None
+    turn = current_turn_messages(messages)
+    for m in reversed(turn):
+        if isinstance(m, AIMessage):
+            text = _msg_text(m).lstrip()
+            if text.startswith(MARK_OK):
+                return _NOTHING_HAPPENED_MSG
+            return None
+    return None
 
 
 def verify_output(messages: list[AnyMessage]) -> Optional[str]:
@@ -1794,6 +1830,17 @@ def build_pluiz_graph(
                else detect_watch_lie(state["messages"], watching=is_watching()))
         if lie is not None:
             return _emit(lie)
+
+        # 도구를 하나도 안 부르고 **도구 결과처럼** 답한 경우 (BL-61).
+        # 🚨 라이브에서 «✓ 밝기: 40% → 80%» 가 도구 없이 나갔다 — 밝기는 안 바뀌었다.
+        #   `✓` 는 도구만 쓸 수 있는 표시다(tool_result.py 의 계약).
+        # ⚠️ 캐시 히트는 위와 같은 이유로 제외한다.
+        fake = (None if state.get("decision") == "fast_hit"
+                else detect_fabricated_result(state["messages"]))
+        if fake is not None:
+            _log.warning("[BL-61] 도구 0개인데 «%s» 로 시작하는 응답 — 지어낸 것으로 보고 막는다",
+                         MARK_OK)
+            return _emit(fake)
 
         corrected = verify_output(state["messages"])
         if corrected is not None:
