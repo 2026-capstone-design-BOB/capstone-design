@@ -272,11 +272,11 @@
       }
     ],
     "response_template": "✓ 볼륨을 높였습니다.",
-    "hit_count": 16,
+    "hit_count": 17,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-19T20:05:10",
+    "last_used": "2026-09-19T20:24:16",
     "imported": false
   },
   "소리 올려줘": {
@@ -368,11 +368,11 @@
       }
     ],
     "response_template": "✓ 화면 밝기를 높였습니다.",
-    "hit_count": 4,
+    "hit_count": 5,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-19T20:04:21",
+    "last_used": "2026-09-19T20:22:52",
     "imported": false
   },
   "화면 밝게 해줘": {
@@ -400,11 +400,11 @@
       }
     ],
     "response_template": "✓ 화면 밝기를 낮췄습니다.",
-    "hit_count": 1,
+    "hit_count": 2,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-12T12:35:39",
+    "last_used": "2026-09-19T20:23:32",
     "imported": false
   },
   "화면 어둡게 해줘": {
