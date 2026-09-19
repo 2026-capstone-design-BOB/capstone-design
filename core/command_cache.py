@@ -135,6 +135,10 @@ LEARNABLE_TOOLS = frozenset([
     "open_app", "close_app", "maximize_window", "minimize_window", "show_desktop",
     "volume_up", "volume_down", "mute_toggle", "brightness_up", "brightness_down",
     "take_screenshot", "get_battery_status", "get_current_time", "get_running_apps",
+    # 🆕 읽는 도구 (BL-60). 파라미터가 없고 아무것도 안 바꾼다.
+    # ⚠️ `set_brightness` 는 **안 넣는다** — `level` 이 자유 파라미터라
+    #   `set_volume` 과 같은 이유로 빠진다(캐시는 파라미터를 저장하지 않는다).
+    "get_brightness", "get_volume",
     "open_recent_file",
 ])
 # 이 도구들의 args 중 '자유 파라미터'로 간주해 학습을 막을 키
@@ -172,6 +176,15 @@ SEED_DATA: list[tuple[str, list, str]] = [
     ("화면 밝게 해줘",     [{"name": "brightness_up", "args": {}}],                  "✓ 화면 밝기를 높였습니다."),
     ("밝기 내려줘",        [{"name": "brightness_down", "args": {}}],                "✓ 화면 밝기를 낮췄습니다."),
     ("화면 어둡게 해줘",   [{"name": "brightness_down", "args": {}}],                "✓ 화면 밝기를 낮췄습니다."),
+    # 🆕 조회 (BL-60) — «묻기만 했는데 바뀌던» 자리의 나머지 절반이다.
+    # 🔑 게이트가 «조작으로 가는 길»을 막고, 이 시드가 «조회로 가는 길»을 연다.
+    #   시드가 없으면 매번 LLM 을 타야 답이 나온다(2.5초).
+    ("밝기 얼마야",        [{"name": "get_brightness", "args": {}}],                 "✓ 지금 화면 밝기를 알려드렸습니다."),
+    ("밝기 알려줘",        [{"name": "get_brightness", "args": {}}],                 "✓ 지금 화면 밝기를 알려드렸습니다."),
+    ("볼륨 얼마야",        [{"name": "get_volume", "args": {}}],                     "✓ 지금 볼륨을 알려드렸습니다."),
+    ("볼륨 알려줘",        [{"name": "get_volume", "args": {}}],                     "✓ 지금 볼륨을 알려드렸습니다."),
+    # 🔑 «음소거됐어?» 의 답은 `get_volume` 이다 — 이 도구가 음소거 상태를 같이 말한다.
+    ("음소거됐어",         [{"name": "get_volume", "args": {}}],                     "✓ 지금 음소거 상태를 알려드렸습니다."),
     ("스크린샷 찍어줘",    [{"name": "take_screenshot", "args": {}}],                "✓ 스크린샷을 저장했습니다."),
     ("화면 캡처해줘",      [{"name": "take_screenshot", "args": {}}],                "✓ 스크린샷을 저장했습니다."),
     ("지금 몇 시야",       [{"name": "get_current_time", "args": {}}],               "현재 시각을 확인합니다."),
@@ -280,6 +293,19 @@ ACTION_PATTERNS: list[tuple[str, list[str]]] = [
                           "볼륨 키", "소리 키", "키워", "키우"]),                     # P4-4
     ("volume_down",      ["볼륨 내", "소리 내", "볼륨 낮", "소리 낮", "볼륨 작게", "소리 작게",
                           "볼륨 줄", "소리 줄", "줄여", "줄이"]),                     # P4-4
+    # 🆕 조회 동작 (BL-60). 🚨 **올리기·내리기 뒤에 온다.**
+    #   앞에 두면 *"소리 얼마나 줄여줘"* 가 「볼륨 얼마」에 먼저 걸려 **명령이
+    #   조회가 된다.** 뒤에 두면 「줄여」가 먼저 걸려 제대로 내려간다.
+    #   (밝기가 볼륨보다 앞에 있는 것과 같은 성질의 순서다)
+    ("brightness_get",   ["밝기 얼마", "밝기 몇", "밝기 알려", "밝기 어때",
+                          "밝기 확인", "밝기 상태", "밝기 뭐"]),
+    ("volume_get",       ["볼륨 얼마", "소리 얼마", "볼륨 몇", "소리 몇",
+                          "볼륨 알려", "소리 알려", "볼륨 어때", "소리 어때",
+                          "볼륨 확인", "볼륨 상태", "볼륨 뭐"]),
+    # 🚨 **`mute` 보다 먼저.** 「음소거」가 `mute` 트리거라 뒤에 두면
+    #   *"음소거됐어?"* 가 **음소거를 토글한다** — 상태를 물었는데 소리가 꺼진다.
+    ("mute_get",         ["음소거됐", "음소거돼", "음소거상태", "음소거중",
+                          "음소거야", "음소거인가", "음소거니", "음소거 상태"]),
     ("mute",             ["음소거"]),
     ("screenshot",       ["스크린샷", "화면 캡처", "캡처해줘", "찍어"]),   # P4-4 "찍어"
     ("time",             ["몇 시", "몇시", "현재 시간", "지금 시간"]),
@@ -402,6 +428,83 @@ _DEIXIS_TOKENS = frozenset([
     "걔", "얘", "쟤", "거기", "여기", "저기",
 ])
 
+# ── BL-60: 조회 게이트 — **묻기만 했는데 상태가 바뀌던 것** ────────
+#
+# 2026-09-19 라이브 점검에서 *"밝기 알려줘"* 한 마디에 **화면이 70%로 바뀌었다.**
+#
+#   '밝기 알려줘'  ↔  '밝기 올려줘'   ← 한 글자 차이다. 유사도 **0.83**
+#
+# 그리고 `SIMILARITY_THRESHOLD` 가 **정확히 0.83**이다. 「알」과 「올」 하나로
+# 조회가 조작이 된다. 볼륨도 같고(`'볼륨 알려줘'` → `volume_up`),
+# 🚨 **«음소거됐어?» 는 `mute_toggle` 을 부른다** — 상태를 물었는데 **소리가 꺼진다.**
+# (이건 백로그에도 없던 것이고, 셋 중 가장 나쁘다 — 사용자가 묻기만 했다)
+#
+# ## 왜 «조회 표지» 목록만으로는 안 되나
+#
+# 「알려줘」가 있으면 캐시를 포기하는 식으로 만들면 *"시간 알려줘"*·*"배터리 알려줘"* 가
+# 같이 죽는다. **그 둘은 원래 잘 되고 있었다** — 읽는 도구로 정확히 간다.
+# 그래서 발화만 보지 않고 **«묻는 말인데 걸린 도구가 상태를 바꾸는가»** 를 본다.
+# 판정에 도구가 들어가므로 게이트는 Stage 0 이 아니라 **매칭 뒤**에 놓인다.
+#
+# ## 🚨 목록을 «조작 도구»가 아니라 «조회 도구»로 적는 이유
+#
+# 여집합으로 두면 **도구가 하나 늘 때마다 조용히 샌다**(`graph.py` 의
+# `READONLY_RETRY_TOOLS` 가 같은 이유로 화이트리스트다). 여기서 빠뜨렸을 때
+# 어느 쪽이 안전한지 보면 답이 나온다:
+#
+#   조작 도구를 빠뜨리면  → 묻는 말이 **실행된다.** 되돌려야 한다
+#   조회 도구를 빠뜨리면  → 묻는 말이 **LLM 으로 간다.** 2.5초 느릴 뿐 답은 맞다
+#
+# 그래서 **모르는 도구는 조작으로 본다.** 오판의 방향이 안전한 쪽이다
+# (BL-27·BL-50이 정한 비대칭과 같다).
+_QUERY_SAFE_TOOLS = frozenset([
+    "get_brightness", "get_volume",
+    "get_battery_status", "get_current_time", "get_running_apps",
+    "find_file", "list_directory",
+])
+
+#: 「줄여」·「올려」처럼 **바꾸라는 말**이 실제로 들어 있으면 그건 묻는 게 아니다.
+#
+# 🚨 **없으면 오프라인에서 명령이 죽는다.** *"소리 얼마나 줄여줘"* 는 「얼마」 때문에
+#   조회로 읽혀 캐시를 포기하는데, 온라인이면 LLM 이 받아 주지만 **오프라인이면
+#   거기서 끝난다** — 오프라인 캐시 히트는 도는데 미스는 LLM 을 못 부른다(BL-46).
+#   «느려질 뿐 틀리지 않는다»가 오프라인에서는 성립하지 않는 자리다.
+#
+# 🔑 여기 빠뜨린 동작은 **게이트가 그대로 걸린다**(= LLM 으로 간다). 안전한 쪽이라
+#   화이트리스트로 적는다 — `_QUERY_SAFE_TOOLS` 와 같은 이유다.
+# ⚠️ `mute` 는 **일부러 뺐다.** 「음소거」는 명사라 *"음소거됐어?"* 에도 들어 있어서,
+#   넣으면 상태를 묻는 말이 토글로 새는 길이 다시 열린다(`mute_get` 이 앞에 있어
+#   대부분 막히지만, 면제까지 주면 두 겹이 한꺼번에 풀린다).
+_COMMANDING_ACTIONS = frozenset([
+    "brightness_up", "brightness_down", "volume_up", "volume_down",
+    "open", "close", "maximize", "minimize", "show_desktop", "screenshot",
+])
+
+#: 「올려」·「줄여」처럼 **상태를 바꾸라는 동사**. `_match_action` 이 조회 동작을
+#: 건너뛸지 정할 때 본다. ⚠️ 여기 빠뜨리면 조회가 명령을 가로챌 수 있으므로
+#: (위 `_match_action` 주석의 «밝기 얼마나 올려줘») **늘리는 쪽이 안전하다.**
+_CHANGE_VERBS = ("올려", "올리", "높여", "높이", "키워", "키우", "크게",
+                 "내려", "내리", "낮춰", "낮추", "줄여", "줄이", "작게",
+                 "밝게", "밝혀", "어둡게", "맞춰", "설정")
+
+#: «묻는 말»의 표지. 공백을 지운 문자열에서 찾는다.
+#
+# ⚠️ **양방향으로 봐야 한다.** 의문형이지만 명령인 말(*"볼륨 30으로 맞춰 줄래"*)을
+#   같이 막으면 멀쩡한 명령이 죽는다. 그래서 「줄래」·「해줄래」 같은 **요청 어미는
+#   넣지 않는다** — 저건 묻는 게 아니라 부탁이다.
+# ⚠️ 「확인」은 넣되 「확인해」·「확인좀」으로 좁힌다. 「배터리 확인」은 이미 조회
+#   트리거이고 읽는 도구로 가므로 이 게이트에 걸려도 통과한다.
+_QUERY_MARKERS = (
+    "얼마",                                   # 얼마야 · 얼마나 · 얼마예요
+    "몇%", "몇퍼", "몇프로", "몇단계",
+    "알려줘", "알려주",
+    "어때", "어떤가", "어떻게돼",
+    "뭐야", "뭐예요", "뭔데",
+    "상태",
+    "확인해", "확인좀",
+    "돼있", "되있", "됐어", "됐나",            # 「음소거됐어?」
+)
+
 # ── BL-27: 학습 자격 — **발화** 쪽 조건 ───────────────────────────
 #
 # `_is_learnable()`은 **도구**가 화이트리스트인지만 봤다. 발화가 명령의 꼴인지는
@@ -475,13 +578,55 @@ class CommandCache:
         return None
 
     def _match_action(self, text_ns: str) -> Optional[tuple[str, str]]:
-        """(action 키, 실제로 걸린 트리거) — 우선순위 순서대로. 둘 다 공백 제거된 값."""
+        """(action 키, 실제로 걸린 트리거) — 우선순위 순서대로. 둘 다 공백 제거된 값.
+
+        🚨 **조회 동작(`*_get`)은 «바꾸라는 말»이 같이 있으면 안 걸린다** (BL-60).
+          *"밝기 얼마나 올려줘"* 는 「밝기얼마」를 품고 있어서 그냥 두면 **밝기를
+          읽어 주고 만다** — 올려 달라고 했는데. 볼륨 쪽은 「줄여」가 조회보다
+          **앞에** 있어 우연히 안 걸렸고, 밝기는 「밝기올」이 「밝기 얼마나 올려」에
+          안 맞아서 드러났다. **순서로는 못 막는 축이라 여기서 본다.**
+          (게이트의 `_COMMANDING_ACTIONS` 면제와 **같은 생각**이다 —
+           바꾸라는 말이 있으면 묻는 게 아니다)
+        """
+        has_change = any(v in text_ns for v in _CHANGE_VERBS)
         for action_key, triggers in ACTION_PATTERNS:
+            if has_change and action_key.endswith("_get"):
+                continue
             for trigger in triggers:
                 t = trigger.replace(" ", "")
                 if t in text_ns:
                     return (action_key, t)
         return None
+
+    # ── BL-60: 조회 게이트 ────────────────────────────────────────
+
+    def has_query_marker(self, text: str) -> bool:
+        """**묻는 말**인가. (`has_deixis`·`has_contrast_marker`와 같은 자리)"""
+        return any(m in self._normalize(text).replace(" ", "")
+                   for m in _QUERY_MARKERS)
+
+    def query_conflict(self, user_input: str, tool_calls: list) -> bool:
+        """묻는 말인데 **상태를 바꾸는 도구**가 걸렸는가. (BL-60)
+
+        🔑 **발화만 보지도, 도구만 보지도 않는다.**
+          발화만 보면 *"시간 알려줘"* 가 같이 죽고(읽는 도구로 잘 가고 있었다),
+          도구만 보면 *"밝기 올려줘"* 가 막힌다(그건 조작이 맞다).
+          둘이 **같이** 성립할 때가 «묻기만 했는데 바뀐다» 이고, 그때만 막는다.
+
+        ⚠️ 막혀서 가는 곳이 **LLM**이라는 게 핵심이다 — 거기에는 이제 읽는 도구가
+          있다(`get_brightness`·`get_volume`). 게이트와 도구는 **한 쌍**이라
+          한쪽만 있으면 «안 바뀌지만 답도 못 하는» 상태가 된다.
+        """
+        if not tool_calls:
+            return False
+        if not self.has_query_marker(user_input):
+            return False
+        # «바꾸라는 말»이 실제로 있으면 묻는 게 아니다 — *"소리 얼마나 줄여줘"*
+        act = self._match_action(self._normalize(user_input).replace(" ", ""))
+        if act and act[0] in _COMMANDING_ACTIONS:
+            return False
+        return any((c.get("name", "") or "") not in _QUERY_SAFE_TOOLS
+                   for c in tool_calls)
 
     def _extract_entity(self, text: str) -> Optional[str]:
         """텍스트에서 entity 키 추출. 더 긴 표면형 우선."""
@@ -738,6 +883,12 @@ class CommandCache:
         intent = self._extract_intent(normalized)
         if intent and intent in self._intent_index:
             matched = self._intent_index[intent]
+            # Stage 0-c: 조회 게이트 (BL-60) — **매칭 뒤**에 놓인다.
+            # 판정에 «걸린 도구»가 들어가므로 앞의 두 게이트처럼 입구에 못 둔다.
+            if self.query_conflict(normalized, matched.tool_calls):
+                print(f"[CommandCache] [BL-60] 묻는 말인데 조작 도구 → 캐시 포기, "
+                      f"LLM으로: {normalized!r} ↛ {matched.pattern!r}")
+                return None
             print(f"[CommandCache] [S1-intent] {intent} → {matched.pattern!r}")
             return matched, 0.90
 
@@ -751,6 +902,13 @@ class CommandCache:
                 best_entry = entry
 
         if best_score >= SIMILARITY_THRESHOLD and best_entry is not None:
+            # 🚨 **여기가 실제로 샌 자리다.** '밝기 알려줘' ↔ '밝기 올려줘' 가 0.83 이고
+            #    임계가 정확히 0.83 이다 — 한 글자 차이로 조회가 조작이 됐다.
+            if self.query_conflict(normalized, best_entry.tool_calls):
+                print(f"[CommandCache] [BL-60] 묻는 말인데 조작 도구 → 캐시 포기, "
+                      f"LLM으로: {normalized!r} ↛ {best_entry.pattern!r} "
+                      f"(score={best_score:.2f})")
+                return None
             print(f"[CommandCache] [S2-sim] score={best_score:.2f} → {best_entry.pattern!r}")
             return best_entry, best_score
 
@@ -1166,6 +1324,14 @@ class CommandCache:
         reason = self.is_learnable_utterance(key)      # BL-27: 발화 쪽 자격
         if reason is not None:
             print(f"[CommandCache] [BL-27] 학습 거부({reason}): {key!r}")
+            return False
+        # L5 — 묻는 말을 **조작 도구**로 굳히지 않는다. (BL-60)
+        # 🔑 `is_learnable_utterance()` 안에 못 넣는 이유는 저 함수가 **발화만** 보기
+        #    때문이다. 여기는 도구를 같이 봐야 한다 — '밝기 알려줘' → `get_brightness`
+        #    는 **학습해야 맞고**, `brightness_up` 은 굳으면 안 된다.
+        if self.query_conflict(key, tool_calls):
+            names = ", ".join(c.get("name", "") for c in tool_calls)
+            print(f"[CommandCache] [BL-60] 학습 거부(L5:묻는 말↛조작 도구 {names}): {key!r}")
             return False
         now = _now_iso()
         if key in self._cache:                  # 이미 알고 있음 → 사용 기록만 갱신

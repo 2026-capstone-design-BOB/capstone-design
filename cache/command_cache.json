@@ -722,5 +722,117 @@
     "learned_at": "2026-09-19T19:59:21",
     "last_used": "2026-09-19T19:59:21",
     "imported": false
+  },
+  "밝기 얼마야": {
+    "pattern": "밝기 얼마야",
+    "tool_calls": [
+      {
+        "name": "get_brightness",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 지금 화면 밝기를 알려드렸습니다.",
+    "hit_count": 1,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "2026-09-19T22:33:11",
+    "imported": false
+  },
+  "밝기 알려줘": {
+    "pattern": "밝기 알려줘",
+    "tool_calls": [
+      {
+        "name": "get_brightness",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 지금 화면 밝기를 알려드렸습니다.",
+    "hit_count": 0,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "",
+    "imported": false
+  },
+  "볼륨 얼마야": {
+    "pattern": "볼륨 얼마야",
+    "tool_calls": [
+      {
+        "name": "get_volume",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 지금 볼륨을 알려드렸습니다.",
+    "hit_count": 0,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "",
+    "imported": false
+  },
+  "볼륨 알려줘": {
+    "pattern": "볼륨 알려줘",
+    "tool_calls": [
+      {
+        "name": "get_volume",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 지금 볼륨을 알려드렸습니다.",
+    "hit_count": 0,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "",
+    "imported": false
+  },
+  "음소거됐어": {
+    "pattern": "음소거됐어",
+    "tool_calls": [
+      {
+        "name": "get_volume",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 지금 음소거 상태를 알려드렸습니다.",
+    "hit_count": 0,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "",
+    "imported": false
+  },
+  "지금 밝기는": {
+    "pattern": "지금 밝기는",
+    "tool_calls": [
+      {
+        "name": "get_brightness",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 실행했어요.",
+    "hit_count": 1,
+    "is_seed": false,
+    "source": "dynamic",
+    "learned_at": "2026-09-19T22:33:25",
+    "last_used": "2026-09-19T22:33:25",
+    "imported": false
+  },
+  "소리는 지금 얼마야": {
+    "pattern": "소리는 지금 얼마야",
+    "tool_calls": [
+      {
+        "name": "get_volume",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 실행했어요.",
+    "hit_count": 1,
+    "is_seed": false,
+    "source": "dynamic",
+    "learned_at": "2026-09-19T22:33:49",
+    "last_used": "2026-09-19T22:33:49",
+    "imported": false
   }
 }

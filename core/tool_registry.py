@@ -44,9 +44,12 @@ def get_all_tools() -> List[BaseTool]:
         volume_up,
         volume_down,
         set_volume,
+        get_volume,
         mute_toggle,
         brightness_up,
         brightness_down,
+        set_brightness,
+        get_brightness,
         take_screenshot,
         get_battery_status,
         get_current_time,
@@ -100,6 +103,12 @@ def get_all_tools() -> List[BaseTool]:
         mute_toggle,
         brightness_up,
         brightness_down,
+        set_brightness,
+        # 🔑 **읽는 도구** — «묻기만 했는데 값이 바뀌던» 결함의 나머지 절반이다
+        #   (BL-60). 캐시 쪽 게이트만 달면 «안 바뀌지만 여전히 답을 못 하는» 상태가
+        #   되고, 이것만 더하면 캐시가 먼저 채 가서 여기까지 오지도 못한다. **한 쌍이다.**
+        get_volume,
+        get_brightness,
         take_screenshot,
         get_battery_status,
         get_current_time,

@@ -227,6 +227,25 @@ def set_volume(level: int) -> str:
     return _readback("볼륨", before, level, _get_volume, eul_reul="을")
 
 
+@tool
+def get_volume() -> str:
+    """지금 볼륨이 몇 퍼센트인지, 음소거 상태인지 알려줍니다. 볼륨을 바꾸지 않습니다."""
+    # 🚨 **«묻는 말»에 답할 도구가 없어서 생긴 결함이다** ([BL-60](../docs/BACKLOG.md)).
+    #   예전에는 *"지금 볼륨 얼마야"* 가 도구까지 못 가고 LLM 의 **잡담**으로 끝났고,
+    #   그러다 «✓ 볼륨: 40% → 80%» 를 **지어내기까지 했다**(BL-61).
+    #   지어내는 것은 그물로 막았지만 **답은 여전히 없었다.** 그 자리가 여기다.
+    level = _get_volume()
+    if level < 0:
+        # ⚠️ 읽기 도구에서는 «못 읽음»이 **실패가 맞다.** 설정 도구(`_readback`)에서
+        #   «못 읽음»을 실패로 안 치는 것과 반대인데, 이유가 다르다 — 저쪽은 «일은
+        #   됐고 확인만 못 한 것»이고, 여기는 **일 자체가 «읽는 것»** 이다.
+        return "✗ 이 PC는 볼륨 값을 읽지 못해요."
+    muted = _get_mute()
+    if muted == 1:
+        return f"✓ 지금 볼륨은 {level}%이고, 음소거 상태예요."
+    return f"✓ 지금 볼륨은 {level}%예요."
+
+
 def _get_mute() -> int:
     """음소거 상태. 1=음소거 · 0=아님 · -1=읽을 수 없음."""
     ep = _endpoint_volume()
@@ -379,6 +398,39 @@ def brightness_down(amount: int = 10) -> str:
     if not _set_brightness(new_level):
         return "⚠️ 밝기를 바꾸지 못했어요. 이 PC가 밝기 조절을 지원하지 않을 수 있어요."
     return _readback("밝기", current, new_level, _get_brightness, eul_reul="를")
+
+
+@tool
+def set_brightness(level: int) -> str:
+    """
+    화면 밝기를 특정 값으로 설정합니다.
+    level: 0-100 사이의 밝기 값
+    """
+    # 볼륨에는 `set_volume` 이 있는데 밝기에는 **없었다** — *"밝기 50으로 해줘"* 가
+    # 갈 곳이 없어 `brightness_up/down` 을 여러 번 부르거나 아무것도 안 됐다.
+    if not 0 <= level <= 100:
+        return f"✗ 밝기는 0에서 100 사이 값이어야 합니다. (입력: {level})"
+    before = _get_brightness()
+    if not _set_brightness(level):
+        return "⚠️ 밝기를 바꾸지 못했어요. 이 PC가 밝기 조절을 지원하지 않을 수 있어요."
+    return _readback("밝기", before, level, _get_brightness, eul_reul="를")
+
+
+@tool
+def get_brightness() -> str:
+    """지금 화면 밝기가 몇 퍼센트인지 알려줍니다. 밝기를 바꾸지 않습니다."""
+    level = _get_brightness()
+    if level >= 0:
+        return f"✓ 지금 화면 밝기는 {level}%예요."
+    # 🚨 **기억을 «지금 값»이라고 말하지 않는다.** `_last_brightness` 는 «우리가 마지막에
+    #   쓴 값»이지 측정치가 아니다. 그걸 «지금 40%예요» 라고 하면 [BL-61](../docs/BACKLOG.md)
+    #   (도구를 안 부르고 결과를 지어낸 것)과 **같은 종류의 거짓말**이 된다 —
+    #   다른 점은 지어낸 주체가 LLM 이 아니라 우리라는 것뿐이다.
+    #   그래서 ✗ 로 답하고, 기억은 **기억이라고 이름 붙여** 덧붙인다.
+    if _last_brightness is not None:
+        return (f"✗ 이 PC는 밝기를 읽지 못해요. 마지막으로 제가 {_last_brightness}%로 "
+                f"맞춘 적은 있지만, 그 뒤에 바뀌었을 수 있어서 지금 값이라고는 못 해요.")
+    return "✗ 이 PC는 화면 밝기를 읽지 못해요."
 
 
 # ── 시스템 정보 ───────────────────────────────────────────────────
