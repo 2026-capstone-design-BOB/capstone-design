@@ -257,6 +257,14 @@ def merge_cache_entries(current: dict, incoming: dict, cache,
             rejected.append((pattern, "학습 대상 도구가 아님"))
             continue
 
+        # ③ 조회 게이트 (BL-60) — 역시 learn()이 쓰는 것과 **같은 함수**
+        # 🚨 ①이 못 막는다. `is_learnable_utterance()` 는 **발화만** 보는데,
+        #   «밝기 알려줘 → brightness_up» 이 나쁜 이유는 발화가 아니라 **짝**이다.
+        #   이 줄이 없으면 가져오기가 BL-60 게이트의 우회로가 된다(①과 같은 논리).
+        if cache.query_conflict(pattern, calls):
+            rejected.append((pattern, "L5:묻는 말↛조작 도구"))
+            continue
+
         key = cache._normalize(pattern)
         existing = current.get(pattern) or current.get(key)
         if existing:

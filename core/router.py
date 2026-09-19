@@ -48,15 +48,25 @@ _ROUTER_MAP_SIMPLE = re.compile(
 _ROUTER_FOLDER = re.compile(
     r'^(?:(바탕화면|데스크탑|다운로드|문서|사진)에\s+)?(.+?)\s+(?:폴더|디렉토리)\s+(?:만들어\s*줘|만들어|생성\s*해\s*줘|생성해)\s*$'
 )
-_ROUTER_VOLUME = re.compile(
-    r'볼륨\s*(\d+)\s*(?:%로|%|퍼센트|으로|로)?\s*(?:설정\s*해\s*줘|설정해|맞춰\s*줘|맞춰|해\s*줘)?\s*$'
-)
+#: «숫자 + 단위 + 조사 + 맺음말» — 볼륨과 밝기가 **같은 꼴**이라 한 곳에 적는다.
+#:
+#: 🚨 따로 적어 두면 한쪽만 고쳐진다. 실제로 그랬다 — 밝기 쪽을 만들며 재 보니
+#:   «볼륨 30 퍼센트로» 가 **볼륨에서만 빠져 있었다**(「퍼센트」 뒤의 「로」를 못 먹는다).
+#:   이 저장소가 반복해서 데인 «같은 사실이 두 곳에» 의 작은 판본이다.
+_LEVEL_TAIL = (r'\s*(\d+)\s*(?:%|퍼센트|프로)?\s*(?:으로|로)?\s*'
+               r'(?:설정\s*해\s*줘|설정해|맞춰\s*줘|맞춰|해\s*줘|해)?\s*$')
+
+_ROUTER_VOLUME = re.compile(r'볼륨' + _LEVEL_TAIL)
 _ROUTER_VOL_UP = re.compile(
     r'^볼륨\s*(\d+)?\s*(?:정도만?|만큼|씩|만)?\s*(?:올려|높여|크게)\s*(?:줘|달라고|줄래|해\s*줘)?\s*$'
 )
 _ROUTER_VOL_DOWN = re.compile(
     r'^볼륨\s*(\d+)?\s*(?:정도만?|만큼|씩|만)?\s*(?:내려|줄여|작게)\s*(?:줘|달라고|줄래|해\s*줘)?\s*$'
 )
+#: 🆕 `_ROUTER_VOLUME` 의 밝기 판본 (BL-60). 볼륨에는 있는데 밝기에는 없었다.
+#: ⚠️ **조회 표현을 안 받는다** — 「알려줘」·「얼마」는 이 정규식에 없고, 숫자가
+#:   반드시 있어야 한다. *"밝기 알려줘"* 가 여기로 새면 묻는 말이 화면을 바꾼다.
+_ROUTER_BRIGHTNESS = re.compile(r'^밝기' + _LEVEL_TAIL)
 _ROUTER_MAXIMIZE = re.compile(r'^(.+?)\s+최대화\s*(?:해\s*줘|해달라고|해|줄래)?\s*$')
 _ROUTER_MINIMIZE = re.compile(r'^(.+?)\s+최소화\s*(?:해\s*줘|해달라고|해|줄래)?\s*$')
 
@@ -136,6 +146,18 @@ def route_deterministic(user_input: str) -> Optional[str]:
             return str(volume_down.invoke({"amount": amount}))
         except Exception as e:
             _log.error("[라우터] 실행=실패 | 분기=volume_down | %s: %s", type(e).__name__, e)
+
+    # 7-b. set_brightness
+    m = _ROUTER_BRIGHTNESS.search(text)
+    if m:
+        level = int(m.group(1))
+        if 0 <= level <= 100:
+            try:
+                from tools.system import set_brightness
+                return str(set_brightness.invoke({"level": level}))
+            except Exception as e:
+                _log.error("[라우터] 실행=실패 | 분기=set_brightness | %s: %s",
+                           type(e).__name__, e)
 
     # 8. maximize_window
     m = _ROUTER_MAXIMIZE.search(text)

@@ -301,7 +301,8 @@ print("[6] 도구 등록 · 라우팅 안내")
 from core.tool_registry import get_all_tools
 names = [t.name for t in get_all_tools()]
 check("get_weather가 등록돼 있다", "get_weather" in names, f"→ {len(names)}개")
-check("도구가 41개다", len(names) == 41, f"→ {len(names)}개")
+# 🆕 2026-09-19: 41 → 44 (`set_brightness` · `get_volume` · `get_brightness` — BL-60)
+check("도구가 44개다", len(names) == 44, f"→ {len(names)}개")
 
 doc = (get_weather.description or "")
 check("설명이 «날씨는 항상 이 도구»라고 못박는다", "항상 이 도구" in doc, f"→ {doc[:80]}")
