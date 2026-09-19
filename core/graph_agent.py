@@ -145,6 +145,34 @@ from core.net import (                                        # noqa: E402
 
 _TIMEOUT_MSG = "처리가 너무 오래 걸려서 중단했어요. 조금 더 간단하게 말씀해 주시겠어요?"
 
+# 🚨 **예외 원문을 사용자에게 읽어 주지 않는다** (감사 G-14).
+#
+# 예전에는 `f"명령 처리 중 오류가 발생했어요: {exc}"` 였다. 예외 문자열에는
+# **길이 상한이 없고**, 이 답은 **TTS 로도 그대로 간다** — Gemini 400 에러 한 번이면
+# **영어 수백 자가 낭독된다.** 그리고 예외 메시지에는 URL·경로·토큰이 실릴 수 있는데
+# 그쪽은 4층 마스킹의 사각이었다(감사 G-13).
+#
+# 🔑 **원문은 로그로 간다.** 바로 아래 `_log.warning` 이 `예외=타입: 원문` 을 남긴다 —
+#   사람이 되짚을 곳은 거기다. `core/command_cache._verdict` 도 같은 규칙이다.
+_ERROR_MSG = "명령을 처리하다 문제가 생겼어요. 다시 말씀해 주시겠어요?"
+
+
+def _mask_out(text: str) -> str:
+    """나가는 말에서 주민번호·카드번호·API키를 가린다. (4층 · 감사 G-13)
+
+    ⚠️ **마스킹이 터져도 턴을 죽이지 않는다** — 다만 **조용히 넘어가지도 않는다.**
+      여기서 실패하면 **가리지 않은 문장이 그대로 나간다.** 예전엔 `print` 였다.
+    """
+    if not text:
+        return text
+    try:
+        from core.security import mask_sensitive_output
+        return mask_sensitive_output(text)
+    except Exception as e:                                    # noqa: BLE001
+        _log.error("[마스킹] 실패 — **가리지 않은 채로 나간다** | %s: %s",
+                   type(e).__name__, e)
+        return text
+
 # 🚨 **이 문구가 거짓 약속을 하고 있었다 (2026-09-11 실기).** 예전 문구는
 #   *"앱 실행, 볼륨 조절 같은 기본 명령은 오프라인에서도 쓸 수 있어요!"* 였는데,
 #   사용자가 곧바로 *"메모장 열어줘"* 를 했더니 **안 됐다.**
@@ -507,7 +535,7 @@ class PluizGraphAgent:
         elif kind == "timeout":
             reply = _TIMEOUT_MSG
         else:
-            reply = f"명령 처리 중 오류가 발생했어요: {exc}"
+            reply = _ERROR_MSG           # 예외 원문은 아래 로그로만 간다 (감사 G-14)
 
         _log.warning(
             "턴 실패 | 입력=%r | 사유=%s | 소요 %.2fs | 응답 %d자%s",
@@ -516,7 +544,29 @@ class PluizGraphAgent:
         return reply
 
     async def run_async(self, user_input: str, thread_id: str = "default") -> str:
-        """비동기 실행 (기존 PluizAgent.run_async와 동일 시그니처).
+        """이 에이전트에서 **사용자에게 나가는 모든 말이 지나는 한 자리.** (감사 G-13)
+
+        🚨 **예전에는 마스킹 호출이 «정상 완료» 경로 한 곳에만 있었다.**
+        그런데 이 턴이 끝나는 길은 여덟 개다 — 제안 수락 · 보안 차단 · 승인 질문 ·
+        `_dead_end` 여섯 갈래 · 정상 완료. **일곱이 마스킹을 안 지났다.**
+        승인 질문에는 파일 전체 경로가, 감시·제안 결과에는 도구 출력이 그대로 실린다.
+
+        🔑 **그래서 «호출을 일곱 군데 더 넣는» 식으로 고치지 않았다.** 그렇게 하면
+        다음에 `return` 이 하나 늘 때 또 새는데, 그게 이 저장소가 반복해 데인 모양이다
+        (BL-26의 `is_window_cloaked` · BL-12의 포커스 확인이 **딱 그랬다**).
+        **본체를 `_run_turn` 으로 내리고 여기를 관문으로 만들었다** — 새 `return` 이
+        생겨도 이 문을 지난다.
+
+        ⚠️ `_run_turn` 안쪽에도 마스킹이 한 번 더 있다. **거기는 «기록»용이다** —
+        `session_memory` 에 저장되는 문장이 마스킹돼야 하기 때문이고, 그건 여기서
+        못 한다(이미 저장된 뒤다). 두 번 걸려도 결과는 같다(멱등).
+        """
+        return _mask_out(await self._run_turn(user_input, thread_id))
+
+    async def _run_turn(self, user_input: str, thread_id: str = "default") -> str:
+        """비동기 실행 본체 (기존 PluizAgent.run_async와 동일 시그니처).
+
+        🚫 **밖에서 직접 부르지 말 것** — `run_async` 가 출력 마스킹을 건다.
 
         그래프는 동기 invoke를 워커 스레드에서 실행(asyncio.to_thread) — langgraph의
         interrupt가 sync 경로에서만 안정 동작하기 때문. 이벤트 루프는 블로킹하지 않음.
@@ -649,12 +699,11 @@ class PluizGraphAgent:
                   self._plan_note(result),
                   self._metrics_note(result, time.perf_counter() - started))
 
-        # LLM02/05: 출력 최종 마스킹(주민번호·카드번호·API키) — 사용자/TTS/기록 전에 적용
-        try:
-            from core.security import mask_sensitive_output
-            response = mask_sensitive_output(response)
-        except Exception as e:
-            print(f"[PluizGraphAgent] 출력 마스킹 생략(무시): {e}")
+        # LLM02/05: 마스킹(주민번호·카드번호·API키).
+        # 🔑 **여기는 «기록»을 위한 것이다** — 바로 아래 `session_memory.save()` 가
+        #   이 문장을 디스크에 남긴다. 출력 쪽은 `run_async` 관문이 따로 건다(감사 G-13).
+        #   두 번 걸려도 결과는 같다(마스킹된 문자열은 다시 안 걸린다).
+        response = _mask_out(response)
 
         # P4-2: LLM이 성공 실행한 화이트리스트 제어명령의 사용자 표현을 학습(맞춤형·오프라인 확대)
         self._maybe_learn(user_input, result)
