@@ -578,6 +578,65 @@ def locate_ui_element(target: str, window: str = "", want_crop: bool = False,
                 log.debug("임시 파일 삭제 실패: %s", tmp_path)
 
 
+# ── BL-64: 「블루투스 어디서 켜?」의 **범위** ─────────────────────
+#
+# 🚨 2026-09-20 3차 리허설에서 *"블루투스 어디서 켜?"* 가 설정을 열지 않고
+#   **화면에 열려 있던 문서의 「블루투스」 글자**를 짚었다. 대본 5장면이다.
+#
+# **원인은 화면이 아니라 인자였다.** 로그 셋이 그대로 말한다:
+#
+#   2026-09-12  탐색 (설정)     target='블루투스'      → ✅ 찾음 (335,410)
+#   2026-09-14  탐색 (설정)     target='비행기 모드'   → ❌ 못 찾음(다른 페이지)
+#   2026-09-20  탐색 (전체화면) target='블루투스'      → 🔴 문서의 글자
+#
+# 발화는 거의 같았다(「블루투스 기능은 어디서 켜야 돼」↔「블루투스는 어디서 켜」).
+# **`window` 를 채울지 말지를 LLM 이 매번 다르게 고른다.**
+#
+# 🔑 **그래서 도구 설명에 «설정이면 window 를 넣어라»라고 적는 것으로는 안 된다** —
+#   프롬프트는 확률을 올릴 뿐이고 보장하는 건 구조다(BL-19의 교훈). 오늘 실패가
+#   바로 그 증거다: 같은 질문에 다른 인자가 나왔다.
+#
+# ⚠️ **«못 찾으면 설정을 열고 다시 본다»로는 안 고쳐진다.** 오늘은 **못 찾은 게
+#   아니라 잘못 찾았다.** 화면에 그 글자가 있었기 때문이다. 그래서 되돌아보는
+#   보강이 아니라 **범위를 먼저 정하는** 수선이어야 한다.
+#
+# ⚠️ 오판의 방향이 안전하다 — **빠뜨리면 오늘과 같이 동작할 뿐이고**(전체 화면을
+#   본다), 넣으면 설정에서 찾는다. `command_cache._DEIXIS_TOKENS` 가 정한 비대칭과
+#   같은 모양이라 **여집합이 아니라 화이트리스트로** 적는다.
+#
+# 🚫 「저장 버튼」·「검색창」처럼 **지금 보는 앱의 것**은 여기 넣지 않는다.
+#   넣으면 사용자가 안 시킨 설정 창이 뜬다.
+_SETTINGS_TARGETS = (
+    "블루투스", "bluetooth",
+    "와이파이", "와이 파이", "wifi", "wi-fi", "무선랜",
+    "비행기모드", "기내모드",
+    "핫스팟", "vpn",
+    "야간모드", "야간조명", "다크모드", "절전모드", "배터리절약",
+    "windows업데이트", "윈도우업데이트",
+    "기본앱", "방화벽", "접근성",
+)
+
+#: 설정 안의 것을 찾을 때 쓸 창 이름. `ensure_window_ready` 가 아는 이름이어야 한다.
+_SETTINGS_WINDOW = "설정"
+
+
+def resolve_search_window(target: str, window: str = "") -> str:
+    """찾을 대상이 **Windows 설정 안의 것**이면 볼 창을 「설정」으로 정한다. (BL-64)
+
+    `window` 가 이미 있으면 **건드리지 않는다** — 사용자/LLM 이 정한 범위가 우선이다.
+
+    🔑 **`find_ui_element` 와 `point_at_element` 가 같은 판정을 받게** 하려고 뺐다.
+      두 벌로 두면 한쪽만 고쳐진다 — 감사 G-08 이 `maximize_window`·`minimize_window`
+      에서 실제로 그렇게 됐고, 그때도 **합치는 것**으로 끝냈다.
+    """
+    if window:
+        return window
+    key = "".join((target or "").split()).lower()
+    if not key:
+        return window
+    return _SETTINGS_WINDOW if any(t in key for t in _SETTINGS_TARGETS) else window
+
+
 @tool
 def find_ui_element(target: str, window: str = "") -> str:
     """
@@ -587,10 +646,15 @@ def find_ui_element(target: str, window: str = "") -> str:
 
     target: 찾을 것 (예: "저장 버튼", "검색창", "닫기 X 버튼")
     window: 볼 대상 — 비워두면 전체 화면 / "활성창" / 앱 이름
+      · 블루투스·와이파이 같은 **Windows 설정 항목은 비워 두세요** —
+        설정 창을 알아서 열고 거기서 찾습니다.
 
     화면에 없으면 좌표를 만들어내지 않고 "찾지 못했다"고 답합니다.
     """
     # 「어디 있어?」도 화면을 보는 질문이라, 창이 없거나 최소화면 먼저 살린다.
+    # BL-64 — 설정 안의 것이면 **전체 화면을 뒤지지 않는다.** 화면 어딘가에 같은
+    #   글자가 있으면 그걸 짚어 버린다(2026-09-20 실측).
+    window = resolve_search_window(target, window)
     loc = locate_ui_element(target, window, ensure_visible=True)
     if not loc["found"]:
         return (prepared_note(loc) +
@@ -630,6 +694,8 @@ def point_at_element(target: str, window: str = "", zoom: bool = False) -> str:
 
     target: 찾을 것 (예: "블루투스", "저장 버튼", "검색창")
     window: 볼 대상 — 비워두면 전체 화면 / "활성창" / 앱 이름
+      · 블루투스·와이파이 같은 **Windows 설정 항목은 비워 두세요** —
+        설정 창을 알아서 열고 거기서 찾습니다. 바탕화면에서 물어도 됩니다.
     zoom:   True면 그 부분을 크게 확대해서 같이 보여줍니다 (잘 안 보일 때)
 
     화면에 없으면 **아무것도 표시하지 않고** "찾지 못했다"고 답합니다.
@@ -649,6 +715,9 @@ def point_at_element(target: str, window: str = "", zoom: bool = False) -> str:
     #   코드는 남겨 둔다 — 조각 프롬프트를 다듬으면 살아날 수 있고,
     #   무엇보다 «해 봤고 이랬다»가 지워지면 또 같은 걸 시도한다.
     #   → docs/design/M4_포인팅_확대.md §6-A
+    # BL-64 — 범위를 **먼저** 정한다. 여기가 비면 전체 화면을 뒤지고, 화면에
+    #   우연히 같은 글자가 있으면 **틀린 곳을 자신 있게 짚는다**(M4 §3이 막으려던 것).
+    window = resolve_search_window(target, window)
     loc = locate_ui_element(target, window, want_crop=bool(zoom),
                             refine=False, ensure_visible=True)
     payload = pointer.point_payload(loc, zoom=zoom)
