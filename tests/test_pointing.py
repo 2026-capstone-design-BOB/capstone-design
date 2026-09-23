@@ -352,6 +352,51 @@ def run():
           r1["ok"] is False and r1["action"] == "")
     check("실패에 이유가 있다", bool(r1["reason"]))
 
+    # ═══ ⑦ 전면화 — 2026-09-22 시연에서 깨진 자리 (BL-67) ══════════
+    #   설정이 **다른 창 뒤에서** 열리고 그 위에 동그라미만 그려졌다.
+    #   원인 둘: ① 새로 연 창만 전면화를 건너뛰었다(조기 return)
+    #            ② 전면화 코드 사본이 둘로 갈려 한쪽만 우회를 갖고 있었다
+    print("=== ⑦ 새로 연 창도 «앞으로» 단계를 거친다 (BL-67) ===")
+    import re as _re
+    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(_root, "tools", "system.py"), encoding="utf-8") as f:
+        _sys_src = f.read()
+
+    # ① 조기 return이 되살아나지 않는다. «launched»를 적은 뒤 ③까지 흘러야 한다.
+    _launched_at = _sys_src.find('out.update(action="launched"')
+    _front_at    = _sys_src.find("if u.GetForegroundWindow() != hwnd:")
+    check("launched를 적는 자리와 전면화 자리가 둘 다 있다",
+          _launched_at > 0 and _front_at > _launched_at)
+    _between = _sys_src[_launched_at:_front_at]
+    check("그 사이에 return이 없다(새로 연 창만 건너뛰던 버그)",
+          not _re.search(r"^\s+return out\s*$", _between, _re.M))
+
+    # ② 전면화 우회는 **한 곳**에만 있다 — 사본 둘이면 한쪽만 고쳐진다(감사 G-08)
+    with open(os.path.join(_root, "tools", "app_control.py"), encoding="utf-8") as f:
+        _app_src = f.read()
+    check("AttachThreadInput 우회는 system.py에 있다", "AttachThreadInput" in _sys_src)
+    check("app_control.py에는 사본이 없다",
+          "AttachThreadInput(" not in _app_src.replace("AttachThreadInput 트릭", ""))
+    check("app_control이 공용 함수를 부른다", "bring_hwnd_to_front" in _app_src)
+
+    # ③ 확인하지 않은 성공을 돌려주지 않는다 (BL-12과 같은 이유)
+    from tools.system import bring_hwnd_to_front
+    check("hwnd가 0이면 False", bring_hwnd_to_front(0) is False)
+    check("결과를 GetForegroundWindow로 되확인한다",
+          "return u.GetForegroundWindow() == hwnd" in _sys_src)
+
+    # ④ 뒤에 남았으면 **그 사실을 말한다** — 「열었어요」로 끝나면 거짓말이 된다
+    check("전면화 여부가 action과 별개 칸으로 나온다", "fronted" in r0)
+    _behind = prepared_note({"prepared": {"action": "launched", "label": "설정",
+                                          "fronted": False}})
+    check("가려졌으면 열었다는 말에 덧붙인다", "먼저 열었어요" in _behind)
+    check("가려졌다는 사실을 말한다", "가려져" in _behind)
+    check("전면화에 성공했으면 그 말은 안 붙는다",
+          "가려져" not in prepared_note({"prepared": {"action": "fronted", "label": "설정",
+                                                      "fronted": True}}))
+    check("fronted 칸이 없는 옛 형태에도 안 붙는다(하위 호환)",
+          "가려져" not in prepared_note({"prepared": {"action": "launched", "label": "설정"}}))
+
     # ═══ ④ 도구 계약 ═════════════════════════════════════════════
     print("=== ④ 도구가 등록돼 있고 좌표 인자를 받지 않는다 ===")
     from core.tool_registry import get_all_tools
