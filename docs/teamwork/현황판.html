@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pluiz 팀원 현황판</title>
+<style>
+  :root{
+    --bg:#fbfaf8; --fg:#1d1c1a; --muted:#6b6862; --line:#e3ded6;
+    --card:#ffffff; --accent:#8a5a2b; --red:#a93226; --amber:#9a6b12; --green:#2f6b3f;
+    --chipbg:#f2ede5;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#171614; --fg:#eceae6; --muted:#a29d94; --line:#333029;
+      --card:#201e1b; --accent:#d9a86a; --red:#e08b80; --amber:#d9b263; --green:#88c79a;
+      --chipbg:#2a2723;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#171614; --fg:#eceae6; --muted:#a29d94; --line:#333029;
+    --card:#201e1b; --accent:#d9a86a; --red:#e08b80; --amber:#d9b263; --green:#88c79a;
+    --chipbg:#2a2723;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:"Pretendard","Malgun Gothic",system-ui,-apple-system,sans-serif;
+    line-height:1.65; font-size:16px;
+  }
+  .wrap{max-width:860px; margin:0 auto; padding:40px 20px 80px}
+  header{border-bottom:2px solid var(--line); padding-bottom:20px; margin-bottom:32px}
+  h1{font-size:1.8rem; margin:0 0 6px; letter-spacing:-.02em}
+  .sub{color:var(--muted); font-size:.92rem; margin:0}
+  h2{font-size:1.18rem; margin:40px 0 4px; letter-spacing:-.01em}
+  h2 .n{color:var(--accent); font-variant-numeric:tabular-nums; margin-right:.5em}
+  .lede{color:var(--muted); font-size:.9rem; margin:0 0 16px}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin:14px 0}
+  .stat{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px}
+  .stat .k{font-size:.78rem; color:var(--muted); display:block; margin-bottom:4px}
+  .stat .v{font-size:1.45rem; font-weight:650; font-variant-numeric:tabular-nums; letter-spacing:-.02em}
+  .stat .note{font-size:.76rem; color:var(--muted); margin-top:5px; display:block}
+  .r{color:var(--red)} .a{color:var(--amber)} .g{color:var(--green)}
+  .tablewrap{overflow-x:auto; margin:14px 0}
+  table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:460px}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{font-weight:600; color:var(--muted); font-size:.8rem; white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  a{color:var(--accent); text-decoration:none; border-bottom:1px solid transparent}
+  a:hover{border-bottom-color:var(--accent)}
+  .warn{border-left:3px solid var(--red); padding-left:14px; margin:14px 0; color:var(--fg)}
+  .warn b{color:var(--red)}
+  .steps{counter-reset:s; list-style:none; padding:0; margin:14px 0}
+  .steps li{counter-increment:s; position:relative; padding:12px 0 12px 44px; border-bottom:1px solid var(--line)}
+  .steps li:last-child{border-bottom:none}
+  .steps li::before{content:counter(s); position:absolute; left:0; top:12px;
+    width:28px; height:28px; border-radius:50%; background:var(--chipbg); color:var(--accent);
+    display:grid; place-items:center; font-size:.85rem; font-weight:650}
+  .steps .t{font-weight:600; display:block}
+  .steps .d{color:var(--muted); font-size:.87rem}
+  footer{margin-top:56px; padding-top:20px; border-top:1px solid var(--line);
+         color:var(--muted); font-size:.82rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Pluiz — 팀원 현황판</h1>
+  <p class="sub">오다영용 · 최종 갱신 <b>2026-09-22</b> · 갱신은 변소윤이 합니다</p>
+</header>
+
+<div class="warn">
+  <b>2026-09-22 교수님 시연 결과 — 이것부터 읽으세요.</b><br>
+  피드백의 핵심이 기능이 아니라 <b>발표와 어필</b>이었습니다.
+  <i>“웨이크워드를 만들었습니다는 어필이 아니다. 그게 얼마나 어려운지, 어떻게 해결했는지,
+  얼마나 쓸모 있는 기능인지를 말해야 한다. 부풀리라는 게 아니라 사실을 말하되 어필이 되게 하라.”</i><br>
+  → 대응으로 <a href="11_어필_재료.md">11_어필_재료.md</a>를 만들었습니다.
+  포스터·소개글·발표는 <b>그 문서의 네 칸 순서 그대로</b> 쓰면 됩니다.
+</div>
+
+<h2><span class="n">1</span>지금 상태</h2>
+<p class="lede">발표·서류에 쓸 수 있는 숫자입니다. 단서가 붙은 것은 반드시 같이 말해야 합니다.</p>
+
+<div class="grid">
+  <div class="stat"><span class="k">조작 가능한 기능(도구)</span><span class="v">44개</span>
+    <span class="note">아는 앱 17개</span></div>
+  <div class="stat"><span class="k">자동 테스트</span><span class="v">2,361건</span>
+    <span class="note">65개 파일 · 실패 0 · 가짜 환경</span></div>
+  <div class="stat"><span class="k">캐시 응답 속도</span><span class="v">0.09초</span>
+    <span class="note">AI를 부르면 9.25초</span></div>
+  <div class="stat"><span class="k">웨이크워드 놓침</span><span class="v r">약 80%</span>
+    <span class="note">고치는 중 · 목표 10% (10월 말)</span></div>
+  <div class="stat"><span class="k">화면 이해</span><span class="v a">15/15</span>
+    <span class="note">자가 평가 · 시연 인상은 약했음</span></div>
+  <div class="stat"><span class="k">오프라인 커버리지</span><span class="v">50.0%</span>
+    <span class="note">차별점으로 말하면 안 됨</span></div>
+</div>
+
+<div class="warn">
+  <b>숫자를 쓸 때의 규칙 하나.</b>
+  <a href="11_어필_재료.md">11_어필_재료.md</a>의 「말할 때 조심할 것」을 지우고 쓰지 마세요.
+  단서를 먼저 말하면 신뢰가 올라가고, 감추면 질문 한 번에 무너집니다.
+  여기 없는 숫자는 <b>지어내지 말고 변소윤에게 요청</b>하세요.
+</div>
+
+<h2><span class="n">2</span>작업할 때 여는 문서</h2>
+<p class="lede">연락을 기다리지 마세요. 아래 둘은 개발이 진행될 때마다 갱신됩니다.</p>
+
+<div class="tablewrap">
+<table>
+  <tr><th>문서</th><th>무엇</th><th>언제 여나</th></tr>
+  <tr><td><a href="10_개발_현황.md">10_개발_현황.md</a></td>
+      <td>개발이 어디까지 왔나 · 숫자 · <b>당신 작업에 무슨 뜻인가</b></td>
+      <td>작업 시작할 때마다</td></tr>
+  <tr><td><a href="11_어필_재료.md">11_어필_재료.md</a></td>
+      <td><b>기능마다 무엇을 어떻게 말할 것인가</b></td>
+      <td>포스터·소개글·발표자료 쓸 때</td></tr>
+  <tr><td><a href="12_용어_사전.md">12_용어_사전.md</a></td>
+      <td>개발자가 쓰는 말 풀이</td>
+      <td>모르는 말이 나올 때</td></tr>
+  <tr><td><a href="피드백_기록.md">피드백_기록.md</a></td>
+      <td>교수님이 말씀하신 것 원문</td>
+      <td>미팅 전후</td></tr>
+  <tr><td><a href="README.md">README.md</a></td>
+      <td>전체 안내 · 과제 4개</td>
+      <td>처음 · 헷갈릴 때</td></tr>
+</table>
+</div>
+
+<h2><span class="n">3</span>글을 쓰는 순서</h2>
+<p class="lede">9/22 피드백을 그대로 절차로 바꾼 것입니다. 기능부터 쓰면 “그래서 뭐?”가 됩니다.</p>
+
+<ol class="steps">
+  <li><span class="t">① 문제</span>
+      <span class="d">사용자가 실제로 겪는 불편을 먼저 씁니다. 기능 이름을 아직 꺼내지 않습니다.</span></li>
+  <li><span class="t">② 왜 어려운가</span>
+      <span class="d"><b>어필의 핵심입니다.</b> 어려운 줄 모르면 대단한 줄도 모릅니다.
+      “그냥 하면 왜 안 되는지”를 한두 문장으로.</span></li>
+  <li><span class="t">③ 어떻게 풀었나</span>
+      <span class="d">우리가 한 선택. 남들과 다른 점이 여기서 나옵니다.</span></li>
+  <li><span class="t">④ 숫자 + 단서</span>
+      <span class="d">숫자가 없으면 주장이고, 단서가 없으면 과장입니다. 둘 다 씁니다.</span></li>
+</ol>
+
+<h2><span class="n">4</span>일정</h2>
+
+<div class="tablewrap">
+<table>
+  <tr><th>날짜</th><th>무엇</th><th>당신과 관계</th></tr>
+  <tr><td>10/06</td><td>목소리 녹음 20~30명 마감</td>
+      <td>도울 수 있습니다 → <a href="녹음_부탁드립니다.md">녹음_부탁드립니다.md</a></td></tr>
+  <tr><td>10/20</td><td>개발 숫자 요청 마감</td>
+      <td>포스터에 들어갈 숫자가 필요하면 이 날까지 변소윤에게</td></tr>
+  <tr><td><b class="r">10/28</b></td><td><b>작품 소개글 + 전시회 포스터 제출</b></td>
+      <td><b class="r">당신 마감. 형식을 어기면 당일 출력 불가</b></td></tr>
+  <tr><td>10/31</td><td>기능 동결 — 이후 코드를 안 고칩니다</td>
+      <td>이 날 이후의 숫자가 최종입니다</td></tr>
+  <tr><td>11월 초</td><td>성능 지표 6종 측정</td>
+      <td>발표에 쓸 마지막 숫자 묶음</td></tr>
+  <tr><td><b>11/24</b></td><td><b>졸업작품 전시회</b> 9~18시 · 개신문화관 2층</td>
+      <td>작품 전시는 9시 이전 완료</td></tr>
+</table>
+</div>
+
+<h2><span class="n">5</span>하면 안 되는 말</h2>
+<p class="lede">이유가 있어서 정해 둔 것입니다. 하나라도 쓰면 그 자리에서 반박당합니다.</p>
+
+<div class="tablewrap">
+<table>
+  <tr><th>하면 안 되는 말</th><th>왜</th></tr>
+  <tr><td>“Windows 음성 액세스보다 낫습니다”</td>
+      <td>재지 않았고 겨냥하는 것이 다릅니다. <b>“다른 물건입니다”</b>라고 말합니다</td></tr>
+  <tr><td>“오프라인이 우리 차별점입니다”</td>
+      <td>음성 액세스도 오프라인이 설계 전제입니다</td></tr>
+  <tr><td>“접근성 제품입니다”</td>
+      <td>당사자에게 시험하지 않았습니다. <b>“접근성 문제에서 출발한 설계”</b>까지만</td></tr>
+  <tr><td>“완벽합니다” / “100%”</td>
+      <td>자가 평가 숫자가 섞여 있습니다</td></tr>
+</table>
+</div>
+
+<footer>
+  이 페이지는 <code>docs/teamwork/현황판.html</code>입니다.
+  숫자와 내용은 같은 폴더의 md 문서에서 옵니다 — <b>한 사실은 한 문서에만</b> 두고,
+  여기는 그것을 모아 보여 주기만 합니다.<br>
+  갱신이 필요하면 변소윤에게 알려 주세요.
+</footer>
+
+</div>
+</body>
+</html>
