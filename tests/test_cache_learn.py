@@ -281,7 +281,7 @@ def run():
                        ("볼륨 줄여줘", "volume_down"),
                        ("소리 키워줘", "volume_up"),
                        ("볼륨 올려줘", "volume_up"),
-                       ("음소거해줘", "mute_toggle")):
+                       ("음소거해줘", "mute")):
         f = fresh.find(text)
         check(f"회귀: {text!r} → {want}",
               f is not None and f[0].tool_calls[0]["name"] == want)

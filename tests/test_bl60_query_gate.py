@@ -79,7 +79,7 @@ def run():
           "volume_up" not in names_of(c.find("볼륨 알려줘")),
           f"→ {names_of(c.find('볼륨 알려줘'))}")
     check("🚨 '음소거됐어?' 가 **음소거를 토글하지 않는다**",
-          "mute_toggle" not in names_of(c.find("음소거됐어?")),
+          "mute" not in names_of(c.find("음소거됐어?")),
           f"→ {names_of(c.find('음소거됐어?'))}")
 
     print(f"{NL}=== ② 그리고 **답을 한다** — 막기만 하면 반쪽이다 ===")
@@ -101,7 +101,7 @@ def run():
                     ("볼륨 올려줘", "volume_up"),
                     ("볼륨 좀 올려줘", "volume_up"),
                     ("소리 줄여", "volume_down"),
-                    ("음소거해줘", "mute_toggle"),
+                    ("음소거해줘", "mute"),
                     ("메모장 열어줘", "open_app"),
                     ("스크린샷 찍어줘", "take_screenshot")]:
         got = names_of(c.find(q))

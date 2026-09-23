@@ -192,34 +192,60 @@ def run():
     # ── §3 음소거 — «전환했습니다»도 의도였다 ──────────────────────
     print("\n§3 음소거 — «켰다»와 «껐다»는 반대말이다")
     if not has_mod:
-        cannot_judge(["껐다 켜지면 «음소거했어요»", "켰다 꺼지면 «해제했어요»",
-                      "🚨 상태가 그대로면 그렇게 말한다", "못 읽으면 ✓ 를 유지한다",
-                      "키를 실제로 눌렀다"],
+        cannot_judge(["켜져 있을 때 mute → «음소거했어요»",
+                      "꺼져 있을 때 unmute → «해제했어요»",
+                      "🔑 이미 음소거면 그대로 두고 그렇게 말한다",
+                      "   이때 키를 누르지 않는다",
+                      "🔑 이미 켜져 있으면 그대로 두고 그렇게 말한다",
+                      "   이때도 키를 누르지 않는다",
+                      "🚨 바꾸려 했는데 그대로면 그렇게 말한다",
+                      "🚨 설정 자체가 실패하면 실패라고 말한다",
+                      "못 읽으면 ✓ 를 유지한다",
+                      "   못 읽을 때만 키를 누른다",
+                      "   🔑 «껐는지 켰는지 모른다»고 말한다"],
                      "tools 를 못 불러왔다")
     else:
-        fake_ct = FakeCtypes()
-        states = iter([0, 1])
-        with with_patch(sys_={"_get_mute": lambda: next(states), "ctypes": fake_ct}):
-            out = sysmod.mute_toggle.invoke({})
-        check("껐다 켜지면 «음소거했어요»", out == "✓ 음소거했어요.", f"→ {out!r}")
-        check("키를 실제로 눌렀다", fake_ct.keys == [0xAD, 0xAD], f"→ {fake_ct.keys}")
+        # 🆕 2026-09-24 — `mute_toggle` 하나를 **방향이 있는 둘**로 갈랐다.
+        #   실기에서 *"소리 다시 켜 줘"* 가 갈 곳이 없었고, 토글은 이미 켜져 있을 때
+        #   **소리를 끈다** — 정직하게 말해도 시킨 것의 반대다.
+        def mute_out(which, before, after=None, ct=None):
+            ct = ct or FakeCtypes()
+            with with_patch(sys_={"_get_mute": lambda: before,
+                                  "_set_mute": lambda on: after,
+                                  "ctypes": ct}):
+                return getattr(sysmod, which).invoke({}), ct
 
-        states = iter([1, 0])
-        with with_patch(sys_={"_get_mute": lambda: next(states), "ctypes": FakeCtypes()}):
-            out = sysmod.mute_toggle.invoke({})
-        check("켰다 꺼지면 «해제했어요»", out == "✓ 음소거를 해제했어요.", f"→ {out!r}")
+        out, _ = mute_out("mute", before=0, after=1)
+        check("켜져 있을 때 mute → «음소거했어요»", out == "✓ 음소거했어요.", f"→ {out!r}")
 
-        states = iter([1, 1])
-        with with_patch(sys_={"_get_mute": lambda: next(states), "ctypes": FakeCtypes()}):
-            out = sysmod.mute_toggle.invoke({})
-        check("🚨 상태가 그대로면 그렇게 말한다",
+        out, _ = mute_out("unmute", before=1, after=0)
+        check("꺼져 있을 때 unmute → «해제했어요»",
+              out == "✓ 음소거를 해제했어요.", f"→ {out!r}")
+
+        # 🔑 **멱등** — 음성은 같은 말을 두 번 하기 쉽다. 이미 그 상태면 안 건드린다.
+        out, ct = mute_out("mute", before=1)
+        check("🔑 이미 음소거면 그대로 두고 그렇게 말한다",
+              out.startswith("✓ 이미") and "음소거" in out, f"→ {out!r}")
+        check("   이때 키를 누르지 않는다", ct.keys == [], f"→ {ct.keys}")
+        out, ct = mute_out("unmute", before=0)
+        check("🔑 이미 켜져 있으면 그대로 두고 그렇게 말한다",
+              out.startswith("✓ 이미") and "켜져" in out, f"→ {out!r}")
+        check("   이때도 키를 누르지 않는다", ct.keys == [], f"→ {ct.keys}")
+
+        # 🚨 되읽기가 어긋나면 ✓ 를 주지 않는다 (감사 G-11과 같은 자리)
+        out, _ = mute_out("mute", before=0, after=0)
+        check("🚨 바꾸려 했는데 그대로면 그렇게 말한다",
               not out.startswith("✓") and "그대로" in out, f"→ {out!r}")
+        out, _ = mute_out("unmute", before=1, after=-1)
+        check("🚨 설정 자체가 실패하면 실패라고 말한다",
+              tool_failed(out), f"→ {out!r}")
 
-        states = iter([-1, -1])
-        with with_patch(sys_={"_get_mute": lambda: next(states), "ctypes": FakeCtypes()}):
-            out = sysmod.mute_toggle.invoke({})
+        # 상태를 못 읽는 PC — **방향을 보장할 수 없다.** 토글하고 그렇게 말한다.
+        out, ct = mute_out("mute", before=-1)
         check("못 읽으면 ✓ 를 유지한다 (모르는 것은 실패가 아니다)",
               out.startswith("✓") and not tool_failed(out), f"→ {out!r}")
+        check("   못 읽을 때만 키를 누른다", ct.keys == [0xAD, 0xAD], f"→ {ct.keys}")
+        check("   🔑 «껐는지 켰는지 모른다»고 말한다", "확인은 못" in out, f"→ {out!r}")
 
     # ── §4 밝기 — PowerShell 폴백의 **종료코드**를 본다 ─────────────
     #

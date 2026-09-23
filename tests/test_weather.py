@@ -303,7 +303,9 @@ names = [t.name for t in get_all_tools()]
 check("get_weather가 등록돼 있다", "get_weather" in names, f"→ {len(names)}개")
 # 🆕 2026-09-19: 41 → 44 (`set_brightness` · `get_volume` · `get_brightness` — BL-60)
 # 🆕 2026-09-23: 44 → 46 (`force_close_app` §4-2 · `overwrite_file` §4-1)
-check("도구가 46개다", len(names) == 46, f"→ {len(names)}개")
+# 🆕 2026-09-24: 46 → 47 (`mute_toggle` 하나를 `mute`·`unmute` 둘로 갈랐다 —
+#   토글은 방향을 표현할 수 없어 *"소리 켜 줘"* 가 이미 켜져 있으면 **소리를 껐다**)
+check("도구가 47개다", len(names) == 47, f"→ {len(names)}개")
 
 doc = (get_weather.description or "")
 check("설명이 «날씨는 항상 이 도구»라고 못박는다", "항상 이 도구" in doc, f"→ {doc[:80]}")

@@ -214,8 +214,11 @@ check("분석기를 못 만들면 상한만으로라도 끊는다",
 print("")
 print("[5] TTS 되먹임 — «끝나지 않는 녹음»의 두 번째 방어선")
 
-play = between(ui, "function playAudio(b64)", "// ── 화면 감시 알림")
-check("녹음 중이면 TTS를 미룬다", "if (isRec) { pendingAudio = b64; return; }" in play,
+# 🆕 2-5 — `mime` 이 늘었다(오프라인이면 로컬 WAV 라 형식이 갈린다).
+#   **보장은 그대로다** — 녹음 중이면 틀지 않고 미룬다.
+play = between(ui, "function playAudio(b64, mime)", "// ── 화면 감시 알림")
+check("녹음 중이면 TTS를 미룬다",
+      "if (isRec) { pendingAudio = { b64, mime }; return; }" in play,
       "틀면 자기 목소리가 마이크로 들어가 무음이 오지 않는다")
 check("미룬 것을 버리지 않는다(알림을 삼키지 않는다)",
       "function flushPendingAudio" in ui_code)

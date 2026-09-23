@@ -72,7 +72,10 @@ check("설정창을 열 때 현재 값을 다시 읽는다", "loadWakeConfig();"
 print("")
 print("[2] 프런트가 보내는 이름 = 서버가 받는 이름 (어긋나면 422)")
 
-model = between(server, "class WakeWordRequest(BaseModel):", "# ── REST")
+# ⚠️ 끝을 «다음 class» 로 잡는다. 예전엔 "# ── REST" 까지였는데,
+#   그 사이에 모델이 하나 늘자(2-5 `TTSRequest`) **남의 필드까지 세었다.**
+model = between(server, "class WakeWordRequest(BaseModel):",
+                chr(10) + chr(10) + "class ")
 check("서버에 WakeWordRequest가 있다", bool(model))
 fields = set()
 for line in model.splitlines()[1:]:

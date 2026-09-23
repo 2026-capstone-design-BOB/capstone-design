@@ -134,8 +134,10 @@ def run():
     M = _src("main.py")
     check("🚨 `main.py` 에 따로 박힌 이모지 제거 사본이 **없다**",
           "0x1F441" not in M or "replace(chr(0x1F441)" not in M)
-    check("`main.py` 는 응답을 **그대로** to_bytes_async 에 넘긴다",
-          'to_bytes_async(payload["text"])' in M)
+    # 🆕 2-5 — 이름이 `synth_async` 로 바뀌었다(형식을 같이 돌려주려고).
+    #   **보장은 그대로다** — `main.py` 는 응답을 **손대지 않고** 관문에 넘긴다.
+    check("`main.py` 는 응답을 **그대로** TTS 관문에 넘긴다",
+          'synth_async(payload["text"])' in M)
     # 🚨 다음 사람이 호출부에 또 하나 심는 것을 막는다
     check("`main.py` 가 to_speech 를 직접 부르지 않는다 (사본이 생기는 자리)",
           "to_speech" not in M)
