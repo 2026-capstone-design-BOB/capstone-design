@@ -1,0 +1,319 @@
+{
+  "cases": [
+    "메모장 켜 줘",
+    "그림판 꺼 줘",
+    "그림판 강제로 꺼 줘",
+    "지금 켜져 있는 앱 목록 알려줘",
+    "볼륨 30으로 맞춰줘",
+    "소리 꺼줘",
+    "화면 밝기 좀 올려줘",
+    "메모장 최대화해줘",
+    "바탕화면에 회의록.txt 만들어줘",
+    "에이점 티엑스티 지워 줘",
+    "보고서 어디 있는지 찾아줘",
+    "다운로드 폴더에 뭐 있는지 알려줘",
+    "지금 화면에 뭐 보여",
+    "메모장에 안녕하세요 라고 써 줘",
+    "메모장에 오류 뜨면 알려줘",
+    "유튜브에서 아이유 노래 틀어줘",
+    "파이썬 리스트 정렬하는 법 검색해줘",
+    "오늘 날씨 어때",
+    "지금 몇 시야",
+    "오늘 저녁 뭐 먹지"
+  ],
+  "results": {
+    "gemini": {
+      "model": "gemini-2.5-flash",
+      "rows": [
+        {
+          "tools": [
+            "open_app"
+          ],
+          "args": {
+            "open_app": {
+              "app": "notepad"
+            }
+          },
+          "ms": 1763,
+          "in": 6741,
+          "out": 15,
+          "error": "",
+          "text": "메모장 켜 줘"
+        },
+        {
+          "tools": [
+            "close_app"
+          ],
+          "args": {
+            "close_app": {
+              "app": "그림판"
+            }
+          },
+          "ms": 1126,
+          "in": 6740,
+          "out": 17,
+          "error": "",
+          "text": "그림판 꺼 줘"
+        },
+        {
+          "tools": [
+            "force_close_app"
+          ],
+          "args": {
+            "force_close_app": {
+              "app": "그림판"
+            }
+          },
+          "ms": 1229,
+          "in": 6742,
+          "out": 19,
+          "error": "",
+          "text": "그림판 강제로 꺼 줘"
+        },
+        {
+          "tools": [
+            "get_running_apps"
+          ],
+          "args": {
+            "get_running_apps": {}
+          },
+          "ms": 1107,
+          "in": 6743,
+          "out": 12,
+          "error": "",
+          "text": "지금 켜져 있는 앱 목록 알려줘"
+        },
+        {
+          "tools": [
+            "set_volume"
+          ],
+          "args": {
+            "set_volume": {
+              "level": 30
+            }
+          },
+          "ms": 1041,
+          "in": 6742,
+          "out": 16,
+          "error": "",
+          "text": "볼륨 30으로 맞춰줘"
+        },
+        {
+          "tools": [
+            "mute"
+          ],
+          "args": {
+            "mute": {}
+          },
+          "ms": 965,
+          "in": 6738,
+          "out": 8,
+          "error": "",
+          "text": "소리 꺼줘"
+        },
+        {
+          "tools": [
+            "brightness_up"
+          ],
+          "args": {
+            "brightness_up": {}
+          },
+          "ms": 1183,
+          "in": 6741,
+          "out": 10,
+          "error": "",
+          "text": "화면 밝기 좀 올려줘"
+        },
+        {
+          "tools": [
+            "maximize_window"
+          ],
+          "args": {
+            "maximize_window": {
+              "app": "메모장"
+            }
+          },
+          "ms": 1128,
+          "in": 6741,
+          "out": 17,
+          "error": "",
+          "text": "메모장 최대화해줘"
+        },
+        {
+          "tools": [
+            "create_file"
+          ],
+          "args": {
+            "create_file": {
+              "location": "바탕화면",
+              "name": "회의록.txt"
+            }
+          },
+          "ms": 1227,
+          "in": 6745,
+          "out": 26,
+          "error": "",
+          "text": "바탕화면에 회의록.txt 만들어줘"
+        },
+        {
+          "tools": [
+            "delete_file"
+          ],
+          "args": {
+            "delete_file": {
+              "file_path": "a.txt"
+            }
+          },
+          "ms": 1024,
+          "in": 6744,
+          "out": 19,
+          "error": "",
+          "text": "에이점 티엑스티 지워 줘"
+        },
+        {
+          "tools": [
+            "find_file"
+          ],
+          "args": {
+            "find_file": {
+              "name": "보고서"
+            }
+          },
+          "ms": 1265,
+          "in": 6740,
+          "out": 16,
+          "error": "",
+          "text": "보고서 어디 있는지 찾아줘"
+        },
+        {
+          "tools": [
+            "list_directory"
+          ],
+          "args": {
+            "list_directory": {
+              "location": "downloads"
+            }
+          },
+          "ms": 1364,
+          "in": 6743,
+          "out": 15,
+          "error": "",
+          "text": "다운로드 폴더에 뭐 있는지 알려줘"
+        },
+        {
+          "tools": [
+            "describe_screen"
+          ],
+          "args": {
+            "describe_screen": {}
+          },
+          "ms": 1055,
+          "in": 6739,
+          "out": 10,
+          "error": "",
+          "text": "지금 화면에 뭐 보여"
+        },
+        {
+          "tools": [
+            "type_text"
+          ],
+          "args": {
+            "type_text": {
+              "text": "안녕하세요",
+              "target": "메모장"
+            }
+          },
+          "ms": 1025,
+          "in": 6742,
+          "out": 22,
+          "error": "",
+          "text": "메모장에 안녕하세요 라고 써 줘"
+        },
+        {
+          "tools": [
+            "watch_screen"
+          ],
+          "args": {
+            "watch_screen": {
+              "what": "오류 메시지",
+              "window": "메모장"
+            }
+          },
+          "ms": 1022,
+          "in": 6742,
+          "out": 25,
+          "error": "",
+          "text": "메모장에 오류 뜨면 알려줘"
+        },
+        {
+          "tools": [
+            "youtube_search"
+          ],
+          "args": {
+            "youtube_search": {
+              "query": "아이유 노래"
+            }
+          },
+          "ms": 1535,
+          "in": 6743,
+          "out": 17,
+          "error": "",
+          "text": "유튜브에서 아이유 노래 틀어줘"
+        },
+        {
+          "tools": [
+            "web_search"
+          ],
+          "args": {
+            "web_search": {
+              "query": "파이썬 리스트 정렬하는 법"
+            }
+          },
+          "ms": 1019,
+          "in": 6746,
+          "out": 23,
+          "error": "",
+          "text": "파이썬 리스트 정렬하는 법 검색해줘"
+        },
+        {
+          "tools": [
+            "get_weather"
+          ],
+          "args": {
+            "get_weather": {
+              "location": "서울",
+              "days": "today"
+            }
+          },
+          "ms": 1023,
+          "in": 6739,
+          "out": 20,
+          "error": "",
+          "text": "오늘 날씨 어때"
+        },
+        {
+          "tools": [
+            "get_current_time"
+          ],
+          "args": {
+            "get_current_time": {}
+          },
+          "ms": 1234,
+          "in": 6738,
+          "out": 12,
+          "error": "",
+          "text": "지금 몇 시야"
+        },
+        {
+          "tools": [],
+          "args": {},
+          "ms": 1230,
+          "in": 6740,
+          "out": 29,
+          "error": "",
+          "text": "오늘 저녁 뭐 먹지"
+        }
+      ]
+    }
+  }
+}
