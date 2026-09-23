@@ -474,7 +474,7 @@ class ScreenMonitor:
                     "reason": f"{type(e).__name__}: {e}"}
         if not isinstance(res, dict):
             return {"ok": False, "detected": False, "detail": "",
-                    "reason": "판정 결과 형식이 올바르지 않습니다"}
+                    "reason": "판정 결과 형식이 올바르지 않아요"}
         return res
 
 
@@ -497,7 +497,7 @@ def _dispatch(payload: dict) -> None:
     if _notifier is None:
         # 알림은 놓치면 곤란하니 경고로, 배지용 상태 변화는 조용히 남긴다.
         if payload.get("type") == "notify":
-            log.warning("알림을 전달할 UI가 없습니다(서버 미기동): %s",
+            log.warning("알림을 전달할 UI가 없어요(서버 미기동): %s",
                         payload.get("text"))
         else:
             log.debug("UI가 없어 상태 알림 생략: %s", payload)

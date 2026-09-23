@@ -167,15 +167,15 @@ def run():
                      f"tools.app_control 를 못 불러왔다 ({_why}) — `pluiz` 환경이 필요하다")
     else:
         out, fake = close(FakeProc())
-        check("정말 닫히면 ✓ 라고 한다", out.startswith("✓") and "종료했습니다" in out,
+        check("정말 닫히면 ✓ 라고 한다", out.startswith("✓") and "종료했어요" in out,
               f"→ {out!r}")
         check("종료를 실제로 요청했다", fake._procs[0].asked)
 
         stubborn = FakeProc(stubborn=True)
         out, _ = close(stubborn)
         check("🚨 안 닫히면 ✓ 를 쓰지 않는다", not out.startswith("✓"), f"→ {out!r}")
-        check("안 닫혔을 때 «닫았다/종료했습니다»는 말이 안 들어간다",
-              "종료했습니다" not in out and "닫았어요" not in out, f"→ {out!r}")
+        check("안 닫혔을 때 «닫았다/종료했다»는 말이 안 들어간다",
+              "종료했어요" not in out and "닫았어요" not in out, f"→ {out!r}")
         check("안 닫혔으면 무엇을 하라고 알려 준다",
               "직접" in out or "확인" in out, f"→ {out!r}")
 

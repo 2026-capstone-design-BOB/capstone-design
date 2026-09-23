@@ -210,7 +210,7 @@ def run():
     cf = FS_SRC[FS_SRC.index("def create_file("):FS_SRC.index("def create_folder(")]
     check("덮어쓴 응답에 «휴지통으로 옮겼어요»가 있다", "휴지통으로 옮겼어요" in cf)
     check("🔑 새로 만든 응답은 **그 말을 안 한다**",
-          cf.count("휴지통으로 옮겼어요") == 1 and "'{name}' 파일을 {location}에 생성했습니다" in cf)
+          cf.count("휴지통으로 옮겼어요") == 1 and "'{name}' 파일을 {location}에 만들었어요" in cf)
     check("막힌 경우엔 «쓰지 않았어요»라고 말한다", "쓰지 않았어요" in cf)
     check("막힌 경우엔 ✓ 를 쓰지 않는다",
           "OVERWRITE_BLOCKED" in cf and cf.index("OVERWRITE_BLOCKED") < cf.index("✓ '{name}'"))

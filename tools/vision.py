@@ -115,7 +115,7 @@ _UI_PROMPT = (
     "좌표는 이미지 기준 0~1000 정수이고 순서는 [ymin, xmin, ymax, xmax]입니다.\n\n"
     "대상이 화면에 **없거나 확실하지 않으면** 반드시 이렇게 답하세요.\n"
     '{{"found": false, "reason": "왜 못 찾았는지 한 문장"}}\n\n'
-    "⚠️ 추측해서 좌표를 만들지 마세요. 안 보이면 found를 false로 두는 것이 맞습니다."
+    "⚠️ 추측해서 좌표를 만들지 마세요. 안 보이면 found를 false로 두는 것이 맞아요."
 )
 
 
@@ -127,7 +127,7 @@ def parse_ui_box(text: str) -> dict:
     """
     raw = (text or "").strip()
     if not raw:
-        return {"found": False, "reason": "응답이 비어 있습니다"}
+        return {"found": False, "reason": "응답이 비어 있어요"}
 
     # ```json 펜스를 걷어낸다
     fenced = re.match(r"^```[a-zA-Z]*\s*(.*?)\s*```$", raw, re.S)
@@ -145,7 +145,7 @@ def parse_ui_box(text: str) -> dict:
         try:
             data = json.loads(m.group(0))
         except Exception:
-            return {"found": False, "reason": "좌표를 해석하지 못했습니다"}
+            return {"found": False, "reason": "좌표를 해석하지 못했어요"}
 
     # 배열로 답하는 경우가 있다. 하나면 그걸 쓰고, **여럿이면 고르지 않는다** —
     # 조용히 첫 번째를 집으면 사용자는 여러 후보가 있었다는 걸 모른 채
@@ -156,16 +156,16 @@ def parse_ui_box(text: str) -> dict:
             data = items[0]
         elif len(items) > 1:
             return {"found": False,
-                    "reason": f"비슷한 후보가 {len(items)}개라 어느 것인지 특정하지 못했습니다"}
+                    "reason": f"비슷한 후보가 {len(items)}개라 어느 것인지 특정하지 못했어요"}
         else:
-            return {"found": False, "reason": "좌표를 해석하지 못했습니다"}
+            return {"found": False, "reason": "좌표를 해석하지 못했어요"}
 
     if not isinstance(data, dict):
-        return {"found": False, "reason": "좌표를 해석하지 못했습니다"}
+        return {"found": False, "reason": "좌표를 해석하지 못했어요"}
 
     if not data.get("found"):
         return {"found": False,
-                "reason": str(data.get("reason") or "화면에서 찾지 못했습니다")}
+                "reason": str(data.get("reason") or "화면에서 찾지 못했어요")}
 
     box = data.get("box")
     if not isinstance(box, (list, tuple)) or len(box) != 4:
@@ -178,12 +178,12 @@ def parse_ui_box(text: str) -> dict:
     if not all(0 <= v <= _BOX_SCALE for v in (ymin, xmin, ymax, xmax)):
         return {"found": False, "reason": "좌표가 화면 범위를 벗어났습니다"}
     if ymin >= ymax or xmin >= xmax:
-        return {"found": False, "reason": "좌표 순서가 뒤집혀 있습니다"}
+        return {"found": False, "reason": "좌표 순서가 뒤집혀 있어요"}
 
     coverage = ((ymax - ymin) / _BOX_SCALE) * ((xmax - xmin) / _BOX_SCALE)
     if coverage >= _BOX_MAX_COVERAGE:
         # 화면 전체를 박스로 답한 것 = 사실상 "모르겠다"
-        return {"found": False, "reason": "화면 전체를 가리켜서 위치로 쓸 수 없습니다"}
+        return {"found": False, "reason": "화면 전체를 가리켜서 위치로 쓸 수 없어요"}
 
     return {"found": True, "box": (ymin, xmin, ymax, xmax),
             "label": str(data.get("label") or "").strip()}
@@ -272,7 +272,7 @@ def describe_screen(window: str = "", question: str = "") -> str:
         shot = take_screenshot.invoke({"save_path": tmp_path, "window": window})
         if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
             log.warning("캡처 실패: %s", shot)
-            return f"✗ 화면을 캡처하지 못했습니다. {shot}"
+            return f"✗ 화면을 캡처하지 못했어요. {shot}"
 
         log.info("캡처 완료 (%s) %d bytes",
                  window or "전체화면", os.path.getsize(tmp_path))
@@ -299,18 +299,18 @@ def describe_screen(window: str = "", question: str = "") -> str:
 
         if not text:
             log.warning("Vision 응답이 비어 있음")
-            return "✗ 화면을 분석했지만 설명을 받지 못했습니다. 다시 시도해주세요."
+            return "✗ 화면을 분석했지만 설명을 받지 못했어요. 다시 시도해주세요."
 
         _log_response("Vision 응답", text)
         return text
 
     except ImportError as e:
         log.exception("Vision 의존성 없음")
-        return f"✗ 화면 분석에 필요한 패키지가 없습니다: {e}"
+        return f"✗ 화면 분석에 필요한 패키지가 없어요: {e}"
     except Exception as e:
         # 네트워크·API 키·쿼터 등. 사용자에게는 짧게, 파일에는 스택트레이스까지.
         log.exception("Vision 호출 실패")
-        return f"✗ 화면을 분석하지 못했습니다: {type(e).__name__}: {e}"
+        return f"✗ 화면을 분석하지 못했어요: {type(e).__name__}: {e}"
     finally:
         if tmp_path and os.path.exists(tmp_path):
             try:
@@ -471,14 +471,14 @@ def locate_ui_element(target: str, window: str = "", want_crop: bool = False,
         except Exception as e:
             log.warning("캡처 원점 실패: %s", e)
             return {"found": False,
-                    "reason": f"'{window or '화면'}'의 위치를 확인하지 못했습니다: {e}"}
+                    "reason": f"'{window or '화면'}'의 위치를 확인하지 못했어요: {e}"}
 
         fd, tmp_path = tempfile.mkstemp(suffix=".png", prefix="pluiz_uiloc_")
         os.close(fd)
         shot = take_screenshot.invoke({"save_path": tmp_path, "window": window})
         if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
             log.warning("캡처 실패: %s", shot)
-            return {"found": False, "reason": f"화면을 캡처하지 못했습니다. {shot}"}
+            return {"found": False, "reason": f"화면을 캡처하지 못했어요. {shot}"}
 
         # ── 2) 원본 크기 (정규화 좌표를 픽셀로 되돌릴 기준) ────────
         try:
@@ -487,7 +487,7 @@ def locate_ui_element(target: str, window: str = "", want_crop: bool = False,
                 image_size = im.size
         except Exception as e:
             log.warning("이미지 크기 확인 실패: %s", e)
-            return {"found": False, "reason": f"화면 크기를 확인하지 못했습니다: {e}"}
+            return {"found": False, "reason": f"화면 크기를 확인하지 못했어요: {e}"}
 
         # ── 3) Vision 호출 ────────────────────────────────────────
         b64 = _shrink_and_encode(tmp_path)
@@ -566,7 +566,7 @@ def locate_ui_element(target: str, window: str = "", want_crop: bool = False,
 
     except ImportError as e:
         log.exception("Vision 의존성 없음")
-        return {"found": False, "reason": f"필요한 패키지가 없습니다: {e}"}
+        return {"found": False, "reason": f"필요한 패키지가 없어요: {e}"}
     except Exception as e:
         log.exception("UI 요소 탐색 실패")
         return {"found": False, "reason": f"{type(e).__name__}: {e}"}
@@ -658,14 +658,14 @@ def find_ui_element(target: str, window: str = "") -> str:
     loc = locate_ui_element(target, window, ensure_visible=True)
     if not loc["found"]:
         return (prepared_note(loc) +
-                f"✗ 화면에서 '{target}'을(를) 찾지 못했습니다. ({loc['reason']})")
+                f"✗ 화면에서 '{target}'을(를) 찾지 못했어요. ({loc['reason']})")
 
     cx, cy = loc["center"]
     bw, bh = loc["size"]
     where = f" ({window} 창)" if window else ""
     # 좌표를 냈다고 해서 확인된 건 아니다. Vision의 추정임을 문장에 남긴다.
     return (prepared_note(loc) +
-            f"✓ '{loc['label']}'{where}을(를) 화면 좌표 ({cx}, {cy})에서 찾았습니다. "
+            f"✓ '{loc['label']}'{where}을(를) 화면 좌표 ({cx}, {cy})에서 찾았어요. "
             f"크기 {bw}×{bh}. (화면을 보고 추정한 위치예요)")
 
 
@@ -733,7 +733,7 @@ def point_at_element(target: str, window: str = "", zoom: bool = False) -> str:
         # 사용자는 없는 것을 찾게 된다. → ADR §4-3
         reason = loc.get("reason", "") if isinstance(loc, dict) else ""
         return (prepared_note(loc) +
-                f"✗ 화면에서 '{target}'을(를) 찾지 못했습니다. ({reason})")
+                f"✗ 화면에서 '{target}'을(를) 찾지 못했어요. ({reason})")
 
     pointer.show(payload)
     where = f" ({window} 창)" if window else ""
@@ -765,7 +765,7 @@ _WATCH_PROMPT = (
     '{{"detected": true, "detail": "무엇이 보이는지 화면의 문구를 그대로 옮겨 한두 문장"}}\n\n'
     "보이지 않거나 확실하지 않으면 반드시 이렇게 답하세요.\n"
     '{{"detected": false, "reason": "왜 아닌지 한 문장"}}\n\n'
-    "⚠️ 추측하지 마세요. 화면에 없으면 detected를 false로 두는 것이 맞습니다.\n"
+    "⚠️ 추측하지 마세요. 화면에 없으면 detected를 false로 두는 것이 맞아요.\n"
     "⚠️ detected가 true인데 무엇을 봤는지 말할 수 없다면 그건 false입니다."
 )
 
@@ -783,7 +783,7 @@ def parse_watch_result(text: str) -> dict:
     raw = (text or "").strip()
     if not raw:
         return {"ok": False, "detected": False, "detail": "",
-                "reason": "응답이 비어 있습니다"}
+                "reason": "응답이 비어 있어요"}
 
     fenced = re.match(r"^```[a-zA-Z]*\s*(.*?)\s*```$", raw, re.S)
     if fenced:
@@ -800,7 +800,7 @@ def parse_watch_result(text: str) -> dict:
             data = json.loads(m.group(0))
         except Exception:
             return {"ok": False, "detected": False, "detail": "",
-                    "reason": "답을 해석하지 못했습니다"}
+                    "reason": "답을 해석하지 못했어요"}
 
     # 배열로 답하는 경우 — 하나면 받아주고, 여럿이면 고르지 않는다.
     # (parse_ui_box와 같은 이유: 조용히 첫 번째를 집으면 사용자는 모른다)
@@ -810,17 +810,17 @@ def parse_watch_result(text: str) -> dict:
             data = items[0]
         else:
             return {"ok": False, "detected": False, "detail": "",
-                    "reason": "답이 하나로 특정되지 않았습니다"}
+                    "reason": "답이 하나로 특정되지 않았어요"}
 
     if not isinstance(data, dict):
         return {"ok": False, "detected": False, "detail": "",
-                "reason": "답을 해석하지 못했습니다"}
+                "reason": "답을 해석하지 못했어요"}
 
     if "detected" not in data:
         # 필드가 없으면 "안 보인다"가 아니라 **못 알아들은 것**이다. 그 둘을 섞으면
         # 모델이 형식을 어길 때마다 조용히 "이상 없음"으로 집계된다.
         return {"ok": False, "detected": False, "detail": "",
-                "reason": "detected 항목이 없습니다"}
+                "reason": "detected 항목이 없어요"}
 
     detected = data.get("detected")
     if not isinstance(detected, bool):
@@ -857,9 +857,9 @@ def _capture_image(window: str = ""):
 
     hwnd, label = resolve_window_hwnd(window)
     if not hwnd:
-        raise ValueError(f"'{window}' 창을 찾을 수 없습니다")
+        raise ValueError(f"'{window}' 창을 찾을 수 없어요")
     if ctypes.windll.user32.IsIconic(hwnd):
-        raise ValueError(f"'{label}' 창이 최소화돼 있습니다")
+        raise ValueError(f"'{label}' 창이 최소화돼 있어요")
     return _capture_hwnd(hwnd)
 
 
@@ -962,7 +962,7 @@ def watch_screen(what: str, window: str = "") -> str:
     if reason == "no_target":
         return '✗ 무엇을 알려드릴지 알려주세요. (예: "오류 뜨면 알려줘")'
     if reason == "disabled":
-        return ("✗ 화면 감시가 꺼져 있어 시작하지 않았습니다. "
+        return ("✗ 화면 감시가 꺼져 있어 시작하지 않았어요. "
                 "(.env 의 SCREEN_WATCH_ENABLED=true 로 켤 수 있어요)")
     if reason == "already_watching":
         # **새로 시작하지 않았다는 사실을 분명히 말한다.** 두 개가 돌면 화면
@@ -971,7 +971,7 @@ def watch_screen(what: str, window: str = "") -> str:
         where = f"'{res.get('window')}' 창에서 " if res.get("window") else ""
         return (f"✗ 이미 {where}'{cur}'을(를) 지켜보는 중이라 새로 시작하지 않았어요. "
                 '먼저 "그만 봐"로 멈춘 뒤 다시 말씀해 주세요.')
-    return "✗ 화면 감시를 시작하지 못했습니다."
+    return "✗ 화면 감시를 시작하지 못했어요."
 
 
 @tool

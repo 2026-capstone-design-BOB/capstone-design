@@ -76,7 +76,7 @@ def run():
 
     empty = tempfile.mkdtemp()
     r6 = fs.list_directory.invoke({"location": empty})
-    check("빈 폴더 → 항목 없음 안내", "없습니다" in r6)
+    check("빈 폴더 → 항목 없음 안내", "없어요" in r6)  # 🔄 2026-09-23 — 말투를 해요체로 통일했다(2-2 ⓐ). **소스 문구를 그대로** 적는다.
 
     print("=== 비밀 파일은 목록에도 나오지 않는다 (LLM02) ===")
     secret_dir = tempfile.mkdtemp()

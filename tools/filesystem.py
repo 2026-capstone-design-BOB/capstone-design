@@ -83,14 +83,14 @@ def create_file(name: str, location: str = "desktop", content: str = "") -> str:
     #   여기 도달했다는 건 3층(승인)도 안 걸렸다는 뜻이라 — 있는 그대로 말한다.
     if how == OVERWRITE_BLOCKED:
         return (f"⚠️ '{name}'에 이미 내용이 있어요. 이 환경은 휴지통을 쓸 수 없어서 "
-                f"덮어쓰면 되돌릴 수 없습니다. 그래서 **쓰지 않았어요** — "
+                f"덮어쓰면 되돌릴 수 없어요. 그래서 **쓰지 않았어요** — "
                 f"다른 이름으로 저장하거나, 기존 파일을 먼저 지워 주세요.")
 
     # ⚠️ 덮어썼으면 **덮어썼다고 말한다**(ADR §7-3 계약 6). 새로 만든 응답은 그 말을 안 한다.
     if how == "overwritten":
         return (f"✓ '{name}'을(를) {location}에 저장했어요. "
                 f"이미 있던 파일은 휴지통으로 옮겼어요.\n경로: {path}")
-    return f"✓ '{name}' 파일을 {location}에 생성했습니다.\n경로: {path}"
+    return f"✓ '{name}' 파일을 {location}에 만들었어요.\n경로: {path}"
 
 
 @tool
@@ -107,7 +107,7 @@ def create_folder(name: str, location: str = "desktop") -> str:
     path = os.path.join(base, name)
     try:
         os.makedirs(path, exist_ok=True)
-        return f"✓ '{name}' 폴더를 {location}에 생성했습니다.\n경로: {path}"
+        return f"✓ '{name}' 폴더를 {location}에 만들었어요.\n경로: {path}"
     except Exception as e:
         return f"✗ 폴더 생성 실패: {e}"
 
@@ -395,7 +395,7 @@ def find_file(name: str = "", extension: str = "", location: str = "") -> str:
             if not hits:
                 continue
 
-            head = f"✓ {len(hits)}개 파일을 찾았습니다"
+            head = f"✓ {len(hits)}개 파일을 찾았어요"
             notes = []
             # **한 일은 반드시 말한다** — 사용자가 시킨 곳이 아닌 데서 찾았으면
             # 그걸 밝히지 않으면 다음 명령("그거 지워줘")이 엉뚱한 걸 가리킨다.
@@ -429,9 +429,9 @@ def find_file(name: str = "", extension: str = "", location: str = "") -> str:
     near = _near_misses(name, [b for _, b in ordered])
     if near:
         listed = " · ".join(f"'{n}'" for n in near)
-        return (f"✗ {where}에서 '{what}'{eul} 찾지 못했습니다.\n"
+        return (f"✗ {where}에서 '{what}'{eul} 찾지 못했어요.\n"
                 f"  혹시 이건가요? {listed}")
-    return (f"✗ {where}에서 '{what}'{eul} 찾지 못했습니다. "
+    return (f"✗ {where}에서 '{what}'{eul} 찾지 못했어요. "
             f"비슷한 이름도 없어요.")
 
 
@@ -448,12 +448,12 @@ def list_directory(location: str = "desktop", only: str = "all") -> str:
     if not base:
         return f"✗ '{location}'은(는) 지원하지 않는 위치입니다."
     if not os.path.isdir(base):
-        return f"✗ '{location}' 폴더가 없습니다: {base}"
+        return f"✗ '{location}' 폴더가 없어요: {base}"
 
     try:
         names = sorted(os.listdir(base), key=str.lower)
     except PermissionError:
-        return f"✗ '{location}'을(를) 읽을 권한이 없습니다."
+        return f"✗ '{location}'을(를) 읽을 권한이 없어요."
 
     folders, files = [], []
     for n in names:
@@ -475,7 +475,7 @@ def list_directory(location: str = "desktop", only: str = "all") -> str:
         groups = [("폴더", folders), ("파일", files)]
 
     if not any(items for _, items in groups):
-        return f"✓ '{location}'에 표시할 항목이 없습니다."
+        return f"✓ '{location}'에 표시할 항목이 없어요."
 
     LIMIT = 40   # 음성으로 읽어주기엔 이것도 많다. 넘으면 개수만 알린다.
     out = [f"✓ {location} 목록:"]
@@ -501,7 +501,7 @@ def open_recent_file() -> str:
     )
     try:
         subprocess.Popen(["explorer", recent_path])
-        return f"✓ 최근 파일 폴더를 열었습니다."
+        return f"✓ 최근 파일 폴더를 열었어요."
     except Exception as e:
         return f"✗ 최근 파일 열기 실패: {e}"
 
@@ -543,14 +543,14 @@ def open_file(file_path: str, app: str = "") -> str:
         elif len(hits) > 1:
             # **열지 않는다.** 무엇을 여는지 사용자가 정해야 한다.
             lines = [f"✗ '{os.path.basename(file_path)}' 이름이 여러 개라 "
-                     f"어느 것인지 몰라 열지 않았습니다:"]
+                     f"어느 것인지 몰라 열지 않았어요:"]
             for i, (loc, p) in enumerate(hits[:5], 1):
                 lines.append(f"  {i}. {os.path.basename(p)} {_where_note(loc, p)}")
             if len(hits) > 5:
                 lines.append(f"  ... 외 {len(hits) - 5}개")
             return "\n".join(lines)
         else:
-            return f"✗ 파일을 찾을 수 없습니다: {resolved}"
+            return f"✗ 파일을 찾을 수 없어요: {resolved}"
 
     try:
         if app:
@@ -575,7 +575,7 @@ def open_file(file_path: str, app: str = "") -> str:
         # **한 일은 반드시 말한다** — 시킨 경로가 아닌 데서 찾아 열었으면
         # 그걸 밝히지 않으면 다음 명령("그거 지워줘")이 엉뚱한 걸 가리킨다.
         # (find_file이 «어디서 찾았는지»를 말하는 것과 같은 규칙)
-        return f"✓ '{os.path.basename(resolved)}' 파일을 열었습니다.{found_note}"
+        return f"✓ '{os.path.basename(resolved)}' 파일을 열었어요.{found_note}"
     except Exception as e:
         return f"✗ 파일 열기 실패: {e}"
 
@@ -673,7 +673,7 @@ def write_excel(filename: str, headers: str, rows: str, location: str = "desktop
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment
     except ImportError:
-        return "✗ write_excel 사용을 위해 openpyxl이 필요합니다. (pip install openpyxl)"
+        return "✗ write_excel 사용을 위해 openpyxl이 필요해요. (pip install openpyxl)"
 
     base = _resolve_location(location)
     if not base:
@@ -722,12 +722,12 @@ def write_excel(filename: str, headers: str, rows: str, location: str = "desktop
 
     if how == OVERWRITE_BLOCKED:
         return (f"⚠️ '{filename}'에 이미 내용이 있어요. 이 환경은 휴지통을 쓸 수 없어서 "
-                f"덮어쓰면 되돌릴 수 없습니다. 그래서 **쓰지 않았어요** — "
+                f"덮어쓰면 되돌릴 수 없어요. 그래서 **쓰지 않았어요** — "
                 f"다른 이름으로 저장하거나, 기존 파일을 먼저 지워 주세요.")
     if how == "overwritten":
         return (f"✓ '{filename}' 엑셀 파일을 저장했어요. "
                 f"이미 있던 파일은 휴지통으로 옮겼어요.\n경로: {path}")
-    return f"✓ '{filename}' 엑셀 파일을 저장했습니다.\n경로: {path}"
+    return f"✓ '{filename}' 엑셀 파일을 저장했어요.\n경로: {path}"
 
 
 # ── 위험 동작: 삭제 (HITL 승인 대상) ──────────────────────────────
@@ -877,7 +877,7 @@ def delete_file(file_path: str) -> str:
     """
     resolved = _resolve_location_in_path(file_path)
     if not os.path.exists(resolved):
-        return f"✗ 파일을 찾을 수 없습니다: {resolved}"
+        return f"✗ 파일을 찾을 수 없어요: {resolved}"
     if os.path.isdir(resolved):
         return f"✗ '{os.path.basename(resolved)}'은(는) 폴더예요. 폴더는 delete_folder를 쓰세요."
     if _is_protected_path(resolved):
@@ -900,7 +900,7 @@ def delete_folder(folder_path: str) -> str:
     """
     resolved = _resolve_location_in_path(folder_path)
     if not os.path.exists(resolved):
-        return f"✗ 폴더를 찾을 수 없습니다: {resolved}"
+        return f"✗ 폴더를 찾을 수 없어요: {resolved}"
     if not os.path.isdir(resolved):
         return f"✗ '{os.path.basename(resolved)}'은(는) 파일이에요. delete_file을 쓰세요."
     if _is_protected_path(resolved):

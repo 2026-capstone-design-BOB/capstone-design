@@ -443,7 +443,7 @@ def _open_new_view(app_key: str, name: str) -> str:
             import pyautogui
             time.sleep(0.3)
             pyautogui.hotkey("ctrl", "t")
-            return f"✓ {name}에 새 탭을 열었습니다."
+            return f"✓ {name}에 새 탭을 열었어요."
         except Exception as e:
             print(f"[open_app] 새 탭 단축키 실패 → 새 창으로 폴백: {e}")
 
@@ -452,17 +452,17 @@ def _open_new_view(app_key: str, name: str) -> str:
         try:
             subprocess.Popen(_UWP_SHELL_COMMANDS[app_key], shell=True)
             time.sleep(0.5)
-            return f"✓ {name}을(를) 새 창으로 열었습니다."
+            return f"✓ {name}을(를) 새 창으로 열었어요."
         except Exception as e:
             return f"✗ {name} 새 창 열기 실패: {e}"
 
     path = _resolve_path(app_key)
     if not path:
-        return f"✗ '{name}' 앱을 찾을 수 없어 새로 열지 못했습니다."
+        return f"✗ '{name}' 앱을 찾을 수 없어 새로 열지 못했어요."
     try:
         subprocess.Popen([path])
         time.sleep(0.8)
-        return f"✓ {name}을(를) 새 창으로 열었습니다."
+        return f"✓ {name}을(를) 새 창으로 열었어요."
     except Exception as e:
         return f"✗ {name} 새 창 열기 실패: {e}"
 
@@ -597,8 +597,8 @@ def _launched_or_honest(app_key: str, name: str, eul_reul: str,
     **«안 한 걸 했다고 말하는 것»** 이다(BL-12·BL-19·BL-21).
     """
     if _await_window(app_key, timeout):
-        return f"✓ {name}{eul_reul} 열었습니다."
-    return (f"⚠️ {name} 실행을 시도했지만 창이 나타나지 않았습니다. "
+        return f"✓ {name}{eul_reul} 열었어요."
+    return (f"⚠️ {name} 실행을 시도했지만 창이 나타나지 않았어요. "
             f"잠시 뒤 다시 시도하거나 직접 열어 주세요.")
 
 
@@ -625,7 +625,7 @@ def open_app(app: str, new: bool = False) -> str:
         try:
             subprocess.Popen("explorer.exe", shell=True)
             time.sleep(0.5)
-            return f"✓ {name}{eul_reul} 열었습니다."
+            return f"✓ {name}{eul_reul} 열었어요."
         except Exception as e:
             return f"✗ {name} 실행 실패: {e}"
 
@@ -641,7 +641,7 @@ def open_app(app: str, new: bool = False) -> str:
         #    셸 명령은 포커스가 **실패했을 때만** 폴백으로 쓴다
         #    (설정 앱처럼 창 핸들을 못 잡는 경우가 있다 — 그때는 원래 동작 그대로).
         if _focus_window(app_key):
-            return f"✓ {name} 창을 앞으로 가져왔습니다."
+            return f"✓ {name} 창을 앞으로 가져왔어요."
         if app_key in _UWP_SHELL_COMMANDS:
             try:
                 subprocess.Popen(_UWP_SHELL_COMMANDS[app_key], shell=True)
@@ -675,7 +675,7 @@ def open_app(app: str, new: bool = False) -> str:
     path = _resolve_path(app_key)
     if not path:
         return (
-            f"✗ '{name}' 앱을 찾을 수 없습니다. "
+            f"✗ '{name}' 앱을 찾을 수 없어요. "
             "설치되어 있지 않거나 지원하지 않는 앱입니다."
         )
 
@@ -683,8 +683,8 @@ def open_app(app: str, new: bool = False) -> str:
         subprocess.Popen([path])
         time.sleep(0.8)
         if _is_running(app_key):
-            return f"✓ {name}{eul_reul} 실행했습니다."
-        return f"✓ {name} 실행 명령을 보냈습니다."
+            return f"✓ {name}{eul_reul} 실행했어요."
+        return f"✓ {name} 실행 명령을 보냈어요."
     except Exception as e:
         return f"✗ {name} 실행 실패: {e}"
 
@@ -708,7 +708,7 @@ def close_app(app: str) -> str:
         return (
             "⚠️ 파일 탐색기는 Windows 시스템 프로세스라 프로그램으로 닫을 수 없어요. "
             "창 우측 상단 ✕ 버튼으로 직접 닫아주세요. "
-            "(열기는 가능합니다 — open_app 도구를 사용하세요)"
+            "(열기는 가능해요 — open_app 도구를 사용하세요)"
         )
 
     name = _display_name(app_key, app)
@@ -716,7 +716,7 @@ def close_app(app: str) -> str:
     i_ga = _korean_particle(name, "이", "가")
 
     if not _is_running(app_key):
-        return f"✗ '{name}'{i_ga} 실행 중이지 않습니다."
+        return f"✗ '{name}'{i_ga} 실행 중이지 않아요."
 
     hwnds = _app_windows(app_key, app)
     if not hwnds:
@@ -735,7 +735,7 @@ def close_app(app: str) -> str:
 
     left = _await_windows_gone(hwnds)
     if not left:
-        return f"✓ {name}{eul_reul} 종료했습니다."
+        return f"✓ {name}{eul_reul} 종료했어요."
 
     # 🔑 **여기가 이 수정의 값이다.** 예전에는 이 자리가 없었다 —
     #   저장 대화상자가 뜰 겨를도 없이 프로세스가 죽었다.
@@ -798,11 +798,11 @@ def force_close_app(app: str) -> str:
     i_ga = _korean_particle(name, "이", "가")
 
     if not found:
-        return f"✗ '{name}'{i_ga} 실행 중이지 않습니다."
+        return f"✗ '{name}'{i_ga} 실행 중이지 않아요."
 
     gone, alive = _await_gone(found)
     if not alive:
-        return f"✓ {name}{eul_reul} 종료했습니다."
+        return f"✓ {name}{eul_reul} 종료했어요."
 
     # ⚠️ 여기서 **개수를 말하지 않는다.** 사용자가 보는 것은 창이고 우리가 센 것은
     #   프로세스다 — 크롬은 창 하나에 프로세스가 여럿이다([BL-55](../docs/BACKLOG.md)와 같은 함정).
@@ -812,7 +812,7 @@ def force_close_app(app: str) -> str:
     if gone:
         return (f"⚠️ {name}{eul_reul} 완전히 닫지 못했어요 — 일부가 아직 실행 중입니다. "
                 f"저장하지 않은 내용이 있는지 확인해 주세요.")
-    return (f"⚠️ {name} 종료를 요청했지만 아직 닫히지 않았습니다. "
+    return (f"⚠️ {name} 종료를 요청했지만 아직 닫히지 않았어요. "
             f"저장하지 않은 내용이 있는지 확인하고 창에서 직접 닫아 주세요.")
 
 
@@ -915,14 +915,14 @@ def _change_window_state(app: str, cmd: int, kind: str, verb: str) -> str:
             return f"⚠️ 지금 앞에 있는 창을 찾지 못해 {verb}하지 못했어요."
         ctypes.windll.user32.ShowWindow(hwnd, cmd)
         if _await_window_state(hwnd, kind):
-            return f"✓ 현재 창을 {verb}했습니다."
+            return f"✓ 현재 창을 {verb}했어요."
         _log.warning("[창] %s 실패 | 대상=현재 창 | hwnd=%s", verb, hwnd)
         return f"⚠️ 지금 앞에 있는 창을 {verb}하지 못했어요."
 
     app_key = _normalize(app)
     hwnd, running = _find_app_window(app_key, app)
     if not running:
-        return f"✗ {app}이(가) 실행 중이지 않습니다."
+        return f"✗ {app}이(가) 실행 중이지 않아요."
     if not hwnd:
         # 프로세스는 있는데 **보이는 창이 없다.** (크롬처럼 창을 다 닫아도
         # 백그라운드가 남는 앱 · 정지된 UWP) "실행 중인지 확인하세요"는
@@ -932,7 +932,7 @@ def _change_window_state(app: str, cmd: int, kind: str, verb: str) -> str:
 
     ctypes.windll.user32.ShowWindow(hwnd, cmd)
     if _await_window_state(hwnd, kind):
-        return f"✓ {app} 창을 {verb}했습니다."
+        return f"✓ {app} 창을 {verb}했어요."
     _log.warning("[창] %s 실패 | 앱=%s | hwnd=%s", verb, app, hwnd)
     return (f"⚠️ {app} 창을 {verb}하지 못했어요. 창이 응답하지 않는 것 같아요.")
 

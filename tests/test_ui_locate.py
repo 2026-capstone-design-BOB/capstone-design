@@ -161,7 +161,7 @@ try:
     check("✗ 로 답한다", r.startswith("✗"), f"→ {r[:70]}")
     check("좌표를 지어내지 않는다", "(" not in r.split("좌표")[0] or "찾았습니다" not in r,
           f"→ {r[:70]}")
-    check("사유를 알린다", "위치를 확인하지 못했습니다" in r, f"→ {r[:90]}")
+    check("사유를 알린다", "위치를 확인하지 못했어요" in r, f"→ {r[:90]}")  # 🔄 2026-09-23 — 말투를 해요체로 통일했다(2-2 ⓐ). **소스 문구를 그대로** 적는다.
 finally:
     if _saved is not None:
         sys.modules["tools.system"] = _saved
