@@ -95,7 +95,7 @@ check("실행 스텁(wt.exe)으로도 잡는다", "터미널" in run_with(["wt.e
 print("")
 print("[3] 확인하지 않은 것을 확인한 것처럼 말하지 않는다")
 
-NOTICE = "Pluiz가 아는 앱만 확인합니다"
+NOTICE = "Pluiz가 아는 앱만 확인할게요"  # 🔄 2026-09-23 — 말투를 해요체로 통일했다(2-2 ⓐ). **소스 문구를 그대로** 적는다.
 check("앱을 찾았을 때도 고지가 붙는다", NOTICE in run_with(["notepad.exe"]))
 check("아무것도 못 찾았을 때도 고지가 붙는다", NOTICE in run_with(["Idle.exe"]))
 check("모르는 앱은 목록에 넣지 않는다",

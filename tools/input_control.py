@@ -70,7 +70,7 @@ def _get_pyautogui():
         return pyautogui
     except ImportError:
         raise ImportError(
-            "pyautogui가 설치되지 않았습니다. "
+            "pyautogui가 설치되지 않았어요. "
             "터미널에서 'pip install pyautogui pyperclip' 실행 후 재시도하세요."
         )
 
@@ -81,7 +81,7 @@ def _get_pyperclip():
         return pyperclip
     except ImportError:
         raise ImportError(
-            "pyperclip이 설치되지 않았습니다. "
+            "pyperclip이 설치되지 않았어요. "
             "터미널에서 'pip install pyperclip' 실행 후 재시도하세요."
         )
 
@@ -125,7 +125,7 @@ def _ensure_target_focused(target: str) -> tuple[bool, str]:
 
     hwnd = find_hwnd_for_app(target)
     if not hwnd:
-        return (False, f"✗ '{target}' 창을 찾을 수 없어 입력하지 않았습니다. "
+        return (False, f"✗ '{target}' 창을 찾을 수 없어 입력하지 않았어요. "
                        f"먼저 {target}을(를) 열어주세요.")
 
     fg, _title = _foreground_window()
@@ -144,7 +144,7 @@ def _ensure_target_focused(target: str) -> tuple[bool, str]:
     if fg and fg == hwnd:
         return (True, "")
     where = f"'{title}' 창" if title else "다른 창"
-    return (False, f"✗ '{target}' 창을 앞으로 가져오지 못해 입력하지 않았습니다. "
+    return (False, f"✗ '{target}' 창을 앞으로 가져오지 못해 입력하지 않았어요. "
                    f"지금 앞에 있는 건 {where}라서, 그대로 입력하면 거기에 글자가 "
                    f"들어갔을 거예요.")
 
@@ -196,12 +196,12 @@ def type_text(text: str, target: str = "") -> str:
         preview = f"{text[:30]}{'...' if len(text) > 30 else ''}"
         _, title = _foreground_window()
         if title:
-            return f"✓ '{title}' 창에 입력했습니다: '{preview}'"
+            return f"✓ '{title}' 창에 입력했어요: '{preview}'"
         return f"✓ 텍스트 입력 완료: '{preview}'"
     except ImportError as e:
-        return f"✗ 글자를 입력하지 못했습니다: {e}"
+        return f"✗ 글자를 입력하지 못했어요: {e}"
     except Exception as e:
-        return f"✗ 글자를 입력하지 못했습니다: {type(e).__name__}: {e}"
+        return f"✗ 글자를 입력하지 못했어요: {type(e).__name__}: {e}"
 
 
 @tool
@@ -220,9 +220,9 @@ def get_clipboard_text() -> str:
         suffix = f"... (총 {len(content)}자)" if len(content) > 200 else ""
         return f"📋 클립보드 내용:\n{preview}{suffix}"
     except ImportError as e:
-        return f"✗ 클립보드를 읽지 못했습니다: {e}"
+        return f"✗ 클립보드를 읽지 못했어요: {e}"
     except Exception as e:
-        return f"✗ 클립보드를 읽지 못했습니다: {type(e).__name__}: {e}"
+        return f"✗ 클립보드를 읽지 못했어요: {type(e).__name__}: {e}"
 
 
 @tool
@@ -266,7 +266,7 @@ def press_key(key: str, target: str = "") -> str:
             if not ok:
                 # 🚨 누르지 않고 끝낸다. 문구의 «입력»을 «키»로 바꿔 준다 —
                 #   같은 함수가 두 도구를 지키므로 말만 도구에 맞춘다.
-                return reason.replace("입력하지 않았습니다", "키를 누르지 않았습니다")
+                return reason.replace("입력하지 않았어요", "키를 누르지 않았어요")
 
         normalized = key.strip().lower()
         actual_key = _KEY_MAP.get(normalized, normalized)
@@ -282,12 +282,12 @@ def press_key(key: str, target: str = "") -> str:
         # 엉뚱한 창에서 눌려도 사용자가 알 방법이 없었다.
         _, title = _foreground_window()
         if title:
-            return f"✓ '{title}' 창에서 '{key}' 키를 눌렀습니다."
+            return f"✓ '{title}' 창에서 '{key}' 키를 눌렀어요."
         return f"✓ '{key}' 키 입력 완료"
     except ImportError as e:
-        return f"✗ 키를 누르지 못했습니다: {e}"
+        return f"✗ 키를 누르지 못했어요: {e}"
     except Exception as e:
-        return f"✗ 키를 누르지 못했습니다: {type(e).__name__}: {e}"
+        return f"✗ 키를 누르지 못했어요: {type(e).__name__}: {e}"
 
 
 # ── 좌표 기반 클릭 (Phase 2) ──────────────────────────────────────
@@ -331,7 +331,7 @@ def _click_guard(loc: dict, window: str) -> str:
             if not hwnd:
                 return f"'{window}' 창이 사라졌습니다"
             if window_screen_rect(hwnd) != tuple(rect):
-                return f"'{window}' 창이 그 사이 움직여서 좌표가 맞지 않습니다"
+                return f"'{window}' 창이 그 사이 움직여서 좌표가 맞지 않아요"
         except Exception as e:
             print(f"[click] 창 이동 확인 생략(무시): {type(e).__name__}: {e}")
 
@@ -356,22 +356,22 @@ def click_ui_element(target: str, window: str = "") -> str:
     try:
         pyautogui = _get_pyautogui()
     except ImportError as e:
-        return f"✗ 클릭하지 못했습니다: {e}"
+        return f"✗ 클릭하지 못했어요: {e}"
 
     try:
         from tools.vision import locate_ui_element
     except Exception as e:
-        return f"✗ 화면 분석 기능을 불러오지 못해 클릭하지 않았습니다: {e}"
+        return f"✗ 화면 분석 기능을 불러오지 못해 클릭하지 않았어요: {e}"
 
     loc = locate_ui_element(target, window)
     if not loc.get("found"):
         # 못 찾았으면 **아무 데도 누르지 않는다.** 중앙을 누른다든지 하면 안 된다.
-        return (f"✗ 화면에서 '{target}'을(를) 찾지 못해 클릭하지 않았습니다. "
+        return (f"✗ 화면에서 '{target}'을(를) 찾지 못해 클릭하지 않았어요. "
                 f"({loc.get('reason', '알 수 없음')})")
 
     problem = _click_guard(loc, window)
     if problem:
-        return f"✗ {problem}. 안전을 위해 클릭하지 않았습니다."
+        return f"✗ {problem}. 안전을 위해 클릭하지 않았어요."
 
     x, y = loc["center"]
     try:
@@ -381,7 +381,7 @@ def click_ui_element(target: str, window: str = "") -> str:
     try:
         pyautogui.click(x, y)
     except Exception as e:
-        return f"✗ 클릭하지 못했습니다: {type(e).__name__}: {e}"
+        return f"✗ 클릭하지 못했어요: {type(e).__name__}: {e}"
     finally:
         # 마우스를 원래 자리로 돌려놓는다 — 사용자가 쓰던 위치를 뺏지 않는다
         if before is not None:
@@ -391,5 +391,5 @@ def click_ui_element(target: str, window: str = "") -> str:
                 pass
 
     # 클릭했다는 것과 **의도한 효과가 났다는 것은 다르다.** 지어내지 않는다.
-    return (f"✓ '{loc['label']}'을(를) 화면 ({x}, {y})에서 클릭했습니다. "
+    return (f"✓ '{loc['label']}'을(를) 화면 ({x}, {y})에서 클릭했어요. "
             f"원하는 대로 됐는지는 화면을 확인해 주세요.")

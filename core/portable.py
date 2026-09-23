@@ -178,9 +178,9 @@ def read_manifest(data: bytes) -> dict:
     except BundleError:
         raise
     except zipfile.BadZipFile:
-        raise BundleError("zip 파일이 아니거나 깨져 있습니다.")
+        raise BundleError("zip 파일이 아니거나 깨져 있어요.")
     except Exception as e:
-        raise BundleError(f"파일을 읽지 못했습니다: {e}")
+        raise BundleError(f"파일을 읽지 못했어요: {e}")
 
     if m.get("product") != "pluiz":
         raise BundleError("Pluiz 내보내기 파일이 아닙니다.")

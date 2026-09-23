@@ -317,7 +317,10 @@ def run():
                      "tools 를 못 불러왔다")
     else:
         auto = FakeAuto()
-        deny = (False, "✗ '메모장' 창을 앞으로 가져오지 못해 입력하지 않았습니다. "
+        # 🔄 2026-09-23 — 가짜 사유도 **소스와 같은 말투**여야 한다. 안 그러면
+        #   `press_key` 의 `.replace("입력하지 않았어요", …)` 가 빗나가고,
+        #   **테스트만 통과하는 절반짜리 상태**를 못 잡는다(2-2 ⓐ 를 만들며 실제로 겪었다).
+        deny = (False, "✗ '메모장' 창을 앞으로 가져오지 못해 입력하지 않았어요. "
                        "지금 앞에 있는 건 '크롬' 창이라서, 그대로 입력하면 거기에 "
                        "글자가 들어갔을 거예요.")
         with patch(ic, _get_pyautogui=lambda: auto,
@@ -327,7 +330,7 @@ def run():
         check("① 대상 창을 확인 못 하면 **누르지 않는다**",
               auto.hotkeys == [] and auto.presses == [], f"→ {auto.hotkeys}{auto.presses}")
         check("① 그때 «키를 누르지 않았다»고 말한다",
-              tool_failed(out) and "키를 누르지 않았습니다" in out, f"→ {out!r}")
+              tool_failed(out) and "키를 누르지 않았어요" in out, f"→ {out!r}")
 
         auto = FakeAuto()
         with patch(ic, _get_pyautogui=lambda: auto,

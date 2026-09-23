@@ -220,7 +220,7 @@ def set_volume(level: int) -> str:
     level: 0-100 사이의 볼륨 값
     """
     if not 0 <= level <= 100:
-        return f"✗ 볼륨은 0에서 100 사이 값이어야 합니다. (입력: {level})"
+        return f"✗ 볼륨은 0에서 100 사이 값이어야 해요. (입력: {level})"
     before = _get_volume()
     _set_volume_level(level)
     # 🚨 여기는 예전에 **되읽기조차 없었다.** 설정을 못 해도 «설정했습니다»가 나갔다.
@@ -409,7 +409,7 @@ def set_brightness(level: int) -> str:
     # 볼륨에는 `set_volume` 이 있는데 밝기에는 **없었다** — *"밝기 50으로 해줘"* 가
     # 갈 곳이 없어 `brightness_up/down` 을 여러 번 부르거나 아무것도 안 됐다.
     if not 0 <= level <= 100:
-        return f"✗ 밝기는 0에서 100 사이 값이어야 합니다. (입력: {level})"
+        return f"✗ 밝기는 0에서 100 사이 값이어야 해요. (입력: {level})"
     before = _get_brightness()
     if not _set_brightness(level):
         return "⚠️ 밝기를 바꾸지 못했어요. 이 PC가 밝기 조절을 지원하지 않을 수 있어요."
@@ -459,7 +459,7 @@ def window_screen_rect(hwnd: int) -> tuple[int, int, int, int]:
     w = rect.right - rect.left
     h = rect.bottom - rect.top
     if w <= 0 or h <= 0:
-        raise ValueError("창 크기가 유효하지 않습니다")
+        raise ValueError("창 크기가 유효하지 않아요")
     return (rect.left, rect.top, w, h)
 
 
@@ -537,7 +537,7 @@ def capture_origin(window: str = "") -> tuple[int, int]:
         return (0, 0)
     hwnd, _label = resolve_window_hwnd(window)
     if not hwnd:
-        raise ValueError(f"'{window}' 창을 찾을 수 없습니다")
+        raise ValueError(f"'{window}' 창을 찾을 수 없어요")
     left, top, _w, _h = window_screen_rect(hwnd)
     return (left, top)
 
@@ -583,13 +583,13 @@ def ensure_window_ready(window: str, launch: bool = True) -> dict:
     # ① 창이 없다 → 열어 준다 (사용자가 «실행하겠다고 한 다음에»라고 했다)
     if not hwnd:
         if not launch:
-            out.update(ok=False, reason=f"'{window}' 창을 찾을 수 없습니다")
+            out.update(ok=False, reason=f"'{window}' 창을 찾을 수 없어요")
             return out
         try:
             from tools.app_control import open_app
             open_app.invoke({"app": window})
         except Exception as e:
-            out.update(ok=False, reason=f"'{window}'을(를) 열지 못했습니다: {e}")
+            out.update(ok=False, reason=f"'{window}'을(를) 열지 못했어요: {e}")
             return out
         # 창이 뜰 때까지 잠깐 기다린다. 바로 캡처하면 흰 화면을 찍는다.
         for _ in range(20):             # 최대 4초
@@ -598,7 +598,7 @@ def ensure_window_ready(window: str, launch: bool = True) -> dict:
             if hwnd:
                 break
         if not hwnd:
-            out.update(ok=False, reason=f"'{window}'을(를) 열었지만 창이 나타나지 않았습니다")
+            out.update(ok=False, reason=f"'{window}'을(를) 열었지만 창이 나타나지 않았어요")
             return out
         out.update(action="launched", label=label or window)
         _t.sleep(0.6)                   # 첫 렌더가 끝나도록
@@ -625,7 +625,7 @@ def ensure_window_ready(window: str, launch: bool = True) -> dict:
                 out["action"] = "fronted"
         else:
             out["fronted"] = False
-            out["reason"] = f"'{out['label']}' 창을 전면에 올리지 못했습니다"
+            out["reason"] = f"'{out['label']}' 창을 전면에 올리지 못했어요"
     return out
 
 
@@ -722,7 +722,7 @@ def take_screenshot(save_path: str = "", window: str = "") -> str:
         if not window:
             img = PIL.ImageGrab.grab()
             img.save(save_path)
-            return f"✓ 전체 화면 스크린샷을 저장했습니다.\n경로: {save_path}"
+            return f"✓ 전체 화면 스크린샷을 저장했어요.\n경로: {save_path}"
 
         # ── HWND 획득 (좌표 계산과 같은 해석기를 쓴다) ────────────
         try:
@@ -731,7 +731,7 @@ def take_screenshot(save_path: str = "", window: str = "") -> str:
             return f"✗ 앱 창 조회 실패: {import_err}"
 
         if not hwnd:
-            return f"✗ '{window}' 창을 찾을 수 없습니다. 앱이 실행 중인지 확인해주세요."
+            return f"✗ '{window}' 창을 찾을 수 없어요. 앱이 실행 중인지 확인해주세요."
 
         # ── 최소화 상태면 잠깐 복원 후 캡처, 이후 재최소화 ────────
         was_minimized = bool(ctypes.windll.user32.IsIconic(hwnd))
@@ -746,11 +746,11 @@ def take_screenshot(save_path: str = "", window: str = "") -> str:
             ctypes.windll.user32.ShowWindow(hwnd, 6)   # SW_MINIMIZE
 
         note = " (최소화 상태에서 잠깐 복원 후 촬영)" if was_minimized else ""
-        return f"✓ '{label}' 창 스크린샷을 저장했습니다{note}.\n경로: {save_path}"
+        return f"✓ '{label}' 창 스크린샷을 저장했어요{note}.\n경로: {save_path}"
 
     except ImportError:
         if window:
-            return "✗ 창별 스크린샷은 Pillow가 필요합니다. (pip install pillow)"
+            return "✗ 창별 스크린샷은 Pillow가 필요해요. (pip install pillow)"
         ps_cmd = (
             f'Add-Type -AssemblyName System.Windows.Forms; '
             f'$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; '
@@ -760,7 +760,7 @@ def take_screenshot(save_path: str = "", window: str = "") -> str:
             f'$bmp.Save("{save_path.replace(chr(92), "/")}")'
         )
         subprocess.run(["powershell", "-Command", ps_cmd], capture_output=True)
-        return f"✓ 스크린샷을 저장했습니다.\n경로: {save_path}"
+        return f"✓ 스크린샷을 저장했어요.\n경로: {save_path}"
     except Exception as e:
         return f"✗ 스크린샷 실패: {e}"
 
@@ -770,7 +770,7 @@ def get_battery_status() -> str:
     """현재 배터리 상태(잔량, 충전 여부)를 확인합니다."""
     battery = psutil.sensors_battery()
     if battery is None:
-        return "✗ 배터리 정보를 가져올 수 없습니다. (데스크탑이거나 드라이버 문제)"
+        return "✗ 배터리 정보를 가져올 수 없어요. (데스크탑이거나 드라이버 문제)"
 
     percent = battery.percent
     charging = battery.power_plugged
@@ -826,8 +826,8 @@ def get_running_apps() -> str:
     #   없으면 모델이 *"…만 실행 중이에요"* 라고 단정한다(실기에서 실제로 그랬다).
     #   확인하지 않은 것을 확인한 것처럼 말하지 않는다.
     tail = ("\n(이 목록에 없는 앱도 켜져 있을 수 있어요 — "
-            "Pluiz가 아는 앱만 확인합니다.)")
+            "Pluiz가 아는 앱만 확인할게요.)")
     if found:
         return ("✓ 실행 중인 앱:\n"
                 + "\n".join(f"  • {app}" for app in found) + tail)
-    return "✓ Pluiz가 아는 앱 중에는 실행 중인 것이 없습니다." + tail
+    return "✓ Pluiz가 아는 앱 중에는 실행 중인 것이 없어요." + tail

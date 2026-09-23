@@ -597,7 +597,7 @@ def build_system_prompt() -> str:
         # 삭제는 시스템(hitl 노드)이 반드시 확인을 받는다. LLM이 먼저 되물으면
         # 사용자가 같은 말을 두 번 해야 한다 — 실기에서 실제로 겪은 불편이다.
         "삭제 요청을 받으면 '삭제할까요?'라고 되묻지 말고 바로 삭제 도구를 호출하세요. "
-        "확인 절차는 시스템이 자동으로 진행합니다.\n"
+        "확인 절차는 시스템이 자동으로 진행할게요.\n"
         # 🚨 **BL-40 (2026-09-11 사용자 지적).** "a.txt랑 b.txt 지워줘"에 모델이 삭제를
         #    **두 개의 턴으로 쪼개서** 승인이 두 번 떴다. BL-24는 «한 배치에 위험 호출이
         #    둘일 때» 하나의 질문으로 묶는 장치라, 쪼개지면 개입할 자리가 없다.
@@ -613,9 +613,9 @@ def build_system_prompt() -> str:
         #    ⚠️ 이건 프롬프트라 **확률만 올린다.** 구조적 해결(hitl이 턴 경계까지 모아서
         #    묻기)은 BL-17·24·30이 앉아 있는 자리라 시연 뒤로 미뤘다 → BACKLOG BL-40
         "여러 개를 지워 달라고 하면 삭제 도구를 **같은 응답에 한꺼번에** 호출하세요. "
-        "'a.txt랑 b.txt 지워줘'면 delete_file을 두 번, 한 번의 응답에 함께 담습니다. "
-        "그러면 확인을 한 번만 받습니다. 하나씩 나눠 부르면 사용자가 같은 확인을 "
-        "여러 번 해야 합니다.\n"
+        "'a.txt랑 b.txt 지워줘'면 delete_file을 두 번, 한 번의 응답에 함께 담아요. "
+        "그러면 확인을 한 번만 받아요. 하나씩 나눠 부르면 사용자가 같은 확인을 "
+        "여러 번 해야 해요.\n"
         # 🚨 **D-01a (2026-09-12 1차 리허설).** 음성으로 영문 파일명을 부르면 STT가
         #    **소리 나는 대로** 준다 — `a.txt`가 «에이점 티엑스티»로 온다.
         #    `find_file`은 코드로 이걸 푼다(`tools/filesystem.py _romanize_ko`).
@@ -625,7 +625,7 @@ def build_system_prompt() -> str:
         #    풀어 줘야 하고**, 이 문장이 그 자리다.
         #
         #    ⚠️ 지시를 먼저, 못 풀 때의 길을 뒤에 (BL-19의 순서 규칙).
-        "사용자가 파일 이름을 **소리 나는 대로** 말할 수 있습니다. "
+        "사용자가 파일 이름을 **소리 나는 대로** 말할 수 있어요. "
         "「에이점 티엑스티」는 a.txt, 「비점 티엑스티」는 b.txt 입니다 — "
         "알파벳으로 **풀어서** 도구에 넘기세요. "
         "어떤 이름인지 확신이 안 서면 find_file로 먼저 확인하세요"
@@ -633,8 +633,8 @@ def build_system_prompt() -> str:
         # target 없이 부르면 '그때 포커스된 창'에 들어간다 — 실기에서 Pluiz 자기
         # 입력창에 글자가 들어간 적이 있다(BL-12).
         "type_text로 글자를 입력할 땐 target에 **어느 앱에 넣을지**를 반드시 주세요"
-        "(예: target=\"메모장\"). 그래야 그 창이 앞에 온 걸 확인하고 입력합니다. "
-        "'✗ …입력하지 않았습니다'가 오면 입력이 **안 된 것**이니 됐다고 하지 마세요.\n"
+        "(예: target=\"메모장\"). 그래야 그 창이 앞에 온 걸 확인하고 입력할게요. "
+        "'✗ …입력하지 않았어요'가 오면 입력이 **안 된 것**이니 됐다고 하지 마세요.\n"
         # 창 규칙: 기본은 기존 창 재사용. "새로/하나 더/새 탭"일 때만 new=True.
         "앱을 열 땐 open_app을 그대로 부르세요(이미 켜져 있으면 그 창을 앞으로 가져옵니다). "
         "사용자가 '새로 열어줘'·'하나 더'·'새 탭'처럼 새 창/탭을 원할 때만 new=True를 주세요.\n"
@@ -649,7 +649,7 @@ def build_system_prompt() -> str:
         #    지금은 **해야 할 일이 먼저**, 제약이 뒤다.
         "'~하면 알려줘'·'~되면 알려줘'처럼 앞으로 생길 일을 알려달라고 하면 "
         "반드시 watch_screen을 호출하세요. 도구를 부르지 않고 '지켜볼게요'라고만 "
-        "답하면 실제로는 아무도 화면을 보고 있지 않습니다.\n"
+        "답하면 실제로는 아무도 화면을 보고 있지 않아요.\n"
         "'그만 봐'·'감시 그만'처럼 중단을 요청하면 반드시 stop_watching을 호출하세요. "
         "부르지 않고 '중단했어요'라고 답하면 감시는 계속 돕니다. "
         "(다만 사용자가 요청하지 않았는데 스스로 감시를 시작하지는 마세요.)\n"
@@ -887,7 +887,7 @@ _COND_RE = re.compile(r'뜨면|나오면|되면|생기면|끝나면|바뀌면|�
 _TELL_RE = re.compile(r'알려|말해|알림')
 _STOP_REQUEST_RE = re.compile(r'그만\s*(봐|보지|볼래)|감시\s*(그만|중단|꺼)|안\s*봐도|그만 두')
 # 응답이 "해줬다/해주겠다"고 말하는가.
-_WATCH_ASSERT_RE = re.compile(r'게요|했어요|했습니다|멈췄|중단|시작했')
+_WATCH_ASSERT_RE = re.compile(r'게요|했어요|했어요|멈췄|중단|시작했')
 
 _WATCH_LIE_MSG = (
     "죄송해요, 화면 감시를 실제로 시작하지 못했어요. "
@@ -913,9 +913,9 @@ def _is_watch_request(text: str) -> bool:
 # ⚠️ **한 번만** 한다. 무한 재시도는 응답 지연을 그만큼 늘리고, HITL 무한루프
 #    사고와 같은 계열의 위험이다. 두 번째도 실패하면 output_guard가 정직하게 말한다.
 _WATCH_RETRY_DIRECTIVE = (
-    "\n\n[중요] 사용자는 지금 화면 감시를 요청했습니다. "
+    "\n\n[중요] 사용자는 지금 화면 감시를 요청했어요. "
     "watch_screen(또는 중단이면 stop_watching) 도구를 **반드시 지금 호출**하세요. "
-    "도구를 부르지 않고 말로만 답하면 실제로는 아무 일도 일어나지 않습니다."
+    "도구를 부르지 않고 말로만 답하면 실제로는 아무 일도 일어나지 않아요."
 )
 
 
@@ -951,11 +951,11 @@ _PROMISE_NOW_RE = re.compile(
     r'|(찾고|검색하고|확인하고|알아보고|가져오고|조회하고)\s*있(어요|습니다)'
 )
 # 이미 «못 했다»고 말하고 있으면 거짓말이 아니다 — 정직한 보고다. 건드리지 않는다.
-_HONEST_FAIL_RE = re.compile(r'못\s|못했|못 했|없어요|없습니다|실패|어려워요|안 돼|안돼')
+_HONEST_FAIL_RE = re.compile(r'못\s|못했|못 했|없어요|없어요|실패|어려워요|안 돼|안돼')
 
 _PROMISE_RETRY_DIRECTIVE = (
     "\n\n[중요] 방금 답변에서 «지금 ~하겠다»고 말했지만 도구를 하나도 부르지 "
-    "않았습니다. 말로만 답하면 **실제로는 아무 일도 일어나지 않고**, 사용자는 "
+    "않았어요. 말로만 답하면 **실제로는 아무 일도 일어나지 않고**, 사용자는 "
     "기다리다가 다시 물어봐야 합니다. 지금 필요한 도구를 **반드시 호출**하세요. "
     "할 수 없는 일이라면 «할 수 없다»고 분명히 말하세요 — 하겠다고만 하지 마세요."
 )
@@ -1160,7 +1160,7 @@ def build_visual_question(tool_name: str, args: Optional[dict]) -> Optional[tupl
         snippet = text[:30] + ("..." if len(text) > 30 else "")
         return (target, (
             f"이 창은 '{target}'입니다. 방금 여기에 '{snippet}' 라는 내용을 "
-            "입력했습니다. 그 내용이 실제로 들어가 있나요? "
+            "입력했어요. 그 내용이 실제로 들어가 있나요? "
             "본문이 비어 있으면 '비어 있다'고, 다른 내용만 있으면 그 내용을 "
             "그대로 말해주세요."
         ))
@@ -1413,7 +1413,7 @@ def turn_tool_call_count(messages: list[AnyMessage]) -> int:
 # 재발행돼 «이어서 실행될» 호출의 마감 사유. 사실이 아닌 «취소»를 히스토리에
 # 남기지 않으려는 것이다(BL-20 §3-1). BL-24의 승인 경로도 같은 문구를 쓴다 —
 # 승인된 호출 역시 원본은 마감되고 새 id로 다시 나가기 때문이다.
-_HELD_REASON = "승인 절차로 보류됐습니다. 이 호출은 이어서 다시 실행됩니다."
+_HELD_REASON = "승인 절차로 보류됐어요. 이 호출은 이어서 다시 실행됩니다."
 _REISSUE_KEY = "pluiz_reissued"      # response_metadata 표식(§5)
 _REISSUE_SUFFIX = "-r"
 
@@ -2020,7 +2020,7 @@ def build_pluiz_graph(
             more = f" 외 {len(missing) - 1}개" if len(missing) > 1 else ""
             reissued = reissue_message(safe_calls)
             msgs = _close_calls(
-                f"✗ '{base}'{more}을(를) 찾을 수 없습니다. 삭제하지 않았습니다.",
+                f"✗ '{base}'{more}을(를) 찾을 수 없어요. 삭제하지 않았어요.",
                 hold_safe=reissued is not None)
             if reissued is not None:
                 msgs.append(reissued)
@@ -2073,8 +2073,8 @@ def build_pluiz_graph(
             # 없어서 못 지운 것에 «이어서 실행됩니다»라고 적으면 거짓이 된다.
             missing_ids = {c.get("id") for c in missing}
             msgs = [ToolMessage(
-                        content=(f"✗ '{_target_name(c)}'을(를) 찾을 수 없습니다. "
-                                 "삭제하지 않았습니다."
+                        content=(f"✗ '{_target_name(c)}'을(를) 찾을 수 없어요. "
+                                 "삭제하지 않았어요."
                                  if c.get("id") in missing_ids else _HELD_REASON),
                         tool_call_id=c["id"])
                     for c in calls if c.get("id")]
@@ -2091,7 +2091,7 @@ def build_pluiz_graph(
         # 두 번 해야 한다(실기에서 실제로 겪었다). HumanMessage로 넣으므로
         # 여기서부터가 "이번 턴"이 된다 — 의미상 새 명령이 맞다(절대규칙 6).
         if verdict == "other_command":
-            msgs = _close_calls("사용자가 다른 명령을 내려 삭제를 취소했습니다.")
+            msgs = _close_calls("사용자가 다른 명령을 내려 삭제를 취소했어요.")
             msgs.append(HumanMessage(content=str(answer)))
             # ⚠️ **계획도 반드시 지운다**(M3). Command(resume)는 input_guard를 거치지
             #   않으므로, 안 지우면 새 명령을 처리할 agent가 "지금은 2단계: test.txt
@@ -2108,7 +2108,7 @@ def build_pluiz_graph(
         #   일은 «다시 말씀해 주세요»다. 되물으면서 도구까지 실행하면 사용자는 무엇이
         #   일어났는지 모른 채 결과만 보게 된다. 안전 기본값을 유지한다(ADR §4).
         reissued = reissue_message(safe_calls) if verdict == "reject" else None
-        cancel = _close_calls("사용자가 삭제를 취소했습니다.",
+        cancel = _close_calls("사용자가 삭제를 취소했어요.",
                               hold_safe=reissued is not None)
         if reissued is not None:
             cancel.append(reissued)

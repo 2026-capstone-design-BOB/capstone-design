@@ -80,7 +80,7 @@ def _open_with_browser(url: str) -> str:
 
     if '"' in url:
         # 셸에 넘길 수 없는 모양. 조용히 이상한 것을 열지 않는다.
-        raise RuntimeError("URL 에 따옴표가 있어 열 수 없습니다")
+        raise RuntimeError("URL 에 따옴표가 있어 열 수 없어요")
     try:
         # `start "" "<url>"` 가 cmd 의 올바른 형태다 — 첫 인자는 **창 제목**이라
         # 비워 두지 않으면 URL 이 제목으로 먹힌다. 따옴표는 `&` 가 든 주소를 지킨다.
@@ -92,7 +92,7 @@ def _open_with_browser(url: str) -> str:
     if p.returncode != 0:
         err = (p.stderr or b"").decode("utf-8", "replace").strip()
         _log.error("[열기] 셸 폴백 실패 | 종료코드=%s | %s", p.returncode, err[:200])
-        raise RuntimeError(f"브라우저를 열지 못했습니다 (종료코드 {p.returncode})")
+        raise RuntimeError(f"브라우저를 열지 못했어요 (종료코드 {p.returncode})")
     return url
 
 
@@ -111,7 +111,7 @@ def open_url(url: str) -> str:
         url = "https://" + url
     try:
         _open_with_browser(url)
-        return f"✓ {url} 열었습니다."
+        return f"✓ {url} 열었어요."
     except Exception as e:
         return f"✗ URL 열기 실패: {e}"
 
@@ -138,7 +138,7 @@ def web_search(query: str, engine: str = "google") -> str:
     url = urls.get(engine.lower(), urls["google"])
     try:
         _open_with_browser(url)
-        return f"✓ {engine}에서 '{query}'를 검색했습니다."
+        return f"✓ {engine}에서 '{query}'를 검색했어요."
     except Exception as e:
         return f"✗ 검색 실패: {e}"
 
@@ -175,7 +175,7 @@ def youtube_search(query: str) -> str:
                 title = items[0]["snippet"]["title"]
                 url = f"https://www.youtube.com/watch?v={video_id}"
                 _open_with_browser(url)
-                return f"✓ '{title}' 재생합니다."
+                return f"✓ '{title}' 재생할게요."
     except Exception as e:
         print(f"[youtube_search] API 오류, 검색 페이지로 fallback: {e}")
 
@@ -208,7 +208,7 @@ def map_search(destination: str, origin: str = "") -> str:
         label = f"'{destination}'"
     try:
         _open_with_browser(url)
-        return f"✓ {label} 지도를 열었습니다."
+        return f"✓ {label} 지도를 열었어요."
     except Exception as e:
         return f"✗ 지도 검색 실패: {e}"
 
@@ -325,7 +325,7 @@ def fetch_web_info(query: str) -> str:
     except Exception as e:
         print(f"[fetch_web_info] Instant Answer API 오류: {e}")
 
-    return f"✗ '{query}' 검색 결과를 가져오지 못했습니다. 인터넷 연결을 확인하거나 브라우저에서 직접 검색해주세요."
+    return f"✗ '{query}' 검색 결과를 가져오지 못했어요. 인터넷 연결을 확인하거나 브라우저에서 직접 검색해주세요."
 
 
 def _extract_text_from_html(html: str) -> str:
@@ -365,7 +365,7 @@ def crawl_page(url: str) -> str:
         text = _extract_text_from_html(resp.text)
         print(f"[crawl_page] httpx 성공: {len(text)}자 ({url})")
     except ImportError:
-        return "✗ crawl_page 사용을 위해 httpx와 beautifulsoup4가 필요합니다."
+        return "✗ crawl_page 사용을 위해 httpx와 beautifulsoup4가 필요해요."
     except Exception as e:
         print(f"[crawl_page] httpx 실패: {e} → playwright 시도")
 
@@ -392,10 +392,10 @@ def crawl_page(url: str) -> str:
         except Exception as e:
             print(f"[crawl_page] playwright 실패: {e}")
             if not text:
-                return f"✗ 페이지를 읽어오지 못했습니다 ({url}): {e}"
+                return f"✗ 페이지를 읽어오지 못했어요 ({url}): {e}"
 
     if not text:
-        return f"✗ '{url}' 페이지에서 내용을 추출하지 못했습니다."
+        return f"✗ '{url}' 페이지에서 내용을 추출하지 못했어요."
 
     # 4000자 초과 시 앞부분만 반환
     if len(text) > 4000:

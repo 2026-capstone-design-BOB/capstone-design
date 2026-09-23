@@ -218,7 +218,7 @@ def get_weather(location: str = "서울", days: str = "today") -> str:
     """
     place = resolve_place(location or "서울")
     if not place:
-        return (f"✗ '{location}'이(가) 어디인지 몰라서 날씨를 가져오지 못했습니다. "
+        return (f"✗ '{location}'이(가) 어디인지 몰라서 날씨를 가져오지 못했어요. "
                 f"시·군 이름으로 다시 말해 주세요 (예: 서울, 부산, 제주).")
     shown, lat, lon, exact = place
 
@@ -233,20 +233,20 @@ def get_weather(location: str = "서울", days: str = "today") -> str:
         )
     except WeatherTimeout:
         # 🚨 원인을 **단정하지 않는다.** 위 WeatherTimeout 주석 참조.
-        return ("✗ 날씨 자료를 받아오는 데 시간이 너무 걸려서 가져오지 못했습니다. "
+        return ("✗ 날씨 자료를 받아오는 데 시간이 너무 걸려서 가져오지 못했어요. "
                 "잠시 뒤에 다시 물어봐 주세요. "
-                "(인터넷이 느리거나 날씨 서버가 늦는 것이고, 어느 쪽인지는 확실하지 않습니다)")
+                "(인터넷이 느리거나 날씨 서버가 늦는 것이고, 어느 쪽인지는 확실하지 않아요)")
     except WeatherOffline:
-        return ("✗ 날씨 서버에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.")
+        return ("✗ 날씨 서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.")
     except Exception as e:
-        return f"✗ 날씨 자료를 가져오지 못했습니다 ({type(e).__name__})."
+        return f"✗ 날씨 자료를 가져오지 못했어요 ({type(e).__name__})."
 
     try:
         cur = data["current"]
         daily = data["daily"]
         dates = daily["time"]
     except (KeyError, TypeError):
-        return "✗ 날씨 자료의 형식이 예상과 달라 읽지 못했습니다."
+        return "✗ 날씨 자료의 형식이 예상과 달라 읽지 못했어요."
 
     # past_days=1 이므로 dates = [어제, 오늘, 내일]. 날짜로 확인한다 —
     # ⚠️ 순서를 가정하고 인덱스를 박으면 API가 바뀔 때 **조용히 어제를 오늘이라고 말한다.**

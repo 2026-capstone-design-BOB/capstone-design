@@ -151,52 +151,52 @@ DEFAULT_MAX_DYNAMIC = 200       # 동적 학습 상한 (settings로 오버라이
 # ── 시드 데이터 ────────────────────────────────────────────────────
 
 SEED_DATA: list[tuple[str, list, str]] = [
-    ("메모장 열어줘",      [{"name": "open_app", "args": {"app": "메모장"}}],        "✓ 메모장을 실행했습니다."),
-    ("메모장 켜줘",        [{"name": "open_app", "args": {"app": "메모장"}}],        "✓ 메모장을 실행했습니다."),
-    ("메모장 꺼줘",        [{"name": "close_app", "args": {"app": "메모장"}}],       "✓ 메모장을 종료했습니다."),
-    ("계산기 열어줘",      [{"name": "open_app", "args": {"app": "계산기"}}],        "✓ 계산기를 실행했습니다."),
-    ("계산기 켜줘",        [{"name": "open_app", "args": {"app": "계산기"}}],        "✓ 계산기를 실행했습니다."),
-    ("크롬 열어줘",        [{"name": "open_app", "args": {"app": "크롬"}}],          "✓ Chrome을 실행했습니다."),
-    ("크롬 켜줘",          [{"name": "open_app", "args": {"app": "크롬"}}],          "✓ Chrome을 실행했습니다."),
-    ("탐색기 열어줘",      [{"name": "open_app", "args": {"app": "탐색기"}}],        "✓ 파일 탐색기를 열었습니다."),
-    ("파일 탐색기 열어줘", [{"name": "open_app", "args": {"app": "파일탐색기"}}],    "✓ 파일 탐색기를 열었습니다."),
-    ("바탕화면 보여줘",    [{"name": "show_desktop", "args": {}}],                   "✓ 바탕화면을 표시했습니다."),
-    ("창 최대화해줘",      [{"name": "maximize_window", "args": {}}],                "✓ 창을 최대화했습니다."),
-    ("창 최소화해줘",      [{"name": "minimize_window", "args": {}}],                "✓ 창을 최소화했습니다."),
-    ("설정 열어줘",        [{"name": "open_app", "args": {"app": "settings"}}],      "✓ 설정을 열었습니다."),
-    ("윈도우 설정 열어줘", [{"name": "open_app", "args": {"app": "settings"}}],      "✓ 설정을 열었습니다."),
-    ("카카오톡 열어줘",    [{"name": "open_app", "args": {"app": "카카오톡"}}],      "✓ 카카오톡을 실행했습니다."),
-    ("볼륨 올려줘",        [{"name": "volume_up", "args": {}}],                      "✓ 볼륨을 높였습니다."),
-    ("소리 올려줘",        [{"name": "volume_up", "args": {}}],                      "✓ 볼륨을 높였습니다."),
-    ("볼륨 내려줘",        [{"name": "volume_down", "args": {}}],                    "✓ 볼륨을 낮췄습니다."),
-    ("소리 내려줘",        [{"name": "volume_down", "args": {}}],                    "✓ 볼륨을 낮췄습니다."),
-    ("음소거해줘",         [{"name": "mute_toggle", "args": {}}],                    "✓ 음소거 상태를 변경했습니다."),
-    ("음소거 해줘",        [{"name": "mute_toggle", "args": {}}],                    "✓ 음소거 상태를 변경했습니다."),
-    ("밝기 올려줘",        [{"name": "brightness_up", "args": {}}],                  "✓ 화면 밝기를 높였습니다."),
-    ("화면 밝게 해줘",     [{"name": "brightness_up", "args": {}}],                  "✓ 화면 밝기를 높였습니다."),
-    ("밝기 내려줘",        [{"name": "brightness_down", "args": {}}],                "✓ 화면 밝기를 낮췄습니다."),
-    ("화면 어둡게 해줘",   [{"name": "brightness_down", "args": {}}],                "✓ 화면 밝기를 낮췄습니다."),
+    ("메모장 열어줘",      [{"name": "open_app", "args": {"app": "메모장"}}],        "✓ 메모장을 실행했어요."),
+    ("메모장 켜줘",        [{"name": "open_app", "args": {"app": "메모장"}}],        "✓ 메모장을 실행했어요."),
+    ("메모장 꺼줘",        [{"name": "close_app", "args": {"app": "메모장"}}],       "✓ 메모장을 종료했어요."),
+    ("계산기 열어줘",      [{"name": "open_app", "args": {"app": "계산기"}}],        "✓ 계산기를 실행했어요."),
+    ("계산기 켜줘",        [{"name": "open_app", "args": {"app": "계산기"}}],        "✓ 계산기를 실행했어요."),
+    ("크롬 열어줘",        [{"name": "open_app", "args": {"app": "크롬"}}],          "✓ Chrome을 실행했어요."),
+    ("크롬 켜줘",          [{"name": "open_app", "args": {"app": "크롬"}}],          "✓ Chrome을 실행했어요."),
+    ("탐색기 열어줘",      [{"name": "open_app", "args": {"app": "탐색기"}}],        "✓ 파일 탐색기를 열었어요."),
+    ("파일 탐색기 열어줘", [{"name": "open_app", "args": {"app": "파일탐색기"}}],    "✓ 파일 탐색기를 열었어요."),
+    ("바탕화면 보여줘",    [{"name": "show_desktop", "args": {}}],                   "✓ 바탕화면을 표시했어요."),
+    ("창 최대화해줘",      [{"name": "maximize_window", "args": {}}],                "✓ 창을 최대화했어요."),
+    ("창 최소화해줘",      [{"name": "minimize_window", "args": {}}],                "✓ 창을 최소화했어요."),
+    ("설정 열어줘",        [{"name": "open_app", "args": {"app": "settings"}}],      "✓ 설정을 열었어요."),
+    ("윈도우 설정 열어줘", [{"name": "open_app", "args": {"app": "settings"}}],      "✓ 설정을 열었어요."),
+    ("카카오톡 열어줘",    [{"name": "open_app", "args": {"app": "카카오톡"}}],      "✓ 카카오톡을 실행했어요."),
+    ("볼륨 올려줘",        [{"name": "volume_up", "args": {}}],                      "✓ 볼륨을 높였어요."),
+    ("소리 올려줘",        [{"name": "volume_up", "args": {}}],                      "✓ 볼륨을 높였어요."),
+    ("볼륨 내려줘",        [{"name": "volume_down", "args": {}}],                    "✓ 볼륨을 낮췄어요."),
+    ("소리 내려줘",        [{"name": "volume_down", "args": {}}],                    "✓ 볼륨을 낮췄어요."),
+    ("음소거해줘",         [{"name": "mute_toggle", "args": {}}],                    "✓ 음소거 상태를 바꿨어요."),
+    ("음소거 해줘",        [{"name": "mute_toggle", "args": {}}],                    "✓ 음소거 상태를 바꿨어요."),
+    ("밝기 올려줘",        [{"name": "brightness_up", "args": {}}],                  "✓ 화면 밝기를 높였어요."),
+    ("화면 밝게 해줘",     [{"name": "brightness_up", "args": {}}],                  "✓ 화면 밝기를 높였어요."),
+    ("밝기 내려줘",        [{"name": "brightness_down", "args": {}}],                "✓ 화면 밝기를 낮췄어요."),
+    ("화면 어둡게 해줘",   [{"name": "brightness_down", "args": {}}],                "✓ 화면 밝기를 낮췄어요."),
     # 🆕 조회 (BL-60) — «묻기만 했는데 바뀌던» 자리의 나머지 절반이다.
     # 🔑 게이트가 «조작으로 가는 길»을 막고, 이 시드가 «조회로 가는 길»을 연다.
     #   시드가 없으면 매번 LLM 을 타야 답이 나온다(2.5초).
-    ("밝기 얼마야",        [{"name": "get_brightness", "args": {}}],                 "✓ 지금 화면 밝기를 알려드렸습니다."),
-    ("밝기 알려줘",        [{"name": "get_brightness", "args": {}}],                 "✓ 지금 화면 밝기를 알려드렸습니다."),
-    ("볼륨 얼마야",        [{"name": "get_volume", "args": {}}],                     "✓ 지금 볼륨을 알려드렸습니다."),
-    ("볼륨 알려줘",        [{"name": "get_volume", "args": {}}],                     "✓ 지금 볼륨을 알려드렸습니다."),
+    ("밝기 얼마야",        [{"name": "get_brightness", "args": {}}],                 "✓ 지금 화면 밝기를 알려드렸어요."),
+    ("밝기 알려줘",        [{"name": "get_brightness", "args": {}}],                 "✓ 지금 화면 밝기를 알려드렸어요."),
+    ("볼륨 얼마야",        [{"name": "get_volume", "args": {}}],                     "✓ 지금 볼륨을 알려드렸어요."),
+    ("볼륨 알려줘",        [{"name": "get_volume", "args": {}}],                     "✓ 지금 볼륨을 알려드렸어요."),
     # 🔑 «음소거됐어?» 의 답은 `get_volume` 이다 — 이 도구가 음소거 상태를 같이 말한다.
-    ("음소거됐어",         [{"name": "get_volume", "args": {}}],                     "✓ 지금 음소거 상태를 알려드렸습니다."),
-    ("스크린샷 찍어줘",    [{"name": "take_screenshot", "args": {}}],                "✓ 스크린샷을 저장했습니다."),
-    ("화면 캡처해줘",      [{"name": "take_screenshot", "args": {}}],                "✓ 스크린샷을 저장했습니다."),
-    ("지금 몇 시야",       [{"name": "get_current_time", "args": {}}],               "현재 시각을 확인합니다."),
-    ("배터리 얼마나 남았어",[{"name": "get_battery_status", "args": {}}],             "배터리 상태를 확인합니다."),
-    ("배터리 확인해줘",    [{"name": "get_battery_status", "args": {}}],             "배터리 상태를 확인합니다."),
-    ("지금 뭐 켜져 있어",  [{"name": "get_running_apps", "args": {}}],               "실행 중인 앱 목록을 확인합니다."),
-    ("실행 중인 앱 알려줘",[{"name": "get_running_apps", "args": {}}],               "실행 중인 앱 목록을 확인합니다."),
-    ("구글 열어줘",        [{"name": "open_url", "args": {"url": "https://www.google.com"}}],  "✓ Google을 열었습니다."),
-    ("유튜브 열어줘",      [{"name": "open_url", "args": {"url": "https://www.youtube.com"}}], "✓ YouTube를 열었습니다."),
-    ("네이버 열어줘",      [{"name": "open_url", "args": {"url": "https://www.naver.com"}}],   "✓ Naver를 열었습니다."),
-    ("날씨 검색해줘",      [{"name": "web_search", "args": {"query": "오늘 날씨"}}],           "✓ 날씨를 검색했습니다."),
-    ("최근에 열었던 파일 보여줘", [{"name": "open_recent_file", "args": {}}],         "최근 파일을 확인합니다."),
+    ("음소거됐어",         [{"name": "get_volume", "args": {}}],                     "✓ 지금 음소거 상태를 알려드렸어요."),
+    ("스크린샷 찍어줘",    [{"name": "take_screenshot", "args": {}}],                "✓ 스크린샷을 저장했어요."),
+    ("화면 캡처해줘",      [{"name": "take_screenshot", "args": {}}],                "✓ 스크린샷을 저장했어요."),
+    ("지금 몇 시야",       [{"name": "get_current_time", "args": {}}],               "현재 시각을 확인할게요."),
+    ("배터리 얼마나 남았어",[{"name": "get_battery_status", "args": {}}],             "배터리 상태를 확인할게요."),
+    ("배터리 확인해줘",    [{"name": "get_battery_status", "args": {}}],             "배터리 상태를 확인할게요."),
+    ("지금 뭐 켜져 있어",  [{"name": "get_running_apps", "args": {}}],               "실행 중인 앱 목록을 확인할게요."),
+    ("실행 중인 앱 알려줘",[{"name": "get_running_apps", "args": {}}],               "실행 중인 앱 목록을 확인할게요."),
+    ("구글 열어줘",        [{"name": "open_url", "args": {"url": "https://www.google.com"}}],  "✓ Google을 열었어요."),
+    ("유튜브 열어줘",      [{"name": "open_url", "args": {"url": "https://www.youtube.com"}}], "✓ YouTube를 열었어요."),
+    ("네이버 열어줘",      [{"name": "open_url", "args": {"url": "https://www.naver.com"}}],   "✓ Naver를 열었어요."),
+    ("날씨 검색해줘",      [{"name": "web_search", "args": {"query": "오늘 날씨"}}],           "✓ 날씨를 검색했어요."),
+    ("최근에 열었던 파일 보여줘", [{"name": "open_recent_file", "args": {}}],         "최근 파일을 확인할게요."),
 ]
 
 
@@ -827,7 +827,7 @@ class CommandCache:
                 self._intent_index[(app_key, "open")] = CacheEntry(
                     pattern=f"{display_name} 열어줘",
                     tool_calls=[{"name": "open_app", "args": {"app": display_name}}],
-                    response_template=f"✓ {display_name}{eul_reul} 실행했습니다.",
+                    response_template=f"✓ {display_name}{eul_reul} 실행했어요.",
                     is_seed=True,
                 )
                 synthesized += 1
@@ -837,7 +837,7 @@ class CommandCache:
                 self._intent_index[(app_key, "close")] = CacheEntry(
                     pattern=f"{display_name} 꺼줘",
                     tool_calls=[{"name": "close_app", "args": {"app": display_name}}],
-                    response_template=f"✓ {display_name}{eul_reul} 종료했습니다.",
+                    response_template=f"✓ {display_name}{eul_reul} 종료했어요.",
                     is_seed=True,
                 )
                 synthesized += 1
@@ -1460,7 +1460,7 @@ class CommandCache:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception as e:
-            print(f"[CommandCache] 파일을 읽지 못했습니다 (초기화): {e}")
+            print(f"[CommandCache] 파일을 읽지 못했어요 (초기화): {e}")
             self._cache = {}
             return
 
@@ -1485,11 +1485,11 @@ class CommandCache:
         print(f"[CommandCache] 로드 완료 — 전체 {len(self._cache)}개 "
               f"(시드 {len(self._cache)-user_entries}개, 동적 {user_entries}개)")
         if dropped_keys:
-            print(f"[CommandCache] ⚠️ 모르는 필드를 무시했습니다: "
+            print(f"[CommandCache] ⚠️ 모르는 필드를 무시했어요: "
                   f"{', '.join(sorted(dropped_keys))}")
         if broken:
             print(f"[CommandCache] ⚠️ 읽지 못한 항목 {len(broken)}개를 건너뛰었습니다 "
-                  f"(나머지는 그대로 있습니다)")
+                  f"(나머지는 그대로 있어요)")
 
     def reload(self) -> None:
         """파일에서 다시 읽는다. (M6 가져오기가 파일을 바꾼 뒤 부른다)

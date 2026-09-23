@@ -126,7 +126,7 @@ _result["value"] = {"found": False, "reason": "화면에 보이지 않습니다"
 r = click()
 check("🚨 클릭 0회", clicks == [], f"→ {clicks}")
 check("✗ 로 답한다", r.startswith("✗"), f"→ {r}")
-check("클릭하지 않았다고 명시", "클릭하지 않았습니다" in r, f"→ {r}")
+check("클릭하지 않았다고 명시", "클릭하지 않았어요" in r, f"→ {r}")
 check("사유를 전달한다", "보이지 않습니다" in r, f"→ {r}")
 _result["value"] = dict(FOUND)
 
