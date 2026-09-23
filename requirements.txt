@@ -1,3 +1,12 @@
+# ⚠️ 이 파일은 «왜 이 패키지가 필요한가»와 **하한**을 적는 문서다.
+#   재현 가능한 설치는 requirements.lock.txt(정확한 버전)를 쓴다:
+#
+#       pip install -r requirements.lock.txt
+#
+#   하한만 있으면 설치할 때마다 최신이 들어와 **코드를 안 고쳐도 어느 날 깨진다.**
+#   아래 langgraph>=0.2.0 이 그 예다 — 지금 실제로 도는 것은 1.x다.
+#   ⚠️ 여기 버전을 올릴 때는 lock도 같이 갱신하고 테스트를 돌릴 것.
+
 # ── LLM / Agent ──────────────────────────────────────────────────
 langgraph>=0.2.0
 langchain-core>=0.3.0
@@ -35,9 +44,27 @@ send2trash>=1.8.0          # delete_file/delete_folder — 안전한 휴지통 �
 ddgs>=7.0.0                  # fetch_web_info - LLM에게 검색 결과 텍스트 전달 (구버전: duckduckgo-search)
 
 # ── 선택적 (도구 기능 강화) ───────────────────────────────────────
-# pycaw>=20181226          # 볼륨 정밀 제어 (없으면 키보드 시뮬레이션 fallback)
-# wmi                      # 밝기 제어 (없으면 PowerShell fallback)
+pycaw>=20240210            # 볼륨·음소거. 🚨 «선택»이 아니다 — 2026-09-19에 BL-47과
+comtypes>=1.2.0            #   **같은 모양**인 것이 드러났다: 없으면 `_get_volume()`이 -1이라
+                           #   ①«볼륨 30으로» 가 «50번 내렸다 15번 올리는» 시늉이 되고
+                           #   ②되읽기를 못 해 매번 «확인은 못 했어요»가 붙는다.
+                           #   ⚠️ **API 가 굴러간다.** 20251023 부터 `GetSpeakers()` 가
+                           #   `AudioDevice` 래퍼를 준다(`.Activate` 없음 · `.EndpointVolume`).
+                           #   `tools/system._endpoint_volume()` 이 **두 API 를 다 받는다** —
+                           #   버전을 못 박는 것보다 싸다(BL-57과 같은 성질의 문제다).
+wmi>=1.5.1                 # 밝기 제어. 🚨 «선택»이 아니다 — 없으면 BL-47이 재발한다:
+                           #   읽기가 -1이 돼 밝기가 40% 점프하고(BL-45), 쓰기가
+                           #   PowerShell 폴백을 띄워 **명령 하나에 4.5초**가 붙는다(실측).
+                           #   있으면 0.03초. → docs/BACKLOG.md BL-47
 Pillow>=10.0.0            # 스크린샷 (전체/창별 캡처)
 httpx>=0.27.0             # crawl_page — 웹 페이지 본문 크롤링
 beautifulsoup4>=4.12.0    # crawl_page — HTML 파싱
 openpyxl>=3.1.0           # write_excel — 엑셀 파일 생성
+
+# ── 웨이크워드 전용 모델 (학습 + 추론) ──────────────────────────────
+# openwakeword: 사전학습 음향 임베딩(ONNX). onnxruntime은 faster-whisper가 이미 가져온다.
+# scikit-learn: **학습할 때만** 필요하다. 추론은 numpy 행렬곱으로 직접 한다
+#               (services/wakeword_model.npz 의 가중치 사용) → 배포 시 제외 가능.
+# → docs/design/M2_웨이크워드_전용모델.md
+openwakeword>=0.6.0
+scikit-learn>=1.3.0

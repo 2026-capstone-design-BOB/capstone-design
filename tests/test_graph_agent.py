@@ -2,6 +2,7 @@
 P1.5-c PluizGraphAgent 오케스트레이터 검증 (동기 그래프, async 오케스트레이터, mock)
 실행: python test_graph_agent.py
 """
+import _testenv  # noqa: F401  — 제품 로그를 더럽히지 않는다(tests/_testenv.py 참조)
 import sys, os, asyncio, time, importlib.util
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -45,7 +46,54 @@ class MockMem:
     def save(self, u, a): self.saved.append((u, a))
 
 class FakeSettings:
-    def __init__(self, t=30): self.agent_timeout = t
+    def __init__(self, t=30, plan=False):
+        self.agent_timeout = t
+        self.plan_enabled = plan        # settings로 켜지는 경로(제품 분해기)를 보기 위해
+
+
+class PlanLLM(FakeLLM):
+    """분해 요청이면 번호 목록을, 아니면 평범한 답을 준다.
+
+    ⚠️ mock 스위트에서 **제품 분해기(_prod_plan_decompose)를 실제로 지나가는 유일한
+      자리**다. 여기가 없으면 프롬프트 상수나 응답 추출이 깨져도 아무도 모른다.
+    """
+    def invoke(self, messages):
+        self.called += 1
+        head = str(getattr(messages[0], "content", ""))
+        if "실행 순서대로 나누는 도구" in head:
+            return AIMessage(content="1. 메모장 열기\n2. 계산기 열기")
+        return AIMessage(content="네, 처리했어요.")
+
+class UsageLLM(FakeLLM):
+    """usage_metadata를 실어 보내는 LLM — langchain-google-genai 4.x가 하는 그대로.
+
+    (2026-09-08에 설치본 `chat_models.py`에서 이 필드가 실제로 채워지는 걸 확인하고
+     그 모양을 여기 고정했다. 라이브에서 형식이 바뀌면 여기부터 깨진다.)
+    """
+    def invoke(self, messages):
+        msg = super().invoke(messages)
+        msg.usage_metadata = {"input_tokens": 100, "output_tokens": 7, "total_tokens": 107}
+        return msg
+
+
+class LogSpy:
+    """`[Agent]` info 로그를 포맷된 문자열로 모은다 (계측 줄을 검사하려고)."""
+    def __enter__(self):
+        self.lines = []
+        self._orig = GA._log.info
+        def cap(fmt, *a):
+            try: self.lines.append(fmt % a)
+            except Exception: self.lines.append(str(fmt))
+            return self._orig(fmt, *a)
+        GA._log.info = cap
+        return self
+    def __exit__(self, *e):
+        GA._log.info = self._orig
+    def last(self, needle="턴 완료"):
+        for ln in reversed(self.lines):
+            if needle in ln: return ln
+        return ""
+
 
 def fake_security(text):
     if "rm -rf" in text: return True, "⚠️ 보안 차단: 위험 명령"
@@ -57,7 +105,7 @@ def fake_fast_resolve(text):
     return None
 
 
-def make_agent(llm=None, timeout=30):
+def make_agent(llm=None, timeout=30, plan_decompose=None):
     mem = MockMem()
     agent = GA.PluizGraphAgent(
         llm=llm or FakeLLM(), tools=[],
@@ -65,8 +113,19 @@ def make_agent(llm=None, timeout=30):
         fast_resolve=fake_fast_resolve,
         session_memory=mem,
         settings=FakeSettings(timeout),
+        plan_decompose=plan_decompose,
     )
     return agent, mem
+
+
+def spy_limit(agent, seen):
+    """이 실행이 어떤 recursion_limit으로 돌았는지 기록한다."""
+    orig = agent._invoke_sync
+    def _spy(payload, config):
+        seen["limit"] = config.get("recursion_limit")
+        return orig(payload, config)
+    agent._invoke_sync = _spy
+    return agent
 
 
 async def run():
@@ -99,6 +158,118 @@ async def run():
     agent4, _ = make_agent(FakeLLM())
     chunks = [c async for c in agent4.stream("메모장 켜줘", "s4")]
     check("stream 청크 반환", len(chunks) == 1 and "메모장" in chunks[0])
+
+    print("=== E. 계획 수립(M3) 배선 ===")
+    # ⚠️ recursion_limit을 안 올리면 2단계 계획이 곧바로 GraphRecursionError다
+    #    (도구 1회에 6 슈퍼스텝, 이후 1회마다 +2 → 10은 도구 3회에서 소진).
+    #    반대로 꺼져 있을 땐 올리지 않는다 — 폭주 루프가 2.4배 오래 돈다.
+    seen_off = {}
+    agent5, _ = make_agent(FakeLLM())
+    check("계획은 기본 OFF (분해기 미주입 · settings.plan_enabled 없음)",
+          agent5.plan_decompose is None)
+    await spy_limit(agent5, seen_off).run_async("아무거나 해줘", "s5")
+    check("OFF면 recursion_limit은 예전 그대로 10", seen_off.get("limit") == 10)
+
+    seen_on = {}
+    agent6, _ = make_agent(FakeLLM(), plan_decompose=lambda t: None)
+    await spy_limit(agent6, seen_on).run_async("아무거나 해줘", "s6")
+    check("계획이 켜지면 recursion_limit 24 (ADR §1-1)", seen_on.get("limit") == 24)
+
+    # settings.plan_enabled=True 로 켜지는 **제품 경로**. 분해기를 주입하지 않는다.
+    mem7 = MockMem()
+    agent7 = GA.PluizGraphAgent(
+        llm=PlanLLM(), tools=[], security_check=fake_security,
+        fast_resolve=lambda t: None, session_memory=mem7,
+        settings=FakeSettings(plan=True))
+    check("settings.plan_enabled=True면 제품 분해기가 배선된다",
+          agent7.plan_decompose is not None)
+    r7 = await agent7.run_async("메모장 열고 계산기도 열어줘", "s7")
+    # 도구가 없는 에이전트라 1단계에서 더 나아가지 못한다 → **그 사실을 말해야 한다.**
+    check("못 한 단계를 응답 끝에 정직하게 붙인다",
+          "못 했어요" in r7 and "계산기 열기" in r7)
+
+    print("=== F. 계측 — latency · token (11월 측정의 전제) ===")
+    # 지금 안 심으면 11월에 과거 데이터가 0이다. 로그 **형식**을 여기서 고정한다 —
+    # 그때 이 줄을 grep해서 추이를 낸다.
+    agentF, _ = make_agent(UsageLLM())
+    with LogSpy() as spy:
+        await agentF.run_async("오늘 날씨 어때", "f1")
+    line = spy.last()
+    check("턴 완료에 소요 시간이 실린다", "| 소요 " in line and "s |" in line)
+    check("usage가 실리면 LLM 횟수·토큰을 남긴다",
+          "LLM 1회 | 토큰 in=100 out=7" in line)
+
+    # ⚠️ 가장 중요한 케이스: thread 전체를 훑으면 지난 턴 토큰이 계속 더해져
+    #   **누적값이 이번 턴 비용으로 기록된다**(절대규칙 6의 토큰판).
+    with LogSpy() as spy2:
+        await agentF.run_async("그럼 내일은", "f1")
+    check("2턴째도 이번 턴 토큰만 (누적 아님)",
+          "토큰 in=100 out=7" in spy2.last())
+
+    # 캐시 히트는 LLM을 한 번도 안 부른다 — 이게 차별점의 근거 데이터다.
+    agentG, _ = make_agent(UsageLLM())
+    with LogSpy() as spy3:
+        await agentG.run_async("메모장 켜줘", "f2")
+    check("캐시 히트는 LLM 0회(캐시) | 토큰 0", "LLM 0회(캐시) | 토큰 0" in spy3.last())
+
+    # 못 잰 것을 «0회»라고 쓰면 11월에 캐시 효과가 실제보다 커 보인다.
+    agentH, _ = make_agent(FakeLLM())        # usage를 안 싣는 LLM
+    with LogSpy() as spy4:
+        await agentH.run_async("오늘 날씨 어때", "f3")
+    lh = spy4.last()
+    check("usage가 없으면 «미상» — 0회라고 적지 않는다",
+          "LLM ?회 | 토큰 미상" in lh and "0회" not in lh)
+
+    # 승인 질문으로 끝난 턴도 지연을 남긴다 (안 남기면 HITL이 평균에서 통째로 빠진다)
+    check("승인 대기 줄에도 계측 꼬리표가 붙는 형식이다",
+          " | 소요 " in GA.PluizGraphAgent._metrics_note({"messages": []}, 1.5))
+
+    print("=== G. BL-28 — «도구=없음»이 왜 그랬는지 한 단어로 ===")
+    # 2026-09-10 도구 사용 실측 ②가 답을 못 낸 이유: 로그가 응답을 «13자»로만 남겨
+    # «못 한 것»과 «안 해도 됐던 것»을 사후에 못 갈랐다.
+    RN = GA.PluizGraphAgent._reason_note
+
+    check("도구가 돌았으면 사유를 안 붙인다",
+          RN({"decision": ""}, "네 열었어요", ["open_app"]) == "")
+    check("캐시 히트 → 사유=캐시",
+          RN({"decision": "fast_hit"}, "✓ 실행했습니다", []) == " | 사유=캐시")
+    check("보안 차단 → 사유=차단",
+          RN({"decision": "blocked"}, "그건 도와드릴 수 없어요", []) == " | 사유=차단")
+    check("승인 거부 → 사유=승인거부",
+          RN({"decision": "", "deletion_cancelled": True}, "네, 취소했어요", [])
+          == " | 사유=승인거부")
+    check("«못 했어요» → 사유=못함",
+          RN({}, "죄송해요, 그건 못 했어요.", []) == " | 사유=못함")
+    check("«찾지 못» → 사유=못함",
+          RN({}, "'인쇄 버튼'을 찾지 못해 클릭하지 않았습니다.", []) == " | 사유=못함")
+    check("빈 응답 대체 문구 → 사유=못함",
+          RN({}, GA._NOTHING_HAPPENED_MSG, []) == " | 사유=못함")
+    check("평범한 대화 → 사유=잡담",
+          RN({}, "안녕하세요! 무엇을 도와드릴까요?", []) == " | 사유=잡담")
+
+    # ⚠️ «캐시»가 «못함»보다 먼저다 — 캐시 응답에 «없습니다» 같은 말이 들어가도
+    #   그건 캐시가 처리한 턴이지 실패한 턴이 아니다.
+    check("캐시 판정이 문구 판정보다 우선한다",
+          RN({"decision": "fast_hit"}, "실행할 수 없습니다", []) == " | 사유=캐시")
+    check("분류가 예외로 턴을 죽이지 않는다", RN(None, None, []) in ("", " | 사유=잡담"))
+
+    # 실제 턴 로그에 실려 나가는지 (형식 고정 — 11월에 이 줄을 grep한다)
+    agentR, _ = make_agent(UsageLLM())
+    with LogSpy() as spyR:
+        await agentR.run_async("메모장 켜줘", "g1")
+    lr = spyR.last()
+    check("캐시 턴 로그에 사유=캐시가 실린다", "| 사유=캐시" in lr)
+    check("사유는 도구 칸 뒤에 온다", lr.index("요청=") < lr.index("사유="))
+    # 🚨 BL-52 — «요청»과 «실행»은 다른 것이다. 한 칸으로 찍던 시절에 실제로 오판했다.
+    check("[BL-52] 요청과 실행을 따로 찍는다", "| 요청=" in lr and "| 실행=" in lr)
+    check("[BL-52] 캐시 턴은 «실행=없음»이 아니다 (도구는 그래프 밖에서 돌았다)",
+          "| 실행=['캐시']" in lr)
+
+    agentS, _ = make_agent(UsageLLM())
+    with LogSpy() as spyS:
+        await agentS.run_async("오늘 날씨 어때", "g2")
+    check("도구 없는 대화 턴에도 사유가 실린다", "| 사유=" in spyS.last())
+
 
     print(f"\n결과: {passed}/{total} 통과")
     return passed == total

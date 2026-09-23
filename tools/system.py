@@ -6,42 +6,144 @@
 import os
 import subprocess
 import ctypes
+import threading
 import time
 from datetime import datetime
 from langchain_core.tools import tool
 import psutil
 
+from core.logger import get_logger
+
+#: 설정이 **안 먹었을 때**를 셀 수 있게 한다 (감사 G-11). 예전엔 조용히 넘어갔다.
+_log = get_logger("System")
+
+
+# ── 🚨 COM 초기화 — **서버에서는 지금까지 밝기·볼륨을 한 번도 못 읽었다** ──────
+#
+# 2026-09-19 라이브 점검에서 잡혔다. 로그가 원인을 **이름으로** 말해 줬다:
+#
+#     x_wmi_uninitialised_thread: WMI returned a syntax error: you're probably
+#     running inside a thread without first calling pythoncom.CoInitialize[Ex]
+#
+# 그래프는 도구를 `asyncio.to_thread` 로 **워커 스레드**에서 돌린다(절대규칙 1 —
+# interrupt 때문에 sync 경로를 쓰고, 이벤트 루프를 막지 않으려고 스레드로 뺀다).
+# **COM 은 스레드마다 초기화해야 한다.** 메인 스레드에서만 `comtypes` 가 알아서
+# 해 주고 있었다 — 그래서 **테스트·진단 스크립트에서는 읽히고 서버에서는 -1** 이었다.
+#
+# 🔑 **이게 [BL-47](../docs/BACKLOG.md)의 안 착륙한 절반이다.** 그때 `wmi` 를 깔아
+#   «읽을 수 있는 PC» 가 됐다고 적었는데, **제품 경로에서는 여전히 못 읽고 있었다.**
+#   그래서 밝기가 계속 `_last_brightness` 기억값으로 돌았고, 사용자가 손으로 밝기를
+#   내려도 우리는 옛 값을 믿었다(«30%로 줄였는데 60이라고 한다» — 실기 보고).
+#
+# ⚠️ `CoUninitialize` 를 부르지 않는다. 스레드풀은 스레드를 **재사용**하고,
+#   그 위에 만든 COM 객체가 살아 있을 수 있다. 스레드당 한 번만 켠다.
+_com_ready = threading.local()
+
+#: COINIT_APARTMENTTHREADED. WMI·pycaw 둘 다 이 모드에서 돈다.
+_COINIT_APARTMENTTHREADED = 0x2
+#: 이미 다른 모드로 초기화돼 있다는 뜻 — **실패가 아니다.** 스레드는 이미 준비됐다.
+_RPC_E_CHANGED_MODE = -2147417850          # 0x80010106
+
+
+def _ensure_com() -> None:
+    """이 스레드에서 COM 을 한 번 켠다. 실패해도 죽지 않는다(읽기가 -1 이 될 뿐)."""
+    if getattr(_com_ready, "done", False):
+        return
+    try:
+        hr = ctypes.windll.ole32.CoInitializeEx(None, _COINIT_APARTMENTTHREADED)
+        if hr < 0 and hr != _RPC_E_CHANGED_MODE:
+            _log.warning("[COM] 초기화 실패 | hr=0x%08X", hr & 0xFFFFFFFF)
+            return
+    except Exception as e:                                    # noqa: BLE001
+        _log.warning("[COM] 초기화 실패 | %s: %s", type(e).__name__, e)
+        return
+    _com_ready.done = True
+
+
+# ── 🔑 이 파일의 규칙 — «맞췄다»와 «맞았다»는 다른 말이다 (감사 G-11) ──────
+#
+# 볼륨·밝기는 **설정한 값을 되읽을 수 있는 몇 안 되는 자리**다. 그런데 예전 코드는
+# 실행 **전** 값만 읽고 `✓ 볼륨: 40% → 50%` 라고 답했다 — 뒤의 50%는 **의도이지
+# 결과가 아니다.** 설정이 실패해도(pycaw 없음 · WMI 거부 · PowerShell 폴백 실패)
+# 같은 문장이 나갔다.
+#
+# 그래서 세 가지를 나눠 말한다:
+#   ✓ 되읽었고 맞다        → `✓ 볼륨: 40% → 50%`  (50%는 **읽은 값**이다)
+#   ✓ 됐지만 못 읽는 PC다  → `✓ … (확인은 못 했어요)`  ← 실패가 아니다. 모르는 것이다
+#   ⚠️ 되읽었는데 다르다   → `⚠️ …로 맞추려 했는데 지금 …%입니다`
+#
+# ⚠️ **«못 읽는다»를 실패(✗·⚠️)로 만들지 말 것.** 그러면 읽기가 안 되는 PC에서
+#   볼륨 명령이 통째로 «실패»가 되어 [캐시 학습](../core/command_cache.py)에서
+#   빠지고, 매번 LLM 을 타게 된다. 모르는 것은 모른다고만 한다.
+#
+# 📏 되읽기 허용 오차. 모니터·사운드 장치가 **단계로 반올림**하는 경우가 있다.
+_SETTING_TOLERANCE = 2
+
 
 # ── 볼륨 ─────────────────────────────────────────────────────────
 
-def _get_volume() -> int:
-    """현재 볼륨(0-100) 반환."""
+def _endpoint_volume():
+    """스피커의 볼륨 인터페이스. 못 얻으면 `None`.
+
+    🚨 **2026-09-19 — pycaw 의 API 가 굴러갔다.** 예전 pycaw 는
+    `AudioUtilities.GetSpeakers()` 가 COM 장치를 그대로 줘서 `.Activate(...)` 로
+    인터페이스를 꺼냈는데, **지금 버전(20251023)은 `AudioDevice` 래퍼를 준다** —
+    `.Activate` 가 아예 없고 `.EndpointVolume` 프로퍼티가 대신 있다.
+
+    그래서 이 PC 에서 볼륨이 **계속 «못 읽음»(-1)** 이었다. [BL-57](../docs/BACKLOG.md)
+    (모델 별칭이 굴러가 모든 명령이 죽었다)과 **같은 모양**이다 — 우리 코드는 한 줄도
+    안 바뀌었는데 밖이 움직였다.
+
+    🔑 **두 API 를 다 받는다.** 버전을 못 박는 것보다 싸고, 어느 쪽이든 도는 편이
+      «이 PC 에서만 된다»를 안 만든다.
+    """
+    _ensure_com()          # 🚨 워커 스레드에서는 이게 없으면 항상 실패한다
     try:
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        dev = AudioUtilities.GetSpeakers()
+        ep = getattr(dev, "EndpointVolume", None)       # 새 API (20251023~)
+        if ep is not None:
+            return ep
         from ctypes import cast, POINTER
         from comtypes import CLSCTX_ALL
-        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        volume = cast(interface, POINTER(IAudioEndpointVolume))
-        return int(volume.GetMasterVolumeLevelScalar() * 100)
-    except Exception:
+        interface = dev.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        return cast(interface, POINTER(IAudioEndpointVolume))   # 옛 API
+    except Exception as e:                                    # noqa: BLE001
+        # ⚠️ 여기가 조용하면 «이 PC 는 볼륨을 못 읽는다»가 **이유 없이** 굳는다.
+        #   실제로 그렇게 굳어 있었다 — 2026-09-19에 읽기 점검을 돌려서야 드러났다.
+        _log.warning("[볼륨] 인터페이스를 못 얻었다 (키보드 시늉으로 간다) | %s: %s",
+                     type(e).__name__, e)
+        return None
+
+
+def _get_volume() -> int:
+    """현재 볼륨(0-100) 반환. 못 읽으면 -1."""
+    ep = _endpoint_volume()
+    if ep is None:
+        return -1
+    try:
+        return int(ep.GetMasterVolumeLevelScalar() * 100)
+    except Exception:                                         # noqa: BLE001
         return -1
 
 
-def _set_volume_level(level: int):
-    """볼륨을 0-100 사이 값으로 설정."""
+def _set_volume_level(level: int) -> bool:
+    """볼륨을 0-100 사이 값으로 설정.
+
+    Returns:
+        **정확한 값으로 설정했는가.** 키보드 시뮬레이션 폴백은 `False` 다 —
+        2단계씩 눌러 맞추는 것이라 목표값에 닿았는지 이 함수는 모른다.
+        🚨 예전에는 **항상 `True`** 였다(감사 G-11).
+    """
     level = max(0, min(100, level))
-    try:
-        from ctypes import cast, POINTER
-        from comtypes import CLSCTX_ALL
-        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        volume = cast(interface, POINTER(IAudioEndpointVolume))
-        volume.SetMasterVolumeLevelScalar(level / 100, None)
-        return True
-    except Exception:
-        pass
+    ep = _endpoint_volume()
+    if ep is not None:
+        try:
+            ep.SetMasterVolumeLevelScalar(level / 100, None)
+            return True
+        except Exception as e:                                # noqa: BLE001
+            _log.warning("[볼륨] 설정 실패 → 키보드 폴백 | %s: %s",
+                         type(e).__name__, e)
 
     # keybd_event fallback: 0으로 내린 후 목표까지 올리기 (volume_up/down과 동일 방식)
     # WScript.Shell SendKeys는 미디어 키를 지원하지 않으므로 직접 keybd_event 사용
@@ -51,7 +153,27 @@ def _set_volume_level(level: int):
     for _ in range(level // 2):
         ctypes.windll.user32.keybd_event(0xAF, 0, 0, 0)  # VK_VOLUME_UP
         ctypes.windll.user32.keybd_event(0xAF, 0, 2, 0)
-    return True
+    return False              # 눌렀을 뿐이다. 맞았는지는 모른다
+
+
+def _readback(what: str, before: int, target: int, read, *,
+              eul_reul: str) -> str:
+    """설정한 **뒤** 다시 읽고, 본 대로 말한다. (감사 G-11)
+
+    `close_app` 의 `_await_gone()` · `open_app` 의 `_await_window()` 와 같은 자리다 —
+    이 저장소가 아홉 번 고친 «확인하지 않고 의도를 보고한다»를 **설정 쪽**에서 막는다.
+    """
+    actual = read()
+    if actual < 0:
+        # 읽을 수 없는 PC. **모르는 것이지 실패가 아니다** — ✓ 를 유지하되 말을 보탠다.
+        return f"✓ {what}{eul_reul} {target}%로 맞췄어요. (이 PC는 값을 읽지 못해 확인은 못 했어요)"
+    if abs(actual - target) <= _SETTING_TOLERANCE:
+        if before < 0:                 # 전 값을 못 읽었다 — 화살표로 말하지 않는다
+            return f"✓ {what}{eul_reul} {actual}%로 맞췄어요."
+        return f"✓ {what}: {before}% → {actual}%"
+    _log.warning("[%s] 설정=%d%% ↔ 되읽기=%d%% (이전 %d%%)", what, target, actual, before)
+    return (f"⚠️ {what}{eul_reul} {target}%로 맞추려 했는데 지금 {actual}%입니다. "
+            f"다시 해볼까요?")
 
 
 @tool
@@ -66,11 +188,11 @@ def volume_up(amount: int = 10) -> str:
         for _ in range(max(1, amount // 2)):
             ctypes.windll.user32.keybd_event(0xAF, 0, 0, 0)  # VK_VOLUME_UP
             ctypes.windll.user32.keybd_event(0xAF, 0, 2, 0)
-        return f"✓ 볼륨을 올렸습니다."
+        return "✓ 볼륨을 올렸어요. (이 PC는 볼륨을 읽지 못해 확인은 못 했어요)"
 
     new_level = min(100, current + amount)
     _set_volume_level(new_level)
-    return f"✓ 볼륨: {current}% → {new_level}%"
+    return _readback("볼륨", current, new_level, _get_volume, eul_reul="을")
 
 
 @tool
@@ -84,11 +206,11 @@ def volume_down(amount: int = 10) -> str:
         for _ in range(max(1, amount // 2)):
             ctypes.windll.user32.keybd_event(0xAE, 0, 0, 0)  # VK_VOLUME_DOWN
             ctypes.windll.user32.keybd_event(0xAE, 0, 2, 0)
-        return f"✓ 볼륨을 내렸습니다."
+        return "✓ 볼륨을 내렸어요. (이 PC는 볼륨을 읽지 못해 확인은 못 했어요)"
 
     new_level = max(0, current - amount)
     _set_volume_level(new_level)
-    return f"✓ 볼륨: {current}% → {new_level}%"
+    return _readback("볼륨", current, new_level, _get_volume, eul_reul="을")
 
 
 @tool
@@ -99,22 +221,91 @@ def set_volume(level: int) -> str:
     """
     if not 0 <= level <= 100:
         return f"✗ 볼륨은 0에서 100 사이 값이어야 합니다. (입력: {level})"
+    before = _get_volume()
     _set_volume_level(level)
-    return f"✓ 볼륨을 {level}%로 설정했습니다."
+    # 🚨 여기는 예전에 **되읽기조차 없었다.** 설정을 못 해도 «설정했습니다»가 나갔다.
+    return _readback("볼륨", before, level, _get_volume, eul_reul="을")
+
+
+@tool
+def get_volume() -> str:
+    """지금 볼륨이 몇 퍼센트인지, 음소거 상태인지 알려줍니다. 볼륨을 바꾸지 않습니다."""
+    # 🚨 **«묻는 말»에 답할 도구가 없어서 생긴 결함이다** ([BL-60](../docs/BACKLOG.md)).
+    #   예전에는 *"지금 볼륨 얼마야"* 가 도구까지 못 가고 LLM 의 **잡담**으로 끝났고,
+    #   그러다 «✓ 볼륨: 40% → 80%» 를 **지어내기까지 했다**(BL-61).
+    #   지어내는 것은 그물로 막았지만 **답은 여전히 없었다.** 그 자리가 여기다.
+    level = _get_volume()
+    if level < 0:
+        # ⚠️ 읽기 도구에서는 «못 읽음»이 **실패가 맞다.** 설정 도구(`_readback`)에서
+        #   «못 읽음»을 실패로 안 치는 것과 반대인데, 이유가 다르다 — 저쪽은 «일은
+        #   됐고 확인만 못 한 것»이고, 여기는 **일 자체가 «읽는 것»** 이다.
+        return "✗ 이 PC는 볼륨 값을 읽지 못해요."
+    muted = _get_mute()
+    if muted == 1:
+        return f"✓ 지금 볼륨은 {level}%이고, 음소거 상태예요."
+    return f"✓ 지금 볼륨은 {level}%예요."
+
+
+def _get_mute() -> int:
+    """음소거 상태. 1=음소거 · 0=아님 · -1=읽을 수 없음."""
+    ep = _endpoint_volume()
+    if ep is None:
+        return -1
+    try:
+        return int(bool(ep.GetMute()))
+    except Exception:                                         # noqa: BLE001
+        return -1
 
 
 @tool
 def mute_toggle() -> str:
     """볼륨을 음소거하거나 음소거를 해제합니다."""
+    # 🚨 «전환했습니다»도 의도였다 (감사 G-11과 같은 자리). 키를 눌렀을 뿐이고,
+    #   상태가 정말 바뀌었는지는 보지 않았다. 볼륨과 달리 여기는 **어느 쪽이
+    #   됐는지**가 사용자에게 중요하다 — «껐어요»와 «켰어요»는 반대말이다.
+    before = _get_mute()
     ctypes.windll.user32.keybd_event(0xAD, 0, 0, 0)  # VK_VOLUME_MUTE
     ctypes.windll.user32.keybd_event(0xAD, 0, 2, 0)
-    return "✓ 음소거 상태를 전환했습니다."
+    after = _get_mute()
+    if before < 0 or after < 0:
+        return "✓ 음소거 키를 눌렀어요. (이 PC는 상태를 읽지 못해 확인은 못 했어요)"
+    if after == before:
+        _log.warning("[음소거] 눌렀는데 상태가 그대로다 (%d)", before)
+        return "⚠️ 음소거 키를 눌렀는데 상태가 그대로예요. 다시 해볼까요?"
+    return "✓ 음소거했어요." if after else "✓ 음소거를 해제했어요."
 
 
 # ── 밝기 ─────────────────────────────────────────────────────────
 
+#: 우리가 **마지막으로 설정한** 밝기. WMI 읽기가 안 되는 PC를 위한 기억이다.
+#
+# 🚨 **왜 필요한가 (2026-09-11 3차 실기).** 사용자 지적:
+#   *"밝기 조절은 세기가 되게 확확 바뀌어서 조금 불편해."*
+#   당시 이 PC에서 `_get_brightness()`가 **-1**(읽기 실패)이었다. 그러면 예전 코드는
+#   상대 조절을 포기하고 **절대값으로 점프**했다 — 올리면 70, 내리면 30.
+#   즉 «올려/내려»를 번갈아 하면 **70 ↔ 30을 왕복**한다. **한 번에 40%**다.
+#   사용자가 본 응답이 `✓ 밝기를 올렸습니다.`(퍼센트가 없다)인 것이 그 증거다 —
+#   읽기가 됐다면 `✓ 밝기: 50% → 60%`가 나왔을 것이다.
+#
+# 🔑 **읽을 수 없으면 «우리가 쓴 값»을 기억하면 된다.** 처음 한 번만 중앙값에서
+#   출발하고, 그 뒤로는 10%씩 움직인다 — 읽기가 되는 PC와 같은 체감이 된다.
+# ⚠️ 사용자가 키보드 밝기 키로 직접 바꾸면 이 기억은 어긋난다. 그건 받아들인다 —
+#   **40% 점프보다는 낫고**, 읽기가 되는 PC에서는 애초에 이 경로를 타지 않는다.
+#
+# 🔎 **2026-09-12 정정 (BL-47).** 「읽기 실패」의 원인은 하드웨어가 아니라
+#   **`wmi` 모듈 미설치**였다. 깔고 나니 이 PC도 읽는다(`40%`). 그래서 지금 이 기억은
+#   **상시 경로가 아니라 진짜 폴백**이다 — 아래 `_brightness_base()`가 실제 값을 먼저 본다.
+#   ⚠️ 그렇다고 이 폴백을 지우지 말 것. 읽기가 정말 안 되는 PC가 있고,
+#   `requirements.txt`가 `wmi`를 요구하지만 설치가 깨질 수도 있다.
+_last_brightness: "int | None" = None
+
+#: 읽지도 못하고 기억도 없을 때의 출발점. 양쪽으로 움직일 여지를 남긴다.
+_BRIGHTNESS_FALLBACK_START = 50
+
+
 def _get_brightness() -> int:
     """현재 밝기(0-100) 반환. WMI 사용."""
+    _ensure_com()          # 🚨 워커 스레드에서는 이게 없으면 항상 -1 이다
     try:
         import wmi
         c = wmi.WMI(namespace="wmi")
@@ -124,21 +315,59 @@ def _get_brightness() -> int:
         return -1
 
 
-def _set_brightness(level: int):
-    """밝기 설정. WMI 사용."""
+def _brightness_base() -> int:
+    """조절의 기준값 — 읽을 수 있으면 실제값, 아니면 **마지막으로 쓴 값**."""
+    current = _get_brightness()
+    if current >= 0:
+        return current
+    if _last_brightness is not None:
+        return _last_brightness
+    return _BRIGHTNESS_FALLBACK_START
+
+
+def _set_brightness(level: int) -> bool:
+    """밝기 설정. WMI 사용.
+
+    Returns:
+        **설정이 받아들여졌는가** (감사 G-11). 예전에는 아무것도 안 돌려줬고,
+        PowerShell 폴백의 **종료코드도 보지 않았다** — 그래서 밝기가 안 바뀌어도
+        `✓ 밝기: 40% → 50%` 가 그대로 나갔다.
+    """
+    global _last_brightness
     level = max(0, min(100, level))
+    _ensure_com()          # 🚨 없으면 WMI 가 죽고 PowerShell 폴백(4.5초)으로 샌다
     try:
         import wmi
         c = wmi.WMI(namespace="wmi")
         methods = c.WmiMonitorBrightnessMethods()[0]
         methods.WmiSetBrightness(level, 0)
-    except Exception:
-        # PowerShell fallback
-        subprocess.run(
+        _last_brightness = level      # 읽기가 안 되는 PC를 위해 기억해 둔다
+        return True
+    except Exception as e:                                    # noqa: BLE001
+        _log.warning("[밝기] WMI 설정 실패 → PowerShell 폴백 | %s: %s",
+                     type(e).__name__, e)
+
+    # PowerShell fallback
+    try:
+        p = subprocess.run(
             ["powershell", "-Command",
              f"(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{level})"],
-            capture_output=True
+            capture_output=True, timeout=10
         )
+    except Exception as e:                                    # noqa: BLE001
+        _log.error("[밝기] PowerShell 폴백 실행 실패 | %s: %s", type(e).__name__, e)
+        return False
+    # 🔑 종료코드만 보면 안 된다. PowerShell 은 **비종료 오류**(개체가 null 이라
+    #   메서드를 못 부르는 경우)에도 0 으로 끝난다 — 그게 이 폴백의 흔한 실패 모양이다.
+    err = (p.stderr or b"").decode("utf-8", "replace").strip()
+    if p.returncode != 0 or err:
+        _log.error("[밝기] PowerShell 폴백 실패 | 종료코드=%s | %s",
+                   p.returncode, err[:200])
+        return False
+    # 🚨 **실패했으면 기억하지 않는다.** 기억해 버리면 다음 «밝기 올려»가
+    #   «안 먹은 값»을 기준으로 움직여, 한 번 실패한 뒤로 계속 어긋난다.
+    _last_brightness = level
+    return True
 
 
 @tool
@@ -147,13 +376,13 @@ def brightness_up(amount: int = 10) -> str:
     화면 밝기를 올립니다.
     amount: 올릴 양 (1-100, 기본 10)
     """
-    current = _get_brightness()
-    if current < 0:
-        _set_brightness(70)
-        return "✓ 밝기를 올렸습니다."
+    current = _brightness_base()
     new_level = min(100, current + amount)
-    _set_brightness(new_level)
-    return f"✓ 밝기: {current}% → {new_level}%"
+    if new_level == current:
+        return f"⚠️ 이미 가장 밝아요 ({current}%)."
+    if not _set_brightness(new_level):
+        return "⚠️ 밝기를 바꾸지 못했어요. 이 PC가 밝기 조절을 지원하지 않을 수 있어요."
+    return _readback("밝기", current, new_level, _get_brightness, eul_reul="를")
 
 
 @tool
@@ -162,16 +391,243 @@ def brightness_down(amount: int = 10) -> str:
     화면 밝기를 내립니다.
     amount: 내릴 양 (1-100, 기본 10)
     """
-    current = _get_brightness()
-    if current < 0:
-        _set_brightness(30)
-        return "✓ 밝기를 내렸습니다."
+    current = _brightness_base()
     new_level = max(0, current - amount)
-    _set_brightness(new_level)
-    return f"✓ 밝기: {current}% → {new_level}%"
+    if new_level == current:
+        return f"⚠️ 이미 가장 어두워요 ({current}%)."
+    if not _set_brightness(new_level):
+        return "⚠️ 밝기를 바꾸지 못했어요. 이 PC가 밝기 조절을 지원하지 않을 수 있어요."
+    return _readback("밝기", current, new_level, _get_brightness, eul_reul="를")
+
+
+@tool
+def set_brightness(level: int) -> str:
+    """
+    화면 밝기를 특정 값으로 설정합니다.
+    level: 0-100 사이의 밝기 값
+    """
+    # 볼륨에는 `set_volume` 이 있는데 밝기에는 **없었다** — *"밝기 50으로 해줘"* 가
+    # 갈 곳이 없어 `brightness_up/down` 을 여러 번 부르거나 아무것도 안 됐다.
+    if not 0 <= level <= 100:
+        return f"✗ 밝기는 0에서 100 사이 값이어야 합니다. (입력: {level})"
+    before = _get_brightness()
+    if not _set_brightness(level):
+        return "⚠️ 밝기를 바꾸지 못했어요. 이 PC가 밝기 조절을 지원하지 않을 수 있어요."
+    return _readback("밝기", before, level, _get_brightness, eul_reul="를")
+
+
+@tool
+def get_brightness() -> str:
+    """지금 화면 밝기가 몇 퍼센트인지 알려줍니다. 밝기를 바꾸지 않습니다."""
+    level = _get_brightness()
+    if level >= 0:
+        return f"✓ 지금 화면 밝기는 {level}%예요."
+    # 🚨 **기억을 «지금 값»이라고 말하지 않는다.** `_last_brightness` 는 «우리가 마지막에
+    #   쓴 값»이지 측정치가 아니다. 그걸 «지금 40%예요» 라고 하면 [BL-61](../docs/BACKLOG.md)
+    #   (도구를 안 부르고 결과를 지어낸 것)과 **같은 종류의 거짓말**이 된다 —
+    #   다른 점은 지어낸 주체가 LLM 이 아니라 우리라는 것뿐이다.
+    #   그래서 ✗ 로 답하고, 기억은 **기억이라고 이름 붙여** 덧붙인다.
+    if _last_brightness is not None:
+        return (f"✗ 이 PC는 밝기를 읽지 못해요. 마지막으로 제가 {_last_brightness}%로 "
+                f"맞춘 적은 있지만, 그 뒤에 바뀌었을 수 있어서 지금 값이라고는 못 해요.")
+    return "✗ 이 PC는 화면 밝기를 읽지 못해요."
 
 
 # ── 시스템 정보 ───────────────────────────────────────────────────
+
+# 캡처 대상 지정어. "활성창"·"현재창" 등은 지금 포커스된 창을 뜻한다.
+_ACTIVE_WINDOW_WORDS = {"활성창", "현재창", "지금창", "포커스", "active"}
+
+
+def window_screen_rect(hwnd: int) -> tuple[int, int, int, int]:
+    """창의 **화면 좌표** 사각형 (left, top, width, height).
+
+    ⚠️ `_capture_hwnd`가 캡처하는 영역과 **반드시 같아야 한다.** 그래서 한 곳에만 둔다.
+      캡처 이미지의 (0,0)이 화면의 (left, top)이라는 관계가 여기서 나오고,
+      Vision이 찾은 좌표를 화면 좌표로 되돌릴 때 그 관계를 쓴다.
+      따로 구현하면 좌표가 조용히 어긋난다 — 클릭이 엉뚱한 데를 누른다.
+    """
+    import ctypes, ctypes.wintypes
+
+    # DWM 실제 표시 영역 (그림자 제외) — DWMWA_EXTENDED_FRAME_BOUNDS = 9
+    rect = ctypes.wintypes.RECT()
+    if ctypes.windll.dwmapi.DwmGetWindowAttribute(
+        hwnd, 9, ctypes.byref(rect), ctypes.sizeof(rect)
+    ) != 0:
+        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+
+    w = rect.right - rect.left
+    h = rect.bottom - rect.top
+    if w <= 0 or h <= 0:
+        raise ValueError("창 크기가 유효하지 않습니다")
+    return (rect.left, rect.top, w, h)
+
+
+def resolve_window_hwnd(window: str) -> tuple[int, str]:
+    """캡처 대상 문자열 → (hwnd, 표시용 이름). 못 찾으면 (0, 이름).
+
+    `take_screenshot`과 좌표 계산이 **같은 창을 가리키도록** 한 곳에 둔다.
+    """
+    import ctypes
+
+    if window.lower() in _ACTIVE_WINDOW_WORDS:
+        return (ctypes.windll.user32.GetForegroundWindow(), "활성 창")
+    from tools.app_control import find_hwnd_for_app
+    return (find_hwnd_for_app(window), window)
+
+
+def bring_hwnd_to_front(hwnd: int) -> bool:
+    """hwnd를 실제로 **전면**에 올린다. 성공 시 True.
+
+    ## 왜 이게 따로 있나 (2026-09-22 · 시연에서 깨졌다)
+
+    맨손 `SetForegroundWindow`는 **Windows가 거부한다.** 다른 앱이 활성인 상태에서
+    백그라운드 스레드가 포그라운드를 뺏는 것을 OS가 막기 때문이다. 거부되면
+    창은 «열렸지만 뒤에 있는» 상태가 되고, 그 위에 동그라미만 그려진다 —
+    9/22 시연의 「블루투스 어디서 켜」가 정확히 그 그림이었다.
+
+    ⚠️ **우회(AttachThreadInput)는 `app_control._focus_window`에 이미 있었다.**
+    사본 둘이 갈려서 한쪽만 고쳐져 있던 것이다(BL-64 커밋이 경계한 그 모양).
+    그래서 **여기 한 곳에 두고 양쪽이 같이 부른다.**
+
+    반환값은 «올라갔나»다 — `SetForegroundWindow`의 반환값이 아니라
+    **`GetForegroundWindow()`로 다시 확인한 결과**다. 호출한 쪽이 «앞에 있다»고
+    거짓 보고하지 않도록(BL-12와 같은 이유).
+    """
+    import ctypes
+    import time as _t
+
+    if not hwnd:
+        return False
+
+    u = ctypes.windll.user32
+    SW_RESTORE = 9
+    try:
+        if u.IsIconic(hwnd):
+            u.ShowWindow(hwnd, SW_RESTORE)
+
+        fg_hwnd = u.GetForegroundWindow()
+        if fg_hwnd == hwnd:
+            return True
+
+        fg_tid = u.GetWindowThreadProcessId(fg_hwnd, None)
+        my_tid = ctypes.windll.kernel32.GetCurrentThreadId()
+        attached = bool(fg_tid) and fg_tid != my_tid
+        if attached:
+            u.AttachThreadInput(my_tid, fg_tid, True)
+        try:
+            u.BringWindowToTop(hwnd)
+            u.SetForegroundWindow(hwnd)
+        finally:
+            if attached:
+                u.AttachThreadInput(my_tid, fg_tid, False)
+
+        _t.sleep(0.25)
+        return u.GetForegroundWindow() == hwnd
+    except Exception:
+        return False
+
+
+def capture_origin(window: str = "") -> tuple[int, int]:
+    """캡처 이미지의 (0,0)이 화면의 어느 좌표인지. 전체화면이면 (0, 0).
+
+    Vision이 이미지 안에서 찾은 위치를 **화면 좌표**로 옮길 때 쓴다.
+    """
+    if not window:
+        return (0, 0)
+    hwnd, _label = resolve_window_hwnd(window)
+    if not hwnd:
+        raise ValueError(f"'{window}' 창을 찾을 수 없습니다")
+    left, top, _w, _h = window_screen_rect(hwnd)
+    return (left, top)
+
+
+def ensure_window_ready(window: str, launch: bool = True) -> dict:
+    """포인팅·탐색 **전에** 창을 «볼 수 있는 상태»로 만든다.
+
+    반환 `{"ok", "action", "label", "reason", "fronted"}`.
+    `action`은 `""` · `"launched"` · `"restored"` · `"fronted"` 중 하나다.
+
+    ⚠️ **`fronted`는 `action`과 다른 것을 말한다.** `action`은 «무엇을 했나»이고
+      `fronted`는 «결과가 실제로 앞에 있나»다. 창을 열었는데 뒤에서 열리면
+      `action="launched"` · `fronted=False`가 된다. 이 둘을 한 칸에 합치면
+      「열었어요」라고 말하면서 사용자 눈에는 아무것도 안 보이는 상태가 된다.
+
+    ## 왜 필요한가 (2026-09-09 사용자 요청)
+
+    *"뭔가를 시각적으로 해달라고 한 거니까, 실행 중이지 않으면 실행하겠다고 한 다음에
+    표시해 주든지, 최소화된 상태라면 다시 앞으로 가져온 뒤에 조치를 취해야 할 것 같은데"*
+
+    맞는 말이다. 지금은 창이 없거나 최소화면 **«찾지 못했습니다»** 로 끝나는데,
+    그건 사실이지만 **도움이 안 된다** — 사용자가 원한 건 «화면에서 보는 것»이고,
+    보이지 않는 이유가 «없어서»가 아니라 **«가려져서»** 일 때가 많다.
+
+    ⚠️ **`take_screenshot`과 다르다.** 그쪽은 찍고 **다시 최소화**한다(한 장 찍는 게
+      목적이라 사용자를 방해하지 않는 게 맞다). 포인팅은 **사용자가 그 창을 볼 것**이
+      목적이므로 **앞에 남겨 둔다.**
+
+    ⚠️ **클릭 경로에는 쓰지 않는다.** 승인 질문은 «클릭»에 대해 물은 것이지
+      «앱을 실행»에 대해 물은 게 아니다. 승인받은 범위를 넘기지 않는다.
+    """
+    import ctypes
+    import time as _t
+
+    out = {"ok": True, "action": "", "label": window, "reason": "", "fronted": True}
+    if not window:
+        return out                      # 전체화면 — 만들 상태가 없다
+
+    u = ctypes.windll.user32
+    hwnd, label = resolve_window_hwnd(window)
+    out["label"] = label or window
+
+    # ① 창이 없다 → 열어 준다 (사용자가 «실행하겠다고 한 다음에»라고 했다)
+    if not hwnd:
+        if not launch:
+            out.update(ok=False, reason=f"'{window}' 창을 찾을 수 없습니다")
+            return out
+        try:
+            from tools.app_control import open_app
+            open_app.invoke({"app": window})
+        except Exception as e:
+            out.update(ok=False, reason=f"'{window}'을(를) 열지 못했습니다: {e}")
+            return out
+        # 창이 뜰 때까지 잠깐 기다린다. 바로 캡처하면 흰 화면을 찍는다.
+        for _ in range(20):             # 최대 4초
+            _t.sleep(0.2)
+            hwnd, label = resolve_window_hwnd(window)
+            if hwnd:
+                break
+        if not hwnd:
+            out.update(ok=False, reason=f"'{window}'을(를) 열었지만 창이 나타나지 않았습니다")
+            return out
+        out.update(action="launched", label=label or window)
+        _t.sleep(0.6)                   # 첫 렌더가 끝나도록
+        # 🚨 **여기서 return 하지 않는다.** 예전엔 했고, 그래서 **새로 연 창만**
+        #    ③(전면화)을 건너뛰었다. 이미 떠 있던 창은 앞으로 오는데 방금 연 창은
+        #    뒤에서 열리는 비대칭이었다 — 2026-09-22 시연에서 설정이 다른 창 뒤에서
+        #    열리고 그 위에 동그라미만 그려진 원인이다.
+        #    (`fast_path` 히트를 조기 return으로 «최적화»하지 말라는 것과 같은 모양이다.)
+
+    # ② 최소화돼 있다 → 되살린다 (그리고 **다시 최소화하지 않는다**)
+    if u.IsIconic(hwnd):
+        u.ShowWindow(hwnd, 9)           # SW_RESTORE
+        _t.sleep(0.4)
+        if not out["action"]:
+            out["action"] = "restored"
+
+    # ③ 뒤에 있다 → 앞으로. 실패해도 진행한다 —
+    #    Windows가 포그라운드 전환을 거부하는 경우가 있는데(다른 앱이 활성),
+    #    그때도 창은 보이므로 캡처(PrintWindow)는 된다. 다만 **사용자 눈에는 안 보이므로**
+    #    실패를 `fronted_failed`로 남긴다 — 「앞으로 가져왔습니다」라고 거짓 보고하지 않는다.
+    if u.GetForegroundWindow() != hwnd:
+        if bring_hwnd_to_front(hwnd):
+            if not out["action"]:
+                out["action"] = "fronted"
+        else:
+            out["fronted"] = False
+            out["reason"] = f"'{out['label']}' 창을 전면에 올리지 못했습니다"
+    return out
+
 
 def _capture_hwnd(hwnd: int):
     """
@@ -182,17 +638,7 @@ def _capture_hwnd(hwnd: int):
     import ctypes, ctypes.wintypes
     from PIL import Image
 
-    # DWM 실제 표시 영역 (그림자 제외) — DWMWA_EXTENDED_FRAME_BOUNDS = 9
-    rect = ctypes.wintypes.RECT()
-    if ctypes.windll.dwmapi.DwmGetWindowAttribute(
-        hwnd, 9, ctypes.byref(rect), ctypes.sizeof(rect)
-    ) != 0:
-        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-
-    w = rect.right  - rect.left
-    h = rect.bottom - rect.top
-    if w <= 0 or h <= 0:
-        raise ValueError("창 크기가 유효하지 않습니다")
+    _left, _top, w, h = window_screen_rect(hwnd)
 
     # GDI DC + 비트맵 생성
     hdc_src = ctypes.windll.user32.GetWindowDC(hwnd)
@@ -250,6 +696,19 @@ def take_screenshot(save_path: str = "", window: str = "") -> str:
     import ctypes
     import ctypes.wintypes
 
+    # ⚠️ 포인팅 표시(M4)가 화면에 떠 있으면 **그것까지 찍힌다.** 전체화면
+    #   always-on-top 오버레이라서다. 그대로 찍으면 Gemini가 우리 고리를 화면의
+    #   일부로 읽고, 최악은 **자기가 그린 표시를 UI 요소로 되짚는** 것이다.
+    #   **치우고 찍는다.** (2026-09-09 정정: 원래는 «사라지기를 기다렸다»인데,
+    #   한 턴에 포인팅+화면설명이 같이 오면 8초를 통째로 기다려 턴이 28초가 됐다.
+    #   다시 띄우지 않으므로 감시가 «변화»로 잡을 것도 없다 → core/pointer.py)
+    #   → docs/design/M4_포인팅_확대.md §5
+    try:
+        from core.pointer import clear_for_capture
+        clear_for_capture("take_screenshot")
+    except Exception:
+        pass          # 포인팅이 없는 환경(테스트·CI)에서도 캡처는 되어야 한다
+
     if not save_path:
         desktop = os.path.join(os.path.expanduser("~"), "Desktop")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -265,18 +724,11 @@ def take_screenshot(save_path: str = "", window: str = "") -> str:
             img.save(save_path)
             return f"✓ 전체 화면 스크린샷을 저장했습니다.\n경로: {save_path}"
 
-        # ── HWND 획득 ────────────────────────────────────────────
-        _ACTIVE = {"활성창", "현재창", "지금창", "포커스", "active"}
-        if window.lower() in _ACTIVE:
-            hwnd = ctypes.windll.user32.GetForegroundWindow()
-            label = "활성 창"
-        else:
-            try:
-                from tools.app_control import find_hwnd_for_app
-                hwnd = find_hwnd_for_app(window)
-            except Exception as import_err:
-                return f"✗ 앱 창 조회 실패: {import_err}"
-            label = window
+        # ── HWND 획득 (좌표 계산과 같은 해석기를 쓴다) ────────────
+        try:
+            hwnd, label = resolve_window_hwnd(window)
+        except Exception as import_err:
+            return f"✗ 앱 창 조회 실패: {import_err}"
 
         if not hwnd:
             return f"✗ '{window}' 창을 찾을 수 없습니다. 앱이 실행 중인지 확인해주세요."
@@ -350,23 +802,32 @@ def get_current_time() -> str:
 @tool
 def get_running_apps() -> str:
     """현재 실행 중인 주요 앱 목록을 반환합니다."""
-    known = {
-        "chrome.exe": "Google Chrome",
-        "msedge.exe": "Microsoft Edge",
-        "firefox.exe": "Firefox",
-        "notepad.exe": "메모장",
-        "code.exe": "VS Code",
-        "kakaotalk.exe": "카카오톡",
-        "winword.exe": "Microsoft Word",
-        "excel.exe": "Microsoft Excel",
-        "powerpnt.exe": "PowerPoint",
-        "explorer.exe": "파일 탐색기",
-        "wt.exe": "Windows Terminal",
-    }
+    # ⚠️ **여기서 앱 목록을 따로 갖지 않는다.** 예전에는 이 함수가 자기만의
+    #   12개짜리 화이트리스트를 들고 있었고 거기에 **계산기가 없었다.** 그래서
+    #   2026-09-07 실기에서 계산기를 열어 둔 채 물었더니
+    #   *"계산기는 지금 실행 중인 앱 목록에 없네요"* 라고 답했다.
+    #   `wt.exe`도 실제 프로세스명이 `WindowsTerminal.exe`라 못 잡고 있었다.
+    #   `open_app`이 **열 수 있는** 앱을 `get_running_apps`가 **모르는** 상태였다 —
+    #   같은 사실이 두 곳에 있어 한쪽만 갱신된, 이 프로젝트가 반복해서 데인 모양이다.
+    #   그래서 단일 출처인 `APP_PROCESS_MAP` 하나만 본다.
+    from tools.app_control import APP_PROCESS_MAP, APP_DISPLAY_NAMES
 
-    running_names = {p.name().lower() for p in psutil.process_iter(["name"])}
-    found = [label for exe, label in known.items() if exe in running_names]
+    running: set[str] = set()
+    for proc in psutil.process_iter(["name"]):
+        name = (proc.info or {}).get("name")
+        if name:                  # 죽는 중인 프로세스는 이름이 없을 수 있다
+            running.add(name.lower())
 
+    found = [APP_DISPLAY_NAMES.get(key, key)
+             for key, exes in APP_PROCESS_MAP.items()
+             if any(exe.lower() in running for exe in exes)]
+
+    # ⚠️ 마지막 줄(tail)을 빼지 말 것 — 이 목록은 **Pluiz가 아는 앱만** 본다.
+    #   없으면 모델이 *"…만 실행 중이에요"* 라고 단정한다(실기에서 실제로 그랬다).
+    #   확인하지 않은 것을 확인한 것처럼 말하지 않는다.
+    tail = ("\n(이 목록에 없는 앱도 켜져 있을 수 있어요 — "
+            "Pluiz가 아는 앱만 확인합니다.)")
     if found:
-        return "✓ 현재 실행 중인 앱:\n" + "\n".join(f"  • {app}" for app in found)
-    return "✓ 현재 실행 중인 주요 앱이 없습니다."
+        return ("✓ 실행 중인 앱:\n"
+                + "\n".join(f"  • {app}" for app in found) + tail)
+    return "✓ Pluiz가 아는 앱 중에는 실행 중인 것이 없습니다." + tail

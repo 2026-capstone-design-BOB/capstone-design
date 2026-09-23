@@ -187,6 +187,94 @@
       gap: 8px;
     }
 
+    /* ── 웨이크워드 설정 (BL-13) ─────────────────────────────── */
+    .s-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 2px 0;
+    }
+
+    .s-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    /* 체크박스는 OS 기본 모양이 창 테마와 어긋나서 직접 그린다. */
+    .s-toggle {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text);
+      user-select: none;
+    }
+
+    .s-toggle input {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 34px;
+      height: 19px;
+      border-radius: 999px;
+      background: rgba(28, 28, 44, .9);
+      border: 1px solid var(--border);
+      position: relative;
+      cursor: pointer;
+      transition: background .16s, border-color .16s;
+      flex: none;
+    }
+
+    .s-toggle input::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: transform .16s, background .16s;
+    }
+
+    .s-toggle input:checked {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .s-toggle input:checked::after {
+      transform: translateX(15px);
+      background: #fff;
+    }
+
+    .s-toggle input:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .s-mini-btn {
+      padding: 6px 12px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      color: var(--text);
+      font-size: 11px;
+      cursor: pointer;
+      flex: none;
+      transition: border-color .16s, color .16s;
+    }
+
+    .s-mini-btn:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .s-mini-btn:disabled {
+      opacity: .5;
+      cursor: default;
+    }
+
     .s-save-btn {
       flex: 1;
       padding: 9px 0;
@@ -372,6 +460,21 @@
       background: var(--warn);
       box-shadow: 0 0 5px var(--warn);
       animation: dot-f .7s ease-in-out infinite;
+    }
+
+    /* 화면 감시 중 배지 — 감시가 돌고 있다는 걸 사용자가 항상 볼 수 있어야 한다.
+       "켜 둔 걸 잊는 것"이 이 기능의 가장 큰 위험이다. */
+    .watch-badge {
+      display: none;
+      font-size: 11px;
+      line-height: 1;
+      margin-left: 4px;
+      opacity: .9;
+      animation: dot-b 2.5s ease-in-out infinite;
+    }
+
+    .watch-badge.show {
+      display: inline-block;
     }
 
     @keyframes dot-b {
@@ -604,6 +707,21 @@
       font-size: 12px;
       font-weight: 700;
       color: var(--danger);
+    }
+
+    /* BL-33 — 링이 «남은 8초»가 아니라 «내 말이 들어가고 있는가»를 보여준다.
+       남은 시간은 사용자가 알 필요가 없다. 알아야 하는 건 들리고 있는지다.
+       .idle = 아직 말이 시작되지 않음(회색) · 말이 잡히면 빨강으로 넘어간다 */
+    .cd-ring .pr {
+      transition: stroke-dashoffset .06s linear;
+    }
+
+    .cd-ring.idle .pr {
+      stroke: rgba(148, 163, 184, .5);
+    }
+
+    .cd-ring.idle .cd-num {
+      color: rgba(148, 163, 184, .85);
     }
 
     .mic-btn {
@@ -1141,6 +1259,56 @@
           <button class="s-save-btn" id="s-save-btn" onclick="saveConfig()">저장하고 시작</button>
           <button class="s-cancel-btn" id="s-cancel-btn" onclick="hideSettings()">취소</button>
         </div>
+
+        <!-- ── 웨이크워드 (BL-13) ────────────────────────────────
+             API 키와 **따로 저장한다.** 여기 저장이 위 "저장하고 시작"에 묶이면
+             호출어만 바꾸려는 사람도 API 키를 다시 넣어야 하고, 에이전트가
+             불필요하게 재초기화된다. -->
+        <div class="s-divider"></div>
+
+        <div>
+          <div class="s-row">
+            <div class="s-label" style="margin:0">호출어 (웨이크워드)</div>
+            <label class="s-toggle" title="끄면 Alt+Space로만 부를 수 있어요">
+              <input type="checkbox" id="wake-enabled">
+              <span>사용</span>
+            </label>
+          </div>
+          <div class="s-desc" style="margin:4px 0 6px">
+            이 말을 하면 창이 떠요. 쉼표로 여러 개를 넣을 수 있어요.
+          </div>
+          <div class="s-row">
+            <input class="s-input" type="text" id="wake-words-input"
+              placeholder="플루이즈" autocomplete="off" spellcheck="false"
+              onkeydown="if(event.key==='Enter') saveWakeWords()">
+            <button class="s-mini-btn" id="wake-save-btn" onclick="saveWakeWords()">저장</button>
+          </div>
+          <div class="s-status" id="wake-status"></div>
+        </div>
+
+        <!-- ── 내보내기 / 가져오기 (M6) ──────────────────────────
+             클라우드를 «안 하기로» 한 것의 대안.
+             → docs/design/M6_내보내기_가져오기.md
+             ⚠️ 가져오기는 **되돌릴 수 없는 상태 변경**이라 확인을 한 번 받는다.
+                (그래서 도구로도 만들지 않았다 — 사람이 파일을 고르는 흐름이다) -->
+        <div class="s-divider"></div>
+
+        <div>
+          <div class="s-row">
+            <div class="s-label" style="margin:0">내 설정 옮기기</div>
+          </div>
+          <div class="s-desc" style="margin:4px 0 6px">
+            배운 명령과 즐겨찾기를 파일 하나로 저장하고, 다른 PC에서 불러올 수 있어요.
+            <b>API 키와 대화 기록은 담기지 않아요.</b>
+          </div>
+          <div class="s-row">
+            <button class="s-mini-btn" id="export-btn" onclick="exportBundle()">내보내기</button>
+            <button class="s-mini-btn" id="import-btn" onclick="pickImportFile()">가져오기</button>
+            <input type="file" id="import-file" accept=".zip" style="display:none"
+              onchange="importBundle(this.files[0])">
+          </div>
+          <div class="s-status" id="portable-status"></div>
+        </div>
       </div>
     </div>
 
@@ -1167,6 +1335,7 @@
           <div class="a-logo">🎙️</div>
           Pluiz
           <span class="sdot spin" id="sdot2"></span>
+          <span class="watch-badge" id="watch-badge" title="화면 감시 중">👁</span>
         </div>
         <button class="hbtn" id="fav-btn" onclick="event.stopPropagation(); toggleFavorites()" ondblclick="event.stopPropagation()"
           title="즐겨찾기">⭐</button>
@@ -1195,7 +1364,7 @@
               <circle class="tr" cx="22" cy="22" r="19" />
               <circle class="pr" cx="22" cy="22" r="19" id="cdprog" />
             </svg>
-            <div class="cd-num" id="cdnum">8</div>
+            <div class="cd-num" id="cdnum">🎤</div>
           </div>
           <button class="mic-btn" id="mic-btn" onclick="toggleMic()">🎙️</button>
         </div>
@@ -1248,6 +1417,42 @@
   </div>
   <script>
     const API = 'http://127.0.0.1:8765';
+
+    // ── 로컬 API 접근 토큰 (BL-14) ────────────────────────────────
+    // 서버가 기동할 때 발급해 cache/.auth_token 에 적은 값을 main.js가 읽어 준다.
+    // 이게 없으면 서버가 401을 돌려준다 — 아무 웹페이지가 PC 제어 명령을 넣지
+    // 못하게 하는 장치다. (docs/BACKLOG.md BL-14)
+    //
+    // 호출부를 하나하나 고치는 대신 fetch를 한 번 감싼다. API로 가는 요청에만
+    // 헤더를 붙이므로 기존 fetch 호출 6곳은 그대로 둔다.
+    // (/voice의 FormData도 헤더만 추가하므로 Content-Type 경계가 깨지지 않는다)
+    let AUTH_TOKEN = '';
+    const _fetch = window.fetch.bind(window);
+    window.fetch = async (url, opts = {}) => {
+      if (typeof url === 'string' && url.startsWith(API)) {
+        // 매번 ensureToken()을 거친다. 이미 받아 뒀으면 즉시 반환하고, 서버가
+        // 재시작돼 토큰이 바뀌었으면 파일에서 새로 읽는다.
+        const t = await ensureToken();
+        opts = { ...opts, headers: { ...(opts.headers || {}), 'X-Pluiz-Token': t } };
+      }
+      return _fetch(url, opts);
+    };
+
+    // 재연결 루프가 3초마다 부르므로 요청이 겹치지 않게 진행 중인 것을 재사용한다.
+    let _tokenPromise = null;
+    async function ensureToken() {
+      if (AUTH_TOKEN) return AUTH_TOKEN;
+      if (!_tokenPromise) {
+        _tokenPromise = window.pluiz.getToken().catch(e => {
+          console.error('[auth] 토큰 수령 실패', e);
+          return '';
+        });
+      }
+      AUTH_TOKEN = (await _tokenPromise) || '';
+      if (!AUTH_TOKEN) _tokenPromise = null;   // 서버가 아직 없다 → 다음에 다시 시도
+      return AUTH_TOKEN;
+    }
+
     let ws = null;
     let threadId = 'pluiz_' + Date.now();
     let busy = false;
@@ -1266,10 +1471,62 @@
       openai: 'https://platform.openai.com/api-keys',
     };
 
-    // 카운트다운
-    const REC_SEC = 8;
+    // ── 발화 종료 감지 (VAD) — 2026-09-11 BL-33 ────────────────────
+    // 전에는 `REC_SEC = 8` 타이머 하나가 «사람이 말을 끝낸 시점»을 대신했다.
+    // 말이 길면 뒷말이 잘리고, 짧으면 남은 초를 멍하니 기다렸다.
+    // 이제 같은 MediaStream에 AnalyserNode를 붙여 프레임마다 RMS를 본다.
+    //
+    // 절대 규칙
+    //   ⚠️ MAX_MS(상한)를 없애지 말 것 — 무음 감지가 환경 소음에 속으면
+    //      상한이 «끝나지 않는 녹음»을 막는 유일한 방어선이다.
+    //   ⚠️ START_RMS와 KEEP_RMS를 하나로 합치지 말 것 — 히스테리시스다.
+    //      하나면 임계 근처에서 말이 «시작·끝·시작»으로 튄다.
+    //
+    // 임계 출발점은 services/wakeword.py의 에너지 관문(RMS 0.006)이다 —
+    // 같은 마이크·같은 샘플레이트를 본다. 실제 목소리로 재보고 맞춘다
+    // (콘솔에 [VAD] 줄로 잡음 바닥과 최대 RMS가 찍힌다).
+    const VAD = {
+      START_RMS: 0.020,    // 이 위로 오르면 «말이 시작됐다»
+      KEEP_RMS: 0.012,     // 이 아래로 내려가면 «무음»(히스테리시스)
+      SILENCE_MS: 1200,    // 말 시작 후 이만큼 조용하면 종료
+      NOSPEECH_MS: 6000,   // 한 마디도 없으면 접는다 — STT를 부르지 않는다
+      MAX_MS: 30000,       // ⚠️ 상한. 지우지 말 것
+      FLOOR_MS: 400,       // 시작 직후 이 구간의 잡음을 «바닥»으로 잰다
+      FLOOR_MULT: 3,       // 조용한 방이면 START_RMS가, 시끄러우면 바닥x3이 이긴다
+      FLOOR_MAX: 0.06,     // 바닥이 터무니없이 높아도 여기서 멈춘다(마이크가 죽지 않게)
+      TICK_MS: 50,         // requestAnimationFrame을 쓰지 않는다 — 창이 뒤로 가면
+                           //   프레임이 throttle돼 «무음»을 영영 못 본다
+      // 웨이크워드가 **자동으로** 연 녹음은 더 빨리 접는다. 헛깨어남이면
+      // 오버레이가 떠 있는 시간이 그만큼 짧아진다(BL-23 완화).
+      // ⚠️ 너무 줄이면 «플루이즈» 하고 숨 고르는 사람을 자른다. 4초로 둔다.
+      NOSPEECH_AUTO_MS: 4000,
+    };
     const CIRCUM = 2 * Math.PI * 19;
-    let cdInterval = null, cdRemain = REC_SEC;
+    let vadTimer = null, vadMaxTimer = null, vadCtx = null, vadPeak = 0;
+
+    // ── 헛깨어남을 조용히 닫는다 (2026-09-11, BL-23 완화) ─────────
+    // 웨이크워드 오탐은 **모델 문제**라 10월 재구축 전에는 못 줄인다
+    // (→ docs/design/M7_웨이크워드_재구축.md). 대신 **보이는 증상**은 지운다.
+    //
+    // 실기 2026-09-11: 헛깨어남 → 오버레이가 열림 → 주변 말소리를 녹음 →
+    // STT가 해독 실패 → *«⚠️ 음성을 인식하지 못했습니다»* 가 채팅에 남았다.
+    // **사용자가 시킨 적이 없는 턴이다.** 오류를 보여 줄 이유가 없다.
+    //
+    // ⚠️ 마이크 버튼·Alt+Space로 **사람이 직접 연 녹음은 그대로 오류를 보여준다** —
+    //    그건 사용자가 결과를 기다리는 턴이라 조용히 삼키면 그게 더 나쁘다.
+    //    («조용히 끝나지 않는다»는 BL-22·BL-19의 규칙이 거기에 적용된다)
+    let micAuto = false;      // 다음 녹음을 웨이크워드가 시작하는가
+    let recAuto = false;      // **지금 도는** 녹음이 그렇게 시작됐나
+    let wakeOpened = false;   // 그 웨이크워드가 오버레이를 «열었나»(이미 떠 있었으면 false)
+
+    // 🚨 2026-09-11 — `stopMic(false)`로 chunks를 비워도 **보내졌다.**
+    //    `mr.stop()`이 마지막 `dataavailable`을 **flush**하는데, 그게 방금 비운
+    //    배열에 다시 들어가고 `onstop`이 그걸 보낸다. 실기 로그:
+    //      10:11:00 WAKE → 10:11:06 [STT] 956 bytes → "인식하지 못했습니다"
+    //    6초는 정확히 VAD.NOSPEECH_MS다 — «말이 없으면 STT를 안 부른다»는 약속이
+    //    MediaRecorder의 flush 한 번에 깨져 있었다.
+    //    ⚠️ 배열을 비우는 것으로는 못 막는다. **플래그로 막는다.**
+    let micDiscard = false;
 
 
 
@@ -1457,8 +1714,11 @@
     }
 
     // ── WebSocket ──────────────────────────────────────────────────
-    function connect() {
-      ws = new WebSocket('ws://127.0.0.1:8765/ws');
+    async function connect() {
+      // 토큰을 먼저 확보한다. 브라우저 WS는 헤더를 못 붙이므로 쿼리로 보낸다 (BL-14).
+      // 서버가 아직 안 떴으면 토큰이 비어 오는데, 그땐 아래 onclose가 3초 뒤 다시 시도한다.
+      await ensureToken();
+      ws = new WebSocket('ws://127.0.0.1:8765/ws?token=' + encodeURIComponent(AUTH_TOKEN));
 
       ws.onopen = () => {
         setDots(true);
@@ -1467,7 +1727,14 @@
           checkApiConfig();
         }
       };
-      ws.onclose = () => { setDots(false); setTimeout(connect, 3000); };
+      ws.onclose = () => {
+        setDots(false);
+        // 토큰을 버리고 다시 읽는다. 서버를 재시작하면 토큰이 바뀌는데(BL-14),
+        // 메모리에 든 옛 토큰을 계속 쓰면 재연결이 영영 401/1008로 거절된다.
+        AUTH_TOKEN = '';
+        _tokenPromise = null;
+        setTimeout(connect, 3000);
+      };
       ws.onerror = () => setDots(false);
 
       ws.onmessage = e => {
@@ -1485,6 +1752,19 @@
         } else if (m.type === 'error') {
           addMsg('a', '⚠️ ' + m.message);
           setBusy(false); setState('ready'); setWf('');
+        } else if (m.type === 'notify') {
+          // 화면 감시 알림. 사용자가 시킨 턴이 아니라 **서버가 먼저 거는 말**이라
+          // start/chunk/end 흐름과 독립적이다. streamEl·busy를 건드리지 않는다.
+          onWatchNotify(m);
+        } else if (m.type === 'watch_state') {
+          setWatchBadge(m.active);
+        } else if (m.type === 'point') {
+          // 포인팅 표시(M4). 감시 알림과 같은 이유로 start/chunk/end와 독립이고,
+          // 창을 앞으로 꺼내지 **않는다** — 사용자가 보던 화면을 가리키는 것이라
+          // 우리 창이 앞에 나오면 정작 가리킨 자리를 덮는다.
+          window.pluiz.pointShow(m);
+        } else if (m.type === 'point_clear') {
+          window.pluiz.pointHide();
         }
       };
     }
@@ -1499,6 +1779,82 @@
         ok ? '더블클릭 · 🎙️' : '서버 연결 중...';
     }
 
+    // ── 내보내기 / 가져오기 (M6) ───────────────────────────────────
+    //
+    // ⚠️ window.fetch가 토큰을 자동으로 실어 주지만(위 래퍼), 파일 **다운로드**는
+    //    fetch로 받아 blob으로 떨궈야 한다 — <a href>로 걸면 토큰이 안 실려
+    //    401이 나고, 사용자에겐 «그 버튼만 조용히 안 되는» 것으로 보인다(BL-14).
+    function portableStatus(msg, bad) {
+      const el = document.getElementById('portable-status');
+      if (!el) return;
+      el.textContent = msg || '';
+      el.style.color = bad ? '#e66' : '';
+    }
+
+    async function exportBundle() {
+      const btn = document.getElementById('export-btn');
+      if (btn) btn.disabled = true;
+      portableStatus('내보내는 중…');
+      try {
+        const r = await fetch(`${API}/export`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const blob = await r.blob();
+        // 파일 이름은 서버가 정한다 (날짜가 들어간다)
+        let name = 'pluiz-export.zip';
+        const cd = r.headers.get('content-disposition') || '';
+        const m = cd.match(/filename="([^"]+)"/);
+        if (m) name = m[1];
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        portableStatus(`${name} 으로 저장했어요.`);
+      } catch (e) {
+        console.error('[portable] 내보내기 실패', e);
+        portableStatus('내보내지 못했어요. 서버가 켜져 있는지 확인해 주세요.', true);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function pickImportFile() {
+      const el = document.getElementById('import-file');
+      if (el) { el.value = ''; el.click(); }
+    }
+
+    async function importBundle(file) {
+      if (!file) return;
+      // 되돌릴 수 없는 변경이다 — 한 번 묻는다.
+      // (서버가 백업을 남기지만, 사용자는 그걸 모른 채 누른다)
+      if (!confirm(
+            `'${file.name}' 을(를) 가져올까요?\n\n` +
+            '배운 명령과 즐겨찾기가 더해집니다. 이미 있는 건 그대로 둡니다.\n' +
+            '바꾸기 전 상태는 자동으로 백업돼요.')) {
+        return;
+      }
+      const btn = document.getElementById('import-btn');
+      if (btn) btn.disabled = true;
+      portableStatus('가져오는 중…');
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('mode', 'merge');        // 기존 우선. 덮어쓰기는 기본이 아니다
+        const r = await fetch(`${API}/import`, { method: 'POST', body: fd });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          portableStatus(d.message || `가져오지 못했어요 (HTTP ${r.status})`, true);
+          return;
+        }
+        portableStatus(d.message || '가져왔어요.');
+      } catch (e) {
+        console.error('[portable] 가져오기 실패', e);
+        portableStatus('가져오지 못했어요. 서버가 켜져 있는지 확인해 주세요.', true);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
     // ── API 설정 확인 ──────────────────────────────────────────────
     async function checkApiConfig() {
       try {
@@ -1507,6 +1863,7 @@
         hasExistingKey = data.has_key;
         selectedProvider = data.provider || 'gemini';
         updateProviderTabs();
+        applyWakeConfig(data);
         if (!data.has_key) {
           // 키 없음 → 설정창 자동 오픈
           activate(false);
@@ -1549,6 +1906,9 @@
       // 취소 버튼: 이미 키가 있을 때만 표시
       document.getElementById('s-cancel-btn').style.display = hasExistingKey ? 'block' : 'none';
       document.getElementById('s-close-btn').style.display = hasExistingKey ? 'flex' : 'none';
+      // 웨이크워드는 `.env`나 다른 창에서 바뀌었을 수 있으니 열 때마다 다시 읽는다.
+      // (실패해도 설정창은 떠야 한다 — API 키를 넣으러 온 사람을 막지 않는다)
+      loadWakeConfig();
       document.getElementById('settings-overlay').classList.add('show');
       setTimeout(() => document.getElementById('api-key-input').focus(), 100);
     }
@@ -1595,6 +1955,80 @@
       }
     }
 
+    // ── 웨이크워드 (BL-13) ────────────────────────────────────────
+    //
+    // 서버 API는 2026-09-02부터 열려 있었는데 입력란이 없어서 사용자가 `.env`를
+    // 직접 열어야 했다. 여기가 그 입력란이다.
+    //
+    // ⚠️ 웨이크워드 프로세스는 Electron이 띄운 **별도 프로세스**라 서버가 직접
+    //   못 바꾼다. `.env`를 다시 읽어 **10초 안에** 반영되므로 그 사실을 말해 준다 —
+    //   저장 직후 "플루이즈"라고 불러 보고 안 되면 고장으로 오해하기 때문이다.
+    let wakeWordsDefault = '플루이즈';
+
+    function applyWakeConfig(data) {
+      if (!data) return;
+      wakeWordsDefault = data.wake_words_default || wakeWordsDefault;
+      const input = document.getElementById('wake-words-input');
+      const toggle = document.getElementById('wake-enabled');
+      if (input) {
+        input.value = data.wake_words || '';
+        input.placeholder = wakeWordsDefault;   // 비워 두면 이게 쓰인다
+      }
+      if (toggle) toggle.checked = data.wake_word_enabled !== false;
+    }
+
+    async function loadWakeConfig() {
+      setWakeStatus('', '');
+      try {
+        const res = await fetch(`${API}/api/config`);
+        applyWakeConfig(await res.json());
+      } catch (e) {
+        console.error('[wakeword] 설정 읽기 실패', e);
+      }
+    }
+
+    async function saveWakeWords() {
+      const btn = document.getElementById('wake-save-btn');
+      const words = document.getElementById('wake-words-input').value.trim();
+      const enabled = document.getElementById('wake-enabled').checked;
+
+      btn.disabled = true;
+      btn.textContent = '저장 중';
+      setWakeStatus('', '');
+      try {
+        const res = await fetch(`${API}/api/wakeword`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wake_words: words, enabled }),
+        });
+        const data = await res.json();
+        if (data.status === 'ok') {
+          // 서버가 정리한 값(공백 제거 등)을 그대로 되돌려 받아 다시 채운다.
+          document.getElementById('wake-words-input').value = data.wake_words || '';
+          if (!enabled) {
+            setWakeStatus('✓ 껐어요. Alt+Space로 부를 수 있어요', 'ok');
+          } else {
+            const shown = data.wake_words || wakeWordsDefault;
+            setWakeStatus(`✓ "${shown}" 저장 — 10초 안에 반영돼요`, 'ok');
+          }
+        } else {
+          setWakeStatus('저장 실패: ' + JSON.stringify(data), 'err');
+        }
+      } catch (e) {
+        setWakeStatus('오류: ' + e.message, 'err');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '저장';
+      }
+    }
+
+    function setWakeStatus(msg, cls) {
+      const el = document.getElementById('wake-status');
+      if (!el) return;
+      el.textContent = msg;
+      el.className = 's-status' + (cls ? ' ' + cls : '');
+    }
+
     function setSettingStatus(msg, cls) {
       const el = document.getElementById('s-status');
       el.textContent = msg;
@@ -1616,7 +2050,8 @@
     }
 
     function deactivate() {
-      stopCd();
+      stopVad();
+      hideLevel();
       if (isRec) stopMic(false);
       if (historyOpen) hideHistory();
       if (favOpen) hideFavorites();
@@ -1639,65 +2074,196 @@
     function showTyping(v) { document.getElementById('typing').className = 'typing' + (v ? ' show' : ''); }
     function scrollChat() { const c = document.getElementById('chat'); c.scrollTop = c.scrollHeight; }
 
-    // ── 카운트다운 링 ──────────────────────────────────────────────
-    function startCd() {
-      cdRemain = REC_SEC;
+    // ── 입력 레벨 링 ───────────────────────────────────────────────
+    function showLevel() {
       const ring = document.getElementById('cdring');
-      const prog = document.getElementById('cdprog');
-      const num = document.getElementById('cdnum');
-      ring.classList.add('show');
-      prog.style.strokeDashoffset = '0';
-      num.textContent = cdRemain;
-      cdInterval = setInterval(() => {
-        cdRemain -= 0.1;
-        prog.style.strokeDashoffset = String(CIRCUM * (1 - cdRemain / REC_SEC));
-        num.textContent = Math.ceil(cdRemain);
-        if (cdRemain <= 0) { stopCd(); stopMic(true); }
-      }, 100);
+      ring.classList.add('show', 'idle');
+      document.getElementById('cdprog').style.strokeDashoffset = String(CIRCUM);
     }
-    function stopCd() {
-      clearInterval(cdInterval); cdInterval = null;
+    function setLevel(rms, live) {
+      const prog = document.getElementById('cdprog');
+      if (!prog) return;
+      // 0.12 RMS를 «가득»으로 본다. 말소리는 대개 그 아래에서 논다.
+      const f = Math.max(0, Math.min(1, rms / 0.12));
+      prog.style.strokeDashoffset = String(CIRCUM * (1 - f));
+      document.getElementById('cdring').classList.toggle('idle', !live);
+    }
+    function hideLevel() {
       document.getElementById('cdring').classList.remove('show');
+    }
+
+    // ── 발화 종료 감지 (BL-33) ─────────────────────────────────────
+    // 서버는 손대지 않는다 — 렌더러 안에서 끝나는 변경이다.
+    function startVad(stream) {
+      stopVad();
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) {
+        // 폴백: 분석기가 없으면 상한만으로 끊는다. 예전(8초)보다 낫다.
+        vadMaxTimer = setTimeout(() => stopMic(true), VAD.MAX_MS);
+        return;
+      }
+      let an, buf;
+      try {
+        vadCtx = new Ctx();
+        const src = vadCtx.createMediaStreamSource(stream);
+        an = vadCtx.createAnalyser();
+        an.fftSize = 1024;
+        src.connect(an);                     // ⚠️ destination에 잇지 않는다 —
+        buf = new Float32Array(an.fftSize);  //    이으면 자기 목소리가 스피커로 나간다
+      } catch (e) {
+        console.error('[VAD] 분석기 실패, 상한만 씁니다', e);
+        vadMaxTimer = setTimeout(() => stopMic(true), VAD.MAX_MS);
+        return;
+      }
+
+      const t0 = Date.now();
+      let speechAt = 0, quietAt = 0, floorSum = 0, floorN = 0, startRms = 0;
+      vadPeak = 0;
+
+      // ⚠️ 인터벌과 별개로 상한을 하나 더 건다. 인터벌이 throttle돼도 끊긴다.
+      vadMaxTimer = setTimeout(() => endVad('max'), VAD.MAX_MS);
+
+      vadTimer = setInterval(() => {
+        an.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        const rms = Math.sqrt(sum / buf.length);
+        if (rms > vadPeak) vadPeak = rms;
+        const now = Date.now(), age = now - t0;
+        setLevel(rms, !!speechAt);
+
+        if (!speechAt) {
+          if (age < VAD.FLOOR_MS) { floorSum += rms; floorN++; return; }
+          if (!startRms) {
+            const floor = floorN ? floorSum / floorN : 0;
+            startRms = Math.min(VAD.FLOOR_MAX,
+                                Math.max(VAD.START_RMS, floor * VAD.FLOOR_MULT));
+            console.log('[VAD] 잡음 바닥', floor.toFixed(4), 'ㅡ> 시작임계', startRms.toFixed(4));
+          }
+          if (rms >= startRms) { speechAt = now; quietAt = 0; setState('recording'); }
+          else if (age >= (recAuto ? VAD.NOSPEECH_AUTO_MS : VAD.NOSPEECH_MS))
+            endVad('nospeech');
+          return;
+        }
+
+        if (rms >= VAD.KEEP_RMS) quietAt = 0;
+        else if (!quietAt) quietAt = now;
+        if (quietAt && now - quietAt >= VAD.SILENCE_MS) endVad('endpoint');
+      }, VAD.TICK_MS);
+    }
+
+    function endVad(reason) {
+      console.log('[VAD] 종료 사유=' + reason + ' 최대RMS=' + vadPeak.toFixed(4));
+      stopVad();
+      if (reason === 'nospeech') {
+        // 말이 한 번도 없었다 → STT를 부르지 않는다(빈 요청을 막는다)
+        const auto = recAuto;
+        stopMic(false);
+        if (auto) { closeIfSpurious(); return; }   // 헛깨어남 — 말없이 닫는다
+        const el = document.getElementById('slbl');
+        if (el) { el.textContent = '말이 없어서 그만 들었어요'; el.className = 'state-lbl'; }
+        setTimeout(() => { if (!isRec && !busy) setState('ready'); }, 1800);
+        return;
+      }
+      stopMic(true);
+    }
+
+    function closeIfSpurious() {
+      // 웨이크워드가 **열었고** 대화가 하나도 안 생겼으면 없던 일로 한다.
+      // ⚠️ busy면 손대지 않는다 — 서버가 답하는 중이면 그건 진짜 턴이다.
+      if (!recAuto || !wakeOpened || busy) return;
+      recAuto = false; wakeOpened = false;
+      deactivate();
+    }
+
+    function stopVad() {
+      clearInterval(vadTimer); vadTimer = null;
+      clearTimeout(vadMaxTimer); vadMaxTimer = null;
+      if (vadCtx) { try { vadCtx.close(); } catch (e) {} vadCtx = null; }
     }
 
     // ── 음성 녹음 ─────────────────────────────────────────────────
     function toggleMic() {
       if (busy) return;
+      micAuto = false; wakeOpened = false;   // 사람이 눌렀다 — 오류를 숨기지 않는다
       if (isRec) stopMic(true);
       else startMic();
     }
 
+    // 🚨 2026-09-09 — `isRec = true`가 **await 뒤에** 있어서 경쟁 조건이 있었다.
+    //   getUserMedia가 끝나기 전에는 isRec가 false라, 그 사이에 startMic()이 또
+    //   불리면 **가드를 통과해 레코더가 둘** 생긴다. 전역 `mr`은 두 번째로
+    //   덮어써지고, **참조를 잃은 첫 번째가 같은 chunks 배열에 계속 쓴다** →
+    //   webm 스트림 두 개가 섞인 블롭 → 디코딩 실패 → STT가 빈 결과를 낸다.
+    //
+    //   실기(2026-09-09 17:13~17:15): 첫 녹음 74KB만 성공하고 그 뒤 6번이 전부
+    //   ~130KB 균일한 크기로 실패했다. 웨이크워드가 5초 간격으로 두 번 뜬 것
+    //   (17:14:36 · 17:14:41 → activate(true) 두 번)이 방아쇠였다.
+    //
+    // ⚠️ `micStarting`을 **동기로** 세우는 것이 핵심이다. await 뒤에 세우는 값은
+    //    가드가 될 수 없다.
+    let micStarting = false;
+
     async function startMic() {
-      if (isRec) return;
+      if (isRec || micStarting) return;
+      micStarting = true;                 // ★ await **전에** 동기로 잠근다
       stopCurrentAudio(); // 마이크 시작 시 TTS 중단
+      let stream = null;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // 기다리는 동안 중단됐거나 다른 녹음이 시작됐으면 **이 스트림은 버린다.**
+        if (isRec) { stream.getTracks().forEach(t => t.stop()); return; }
+        // 혹시 남아 있는 이전 레코더가 있으면 확실히 끊는다(고아 방지)
+        if (mr && mr.state !== 'inactive') {
+          try { mr.ondataavailable = null; mr.onstop = null; mr.stop(); } catch (e) {}
+        }
+        const rec = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        mr = rec;
         chunks = [];
-        mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-        mr.onstop = async () => {
-          stream.getTracks().forEach(t => t.stop());
-          if (chunks.length > 0) await sendVoice(new Blob(chunks, { type: 'audio/webm' }));
+        // ⚠️ `mr`이 아니라 **자기 자신(rec)** 을 본다. 전역이 바뀌어도
+        //    남의 chunks에 쓰지 않는다.
+        rec.ondataavailable = e => {
+          if (mr === rec && !micDiscard && e.data.size > 0) chunks.push(e.data);
         };
-        mr.start(100);
+        rec.onstop = async () => {
+          stream.getTracks().forEach(t => t.stop());
+          if (mr !== rec) return;         // 이미 다른 녹음으로 넘어갔으면 버린다
+          if (micDiscard) { chunks = []; return; }   // 버리기로 한 녹음이다
+          const parts = chunks; chunks = [];
+          if (parts.length > 0) await sendVoice(new Blob(parts, { type: 'audio/webm' }));
+        };
+        rec.start(100);
         isRec = true;
-        setState('recording'); setWf('rec');
+        micDiscard = false;             // 새 녹음은 버리지 않는다(이전 값이 남지 않게)
+        recAuto = micAuto; micAuto = false;   // 출처를 **이 녹음에** 고정한다
+        setState('ready'); setWf('rec');   // 말이 잡히기 전까진 '말씀하세요...'
         document.getElementById('mic-btn').classList.add('rec');
         document.getElementById('mic-btn').textContent = '⏹️';
-        startCd();
+        showLevel();
+        startVad(stream);
       } catch (err) {
+        if (stream) stream.getTracks().forEach(t => t.stop());
         addMsg('a', '⚠️ 마이크 접근 실패: ' + err.message);
+      } finally {
+        micStarting = false;
       }
     }
 
     function stopMic(send = true) {
-      stopCd();
+      stopVad();
+      hideLevel();
+      // ★ `mr.stop()`의 마지막 flush까지 막으려면 **플래그가 먼저** 서야 한다.
+      //   배열을 비우는 것만으로는 못 막는다(위 micDiscard 주석).
+      micDiscard = !send;
       if (!send) chunks = [];
-      if (mr && isRec) mr.stop();
+      // ⚠️ `isRec`만 보지 않는다 — 레코더가 살아 있는데 플래그만 내려가면
+      //    고아가 되어 다음 녹음의 chunks를 오염시킨다(위 주석의 그 사고다).
+      if (mr && mr.state !== 'inactive') { try { mr.stop(); } catch (e) {} }
       isRec = false;
       document.getElementById('mic-btn').classList.remove('rec');
       document.getElementById('mic-btn').textContent = '🎙️';
       setWf('');
+      flushPendingAudio();   // 녹음 때문에 미뤄 둔 TTS가 있으면 지금 내보낸다
     }
 
     async function sendVoice(blob) {
@@ -1711,7 +2277,10 @@
         const res = await fetch(`${API}/voice`, { method: 'POST', body: fd });
         const data = await res.json();
         if (data.error) {
-          addMsg('a', '⚠️ ' + data.error);
+          // 🚨 웨이크워드가 연 녹음이면 **말없이 닫는다.** 사용자가 시킨 적 없는
+          //    턴의 오류를 보여 주면, 헛깨어남이 «고장»처럼 보인다(BL-23 완화).
+          if (recAuto) { closeIfSpurious(); }
+          else { addMsg('a', '⚠️ ' + data.error); }
         } else {
           if (data.text) addMsg('u', '🎤 ' + data.text);
           addMsg('a', data.response);
@@ -1755,8 +2324,10 @@
 
     // ── TTS 재생 ──────────────────────────────────────────────────
     let currentAudio = null;
+    let pendingAudio = null;
 
     function stopCurrentAudio() {
+      pendingAudio = null;   // 새 녹음이 시작되면 밀어 둔 TTS는 버린다(낡았다)
       if (currentAudio) {
         currentAudio.pause();
         currentAudio.src = '';
@@ -1764,7 +2335,19 @@
       }
     }
 
+    function flushPendingAudio() {
+      if (!pendingAudio) return;
+      const b64 = pendingAudio; pendingAudio = null;
+      setTimeout(() => playAudio(b64), 200);
+    }
+
     function playAudio(b64) {
+      // 🚨 BL-33 — 녹음 중에 TTS를 틀면 자기 목소리가 마이크로 되먹임돼
+      //    «무음이 오지 않는» 끝나지 않는 녹음이 된다. 화면 감시 알림
+      //    (onWatchNotify)은 아무 때나 들어오므로 여기서 막는다.
+      //    ⚠️ 알림을 삼키지는 않는다 — 글은 이미 채팅에 나갔고, 소리는
+      //    녹음이 끝나는 즉시 흘려보낸다(flushPendingAudio).
+      if (isRec) { pendingAudio = b64; return; }
       try {
         stopCurrentAudio(); // 기존 TTS 중단 후 새 TTS 재생
         const raw = atob(b64);
@@ -1779,6 +2362,22 @@
       } catch (e) { console.error('[TTS] error', e); }
     }
 
+    // ── 화면 감시 알림 ────────────────────────────────────────────
+    // 감시는 사용자가 화면을 안 보고 있을 때 쓰는 기능이다. 그래서 조용히
+    // 채팅에만 적으면 전달되지 않는다 — 창을 앞으로 꺼내고 소리로도 알린다.
+    function onWatchNotify(m) {
+      setWatchBadge(false);
+      window.pluiz.showWindow();
+      activate(false);
+      addMsg('a', m.text || '');
+      if (m.audio_base64) playAudio(m.audio_base64);
+    }
+
+    function setWatchBadge(active) {
+      const el = document.getElementById('watch-badge');
+      if (el) el.className = 'watch-badge' + (active ? ' show' : '');
+    }
+
     // ── IPC ───────────────────────────────────────────────────────
     window.pluiz.onWakeDetected(() => {
       const ring = document.getElementById('logo-ring');
@@ -1788,6 +2387,9 @@
         ring.classList.remove('awake');
         if (!isActive) ring.classList.add('listening');
       }, { once: true });
+      // 이 녹음은 **사람이 시킨 것이 아니다.** 실패하면 조용히 닫는다.
+      micAuto = true;
+      wakeOpened = !isActive;    // 이미 떠 있었으면 닫지 않는다
       activate(true);
     });
 
@@ -1798,6 +2400,7 @@
     });
 
     window.pluiz.onToggleActive(() => {
+      micAuto = false; wakeOpened = false;   // Alt+Space는 **사람**이다
       if (isActive) deactivate();
       else activate(true);
     });

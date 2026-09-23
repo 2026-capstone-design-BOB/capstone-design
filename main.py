@@ -4,30 +4,140 @@ Electron UI와 HTTP/WebSocket으로 통신
 """
 
 import asyncio
+from contextlib import asynccontextmanager
 import os
+from typing import Literal
+
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # BUG-02: create_task 참조 손실 방지용 백그라운드 태스크 집합
 _bg_tasks: set = set()
 
 from config.settings import get_settings
+from core import auth
 from core.graph_agent import get_graph_agent
+from core.logger import get_logger
 from core.security import check_security
 from services.tts import get_tts
 from services.stt import get_stt
 
-app = FastAPI(title="Pluiz v2", version="2.0.0")
+#: 감시 알림처럼 **에이전트를 안 거치고 나가는 길**의 실패를 남긴다 (감사 G-13).
+_log = get_logger("Server")
 
-# Electron에서 접근 허용
+# 서버가 이번 기동에 발급한 토큰. lifespan에서 채워진다.
+_AUTH_TOKEN = ""
+
+# ── 화면 감시 알림 채널 (Phase 2) ─────────────────────────────────
+# 감시(core/screen_monitor.py)는 **턴이 끝난 뒤에** 도는 백그라운드 스레드라
+# 응답으로 돌려줄 곳이 없다. 열려 있는 /ws로 서버가 직접 밀어넣는다.
+_ws_clients: set = set()
+_main_loop = None                 # 감시 스레드가 이벤트 루프로 건너오는 다리
+_pending_notifications: list = [] # 붙어 있는 UI가 없을 때 잠시 보관
+_MAX_PENDING = 5
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """기동 시 토큰 발급 → `cache/.auth_token`, 종료 시 정리. (BL-14)
+
+    Electron(`electron-ui/main.js`)과 라이브 테스트가 이 파일을 읽어 같은 값을 얻는다.
+    웹페이지는 로컬 파일을 못 읽는다 — 그게 이 방어의 근거다.
+    """
+    global _AUTH_TOKEN
+    s = get_settings()
+
+    # ⚠️ 발급 **전에** 포트를 확인한다. uvicorn은 소켓을 잡기 전에 lifespan을 돌리므로,
+    # 서버가 이미 떠 있는데 또 띄우면 두 번째가 죽으면서 **첫 번째의 토큰 파일을
+    # 덮어쓰고 지운다.** 그러면 멀쩡히 돌던 UI가 재연결에서 토큰을 잃는다.
+    # (launch.bat을 두 번 실행하면 실제로 일어난다 — 2026-09-02 실측으로 발견)
+    if auth.port_in_use(s.server_host, s.server_port):
+        print(f"[auth] ⚠️ {s.server_host}:{s.server_port} 에 이미 서버가 있습니다. "
+              f"토큰을 건드리지 않고 종료합니다 (기존 서버와 UI는 그대로 동작).")
+        yield
+        return
+
+    _AUTH_TOKEN = auth.issue_token()
+    if s.auth_enabled:
+        print(f"[auth] 접근 토큰 발급됨 → {auth.token_path()}")
+        print(f"[auth] 캐시 대시보드: http://{s.server_host}:{s.server_port}"
+              f"/cache/ui?{auth.QUERY_NAME}={_AUTH_TOKEN}")
+    else:
+        print("[auth] ⚠️ AUTH_ENABLED=false — 로컬 API 접근 제어가 꺼져 있습니다 (BL-14)")
+    # 화면 감시가 UI로 말을 걸 수 있게 다리를 놓는다. 감시 스레드는 이벤트 루프
+    # 밖에 있으므로, 여기서 잡아 둔 루프로 run_coroutine_threadsafe 해서 건너온다.
+    global _main_loop
+    _main_loop = asyncio.get_running_loop()
+    from core import screen_monitor, pointer
+    screen_monitor.set_notifier(_push_from_monitor)
+    # 포인팅 표시(M4)도 **같은 통로**로 나간다. 두 번째 채널을 만들면 토큰·수명
+    # 관리가 두 벌이 된다. → docs/design/M4_포인팅_확대.md §3-2
+    pointer.set_notifier(_push_from_monitor)
+
+    try:
+        yield
+    finally:
+        # 서버가 내려가면 감시도 멈춘다. 안 그러면 알릴 곳도 없이 화면만 계속 나간다.
+        screen_monitor.set_notifier(None)
+        screen_monitor.reset_monitor()
+        # 서버가 내려가면 표시도 없앤다. 남겨 두면 «표시 중»으로 알고 캡처가
+        # 기다리는 상태가 되고, 정작 지울 UI는 없다.
+        pointer.set_notifier(None)
+        pointer.reset()
+        # 내 토큰일 때만 지운다 (위와 같은 이유의 2차 방어)
+        auth.clear_token(expected=_AUTH_TOKEN)
+
+
+app = FastAPI(title="Pluiz v2", version="2.0.0", lifespan=lifespan)
+
+# ── BL-14: 로컬 API 접근 제어 ─────────────────────────────────────
+# 이 서버는 PC를 조작한다. 인증이 없으면 사용자가 열어 둔 **아무 웹페이지**가
+# fetch 한 줄로 명령을 밀어넣을 수 있다. 방어는 아래 세 겹이고, 실질적 방어는 ③이다.
+#
+# ① Host 검사 — DNS 리바인딩 차단. 공격 도메인이 127.0.0.1로 해석되면 페이지가
+#    서버와 **동일 출처**가 되어 CORS가 통째로 무력화된다. Host를 고정해 그걸 막는다.
+# ② CORS — `allow_origins`가 "null"인 건 오타가 아니다. Electron 렌더러는
+#    `loadFile`(file://)이라 브라우저가 `Origin: null`을 보낸다. 이 값을 허용하지
+#    않으면 UI 자신이 막힌다. ⚠️ 그러나 **CORS는 응답 읽기만 막고 요청 처리는 막지
+#    못한다** — 명령은 그대로 실행된다. 그래서 CORS는 방어가 아니라 defense-in-depth다.
+# ③ 토큰 — `auth_guard` 미들웨어 + `/ws` 검사. 웹페이지는 로컬 파일을 못 읽으므로
+#    서버가 `cache/.auth_token`에 적어 둔 값을 알 수 없다. **이게 진짜 방어다.**
+#
+# 배경: docs/BACKLOG.md BL-14 · docs/ARCHITECTURE.md § 보안 — 5층 방어
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["null"],          # file:// 렌더러. 위 ② 주석 참조 — 되돌리지 말 것
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", auth.HEADER_NAME],
 )
+
+
+@app.middleware("http")
+async def auth_guard(request, call_next):
+    """토큰 없는 HTTP 요청을 401로 막는다.
+
+    ⚠️ 이 미들웨어는 **WebSocket을 타지 않는다.** `/ws`는 엔드포인트 안에서 따로 막는다.
+    """
+    # CORS 프리플라이트(OPTIONS)는 통과시킨다. `X-Pluiz-Token`은 safelisted 헤더가
+    # 아니라 렌더러의 모든 요청이 프리플라이트를 거치는데, 프리플라이트에는 그 헤더가
+    # 실리지 않는다. 여기서 401을 주면 **UI 자신이 전부 막힌다.**
+    # 프리플라이트는 아무것도 실행하지 않고 정보도 주지 않으므로 안전하다.
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    if get_settings().auth_enabled and not auth.is_authorized(
+        request.url.path,
+        request.headers.get(auth.HEADER_NAME),
+        request.query_params.get(auth.QUERY_NAME),
+        _AUTH_TOKEN,
+    ):
+        return JSONResponse(status_code=401, content={"error": "unauthorized"})
+    return await call_next(request)
 
 
 # ── 데이터 모델 ───────────────────────────────────────────────────
@@ -44,8 +154,17 @@ class TextResponse(BaseModel):
 
 
 class ConfigRequest(BaseModel):
-    provider: str   # "gemini" | "claude" | "openai"
+    # ⚠️ str이면 안 된다 — save_config()가 이 값을 `{PROVIDER}_API_KEY`로 만들어
+    # .env에 그대로 쓴다. 개행이 섞이면 .env 인젝션이 된다 (BL-14 ③).
+    # config/settings.py의 llm_provider와 같은 타입이어야 한다.
+    provider: Literal["gemini", "claude", "openai"]
     api_key: str
+
+
+class WakeWordRequest(BaseModel):
+    """웨이크워드 설정. 사용자가 직접 정한다."""
+    wake_words: str = ""      # 쉼표 구분. 빈 문자열이면 기본값("플루이즈") 사용
+    enabled: bool = True
 
 
 # ── REST 엔드포인트 ────────────────────────────────────────────────
@@ -64,6 +183,10 @@ async def get_config():
         "provider": s.llm_provider,
         "has_key": bool(s.active_api_key),
         "model": s.active_model,
+        "wake_words": s.wake_words,
+        "wake_word_enabled": s.wake_word_enabled,
+        # 사용자가 아무것도 안 정했을 때 실제로 쓰이는 값 (UI 플레이스홀더용)
+        "wake_words_default": "플루이즈",
     }
 
 
@@ -78,6 +201,9 @@ async def save_config(req: ConfigRequest):
         with open(env_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
+    # provider는 Literal로 이미 좁혀졌지만 api_key는 자유 문자열이다.
+    # 개행이 들어오면 .env에 임의의 줄을 추가할 수 있으므로 여기서 자른다 (BL-14 ③).
+    api_key = req.api_key.replace("\r", "").replace("\n", "").strip()
     key_var = f"{req.provider.upper()}_API_KEY"
     provider_found = key_found = False
     new_lines: list[str] = []
@@ -87,7 +213,7 @@ async def save_config(req: ConfigRequest):
             new_lines.append(f"LLM_PROVIDER={req.provider}\n")
             provider_found = True
         elif line.startswith(key_var + "="):
-            new_lines.append(f"{key_var}={req.api_key}\n")
+            new_lines.append(f"{key_var}={api_key}\n")
             key_found = True
         else:
             new_lines.append(line)
@@ -95,7 +221,7 @@ async def save_config(req: ConfigRequest):
     if not provider_found:
         new_lines.insert(0, f"LLM_PROVIDER={req.provider}\n")
     if not key_found:
-        new_lines.append(f"{key_var}={req.api_key}\n")
+        new_lines.append(f"{key_var}={api_key}\n")
 
     with open(env_path, "w", encoding="utf-8") as f:
         f.writelines(new_lines)
@@ -107,8 +233,62 @@ async def save_config(req: ConfigRequest):
     from core.graph_agent import reset_graph_agent
     reset_graph_agent()
 
-    print(f"[config] provider={req.provider} key=***{req.api_key[-4:] if req.api_key else ''} 저장됨")
+    print(f"[config] provider={req.provider} key=***{api_key[-4:] if api_key else ''} 저장됨")
     return {"status": "ok", "provider": req.provider}
+
+
+def _write_env(updates: dict) -> None:
+    """`.env`의 키를 갱신(없으면 추가)한다.
+
+    ⚠️ `get_settings`는 `@lru_cache`라 파일만 고치면 옛 값이 계속 쓰인다.
+    반드시 `cache_clear()`까지 해야 한다. (CLAUDE.md 절대규칙 4)
+    """
+    NEWLINE = chr(10)
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    lines: list[str] = []
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+    remaining = dict(updates)
+    out: list[str] = []
+    for line in lines:
+        key = line.split("=", 1)[0].strip() if "=" in line else ""
+        if key in remaining:
+            out.append(f"{key}={remaining.pop(key)}" + NEWLINE)
+        else:
+            out.append(line)
+    for k, v in remaining.items():
+        if out and not out[-1].endswith(NEWLINE):
+            out.append(NEWLINE)
+        out.append(f"{k}={v}" + NEWLINE)
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(out)
+
+    get_settings.cache_clear()
+
+
+@app.post("/api/wakeword")
+async def save_wakeword(req: WakeWordRequest):
+    """웨이크워드 저장.
+
+    웨이크워드 프로세스(`services/wakeword.py`)는 Electron이 띄운 **별도 프로세스**라
+    서버가 직접 못 바꾼다. 대신 그쪽이 주기적으로 `.env`를 다시 읽으므로
+    **재시작 없이 몇 초 안에 반영된다.**
+    """
+    words = ",".join(w.strip() for w in req.wake_words.split(",") if w.strip())
+    _write_env({
+        "WAKE_WORDS": words,
+        "WAKE_WORD_ENABLED": "true" if req.enabled else "false",
+    })
+    print(f"[config] 웨이크워드 저장: {words or chr(40)+chr(41)} enabled={req.enabled}")
+    return {
+        "status": "ok",
+        "wake_words": words,
+        "enabled": req.enabled,
+        "note": "웨이크워드 서비스가 10초 안에 자동 반영합니다.",
+    }
 
 
 @app.post("/chat")
@@ -117,7 +297,6 @@ async def chat(req: TextRequest):
     텍스트 명령 처리.
     Electron UI의 채팅 입력창에서 호출.
     """
-    from fastapi.responses import JSONResponse
     try:
         # ── 보안 필터 (LLM 판단 전 결정론적 차단) ─────────────────
         blocked, reason = check_security(req.text)
@@ -145,10 +324,21 @@ async def chat(req: TextRequest):
 
 
 @app.post("/voice")
-async def voice_input(audio: UploadFile = File(...), thread_id: str = "default", use_tts: bool = True):
+async def voice_input(audio: UploadFile = File(...),
+                      thread_id: str = Form("default"),
+                      use_tts: bool = Form(True)):
     """
     음성 파일 업로드 → STT → 에이전트 처리 → (TTS) 응답.
     Electron에서 마이크 녹음 후 전송.
+
+    ⚠️ **`Form(...)`을 빼지 말 것.** 스칼라 파라미터를 그냥 두면 FastAPI가 이걸
+    **쿼리 파라미터**로 해석해서, 렌더러가 FormData로 보내는 `thread_id`를 통째로
+    무시하고 항상 "default"를 쓴다. 그러면 **음성과 텍스트가 서로 다른 대화가 된다.**
+
+    2026-09-03 실기에서 이것 때문에 삭제 승인이 무너졌다. 텍스트로 "그 파일 지워줘"
+    → 승인 질문(thread=pluiz_…)이 뜬 상태에서 음성으로 "어 삭제해 줘"라고 하면
+    thread=default 로 가서 승인이 아니라 **새 명령**이 됐고("무엇을 삭제할까요?"),
+    텍스트 쪽 승인 대기는 100초 뒤 엉뚱한 "메모장 열어줘"를 삼켰다.
     """
     audio_bytes = await audio.read()
 
@@ -212,7 +402,10 @@ async def clear_history():
 
 import json as _json_module
 
-_FAV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "favorites.json")
+# ⚠️ `PLUIZ_FAVORITES_FILE`을 존중한다 — 테스트가 사용자의 즐겨찾기를 고치지
+#    않게 하려고 `_testenv`가 이 변수를 임시 경로로 돌린다(BL-11 계열, 2026-09-10).
+_FAV_PATH = os.environ.get("PLUIZ_FAVORITES_FILE") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "cache", "favorites.json")
 
 
 def _load_favorites() -> list[dict]:
@@ -328,6 +521,11 @@ _CACHE_DASHBOARD_HTML = """<!DOCTYPE html>
   </tbody></table>
 
 <script>
+// BL-14: 이 페이지의 fetch에도 토큰이 필요하다. 주소창으로는 헤더를 못 붙이므로
+// `?token=`으로 들어오고, 서버가 그 값을 아래 자리에 박아 내려준다.
+const TOKEN='__PLUIZ_TOKEN__';
+const _fetch=window.fetch.bind(window);
+window.fetch=(u,o={})=>{o.headers={...(o.headers||{}),'X-Pluiz-Token':TOKEN};return _fetch(u,o);};
 const $=id=>document.getElementById(id);
 function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
 async function load(){
@@ -366,9 +564,13 @@ async def cache_view():
 
 @app.get("/cache/ui")
 async def cache_dashboard():
-    """개발용 캐시 대시보드(HTML) — 조회·삭제·초기화 + 스키마/타입 문서."""
+    """개발용 캐시 대시보드(HTML) — 조회·삭제·초기화 + 스키마/타입 문서.
+
+    `?token=`으로 들어온다(서버 기동 로그에 전체 URL이 찍힌다). 여기까지 온 요청은
+    `auth_guard`를 이미 통과했으므로, 페이지 안의 fetch가 쓸 토큰을 박아 내려준다.
+    """
     from fastapi.responses import HTMLResponse
-    return HTMLResponse(_CACHE_DASHBOARD_HTML)
+    return HTMLResponse(_CACHE_DASHBOARD_HTML.replace("__PLUIZ_TOKEN__", _AUTH_TOKEN))
 
 
 @app.delete("/cache")
@@ -387,6 +589,156 @@ async def cache_delete_entry(pattern: str):
     return {"status": "ok" if ok else "not_found_or_seed", "pattern": pattern}
 
 
+# ── 내보내기 / 가져오기 (M6) ──────────────────────────────────────
+#
+# 클라우드를 «안 하기로» 한 것의 대안. → docs/design/M6_내보내기_가져오기.md
+#
+# ⚠️ **도구로 만들지 않았다.** 음성으로 부를 수 있게 하면 가져오기가 «되돌릴 수 없는
+#    상태 변경»인데 LLM이 부를 수 있게 되고, HITL 승인이 필요해진다. 사람이 파일을
+#    고르는 흐름이 맞다. (도구 사용 실측: 등록 40개 중 13개만 실사용 → 더 만들지 않는다)
+
+_MAX_IMPORT_BYTES = 50 * 1024 * 1024      # 50MB. 히스토리 db까지 담아도 남는다
+
+
+@app.get("/export")
+async def export_bundle(history: bool = False):
+    """캐시 + 즐겨찾기를 zip 하나로 내려준다. `?history=true`면 대화 기록까지.
+
+    ⚠️ 담기는 것은 `core/portable._EXPORTABLE`에 **적힌 것뿐이다**(allowlist).
+      `.env`·로그는 거르는 게 아니라 **목록에 없어서 담길 수 없다.**
+    """
+    from fastapi.responses import Response
+    from core import portable
+    data, manifest = portable.build_bundle(include_history=history)
+    fname = portable.suggested_filename()
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{fname}"',
+            "X-Pluiz-Items": _json_module.dumps(manifest["items"], ensure_ascii=False),
+        },
+    )
+
+
+@app.post("/import")
+async def import_bundle_api(
+    file: UploadFile = File(...),
+    mode: str = Form("merge"),
+    history: bool = Form(False),
+):
+    """번들 zip을 가져온다. 무엇을 몇 개 했는지 문장으로 돌려준다.
+
+    ⚠️ **`mode`·`history`에서 `Form(...)`을 빼지 말 것** — 절대규칙 8과 같은 함정이다.
+      빼면 FastAPI가 스칼라를 **쿼리 파라미터**로 해석해 FormData로 온 값을 통째로
+      무시하고, `mode=replace`를 보내도 조용히 merge로 돈다.
+      /voice에서 이것 때문에 음성과 텍스트가 다른 대화가 됐다(BL-16).
+    """
+    from core import portable
+    from core.command_cache import get_cache
+
+    raw = await file.read()
+    if len(raw) > _MAX_IMPORT_BYTES:
+        return JSONResponse(status_code=413, content={
+            "status": "too_large",
+            "message": f"파일이 너무 큽니다 ({len(raw) // (1024 * 1024)}MB). "
+                       f"{_MAX_IMPORT_BYTES // (1024 * 1024)}MB까지 받습니다.",
+        })
+
+    try:
+        report = portable.import_bundle(
+            raw, get_cache(), mode=mode, include_history=history)
+    except portable.BundleError as e:
+        # 우리 것이 아닌 파일. **아무것도 안 건드렸다** — 그렇게 말해 준다.
+        return JSONResponse(status_code=400, content={
+            "status": "rejected", "message": str(e),
+            "note": "아무것도 바꾸지 않았어요.",
+        })
+    except Exception as e:
+        return JSONResponse(status_code=500, content={
+            "status": "error", "message": f"가져오지 못했습니다: {e}"})
+
+    # 캐시는 파일에서 다시 읽어야 반영된다 (프로세스 안 사본이 낡았다)
+    try:
+        get_cache().reload()
+    except Exception:
+        pass
+
+    return {"status": "ok",
+            "message": portable.describe_report(report),
+            "report": report}
+
+
+# ── 화면 감시 → UI 푸시 ───────────────────────────────────────────
+
+def _push_from_monitor(payload: dict) -> None:
+    """감시 **스레드**에서 호출된다. 이벤트 루프로 넘겨 실제 전송을 시킨다.
+
+    ⚠️ 여기서 직접 `send_json`을 부르면 안 된다 — 다른 스레드다.
+    """
+    loop = _main_loop
+    if loop is None or loop.is_closed():
+        print(f"[Monitor] 서버 루프가 없어 알림을 전달하지 못했습니다: {payload}")
+        return
+    try:
+        asyncio.run_coroutine_threadsafe(_broadcast(payload), loop)
+    except Exception as e:
+        print(f"[Monitor] 알림 전달 실패: {type(e).__name__}: {e}")
+
+
+async def _broadcast(payload: dict) -> None:
+    """열려 있는 모든 /ws로 payload를 보낸다. 알림이면 TTS 음성을 함께 싣는다.
+
+    감시는 **사용자가 화면을 안 보고 있을 때** 쓰는 기능이라 소리까지 있어야
+    실제로 전달된다. TTS가 실패해도 텍스트는 보낸다(기존 /ws end 페이로드와 같은 방식).
+    """
+    if payload.get("type") == "notify" and payload.get("text"):
+        # 🚨 **4층 마스킹의 사각이었다** (감사 G-13). 감시 알림은 에이전트를 안 거치고
+        #   여기서 곧장 나간다 — 그런데 이 문장은 **Vision 이 화면에서 읽은 글자**다.
+        #   화면에 주민번호·카드번호·키가 떠 있으면 그대로 실려 **소리로도 나간다.**
+        #   에이전트 쪽 관문(`run_async`)은 이 길을 못 덮는다. 그래서 여기 한 번 더 건다.
+        try:
+            from core.security import mask_sensitive_output
+            payload = {**payload, "text": mask_sensitive_output(payload["text"])}
+        except Exception as e:                                # noqa: BLE001
+            _log.error("[Monitor] 알림 마스킹 실패 — **가리지 않은 채로 나간다** | %s: %s",
+                       type(e).__name__, e)
+        try:
+            import base64
+            spoken = payload["text"].replace(chr(0x1F441), " ").strip()
+            audio = await get_tts().to_bytes_async(spoken)
+            payload = {**payload, "audio_base64": base64.b64encode(audio).decode()}
+        except Exception as e:
+            print(f"[Monitor] 알림 TTS 실패(텍스트만 전송): {e}")
+
+    sent = 0
+    for ws in list(_ws_clients):
+        try:
+            await ws.send_json(payload)
+            sent += 1
+        except Exception:
+            _ws_clients.discard(ws)
+
+    if sent == 0 and payload.get("type") == "notify":
+        # 붙어 있는 UI가 없다 → **버리지 않는다.** 감시가 말없이 사라지는 것은
+        # 이 기능이 고치려는 바로 그 문제다. 다음 연결 때 전한다.
+        _pending_notifications.append(payload)
+        del _pending_notifications[:-_MAX_PENDING]
+        print(f"[Monitor] 연결된 UI가 없어 알림을 보관합니다 "
+              f"({len(_pending_notifications)}건)")
+
+
+async def _flush_pending(websocket: WebSocket) -> None:
+    """UI가 (다시) 붙었을 때 보관해 둔 알림을 흘려보낸다."""
+    while _pending_notifications:
+        payload = _pending_notifications.pop(0)
+        try:
+            await websocket.send_json(payload)
+        except Exception:
+            _pending_notifications.insert(0, payload)
+            return
+
+
 # ── WebSocket (실시간 스트리밍) ───────────────────────────────────
 
 @app.websocket("/ws")
@@ -395,11 +747,36 @@ async def websocket_endpoint(websocket: WebSocket):
     WebSocket으로 스트리밍 응답.
     토큰 단위로 UI에 실시간 전송.
     use_tts=true 시 end 메시지에 audio_base64 포함.
+
+    ⚠️ **인증을 여기서 직접 한다.** `auth_guard` HTTP 미들웨어는 WebSocket을 타지 않고,
+    **CORS는 WebSocket에 아예 적용되지 않는다** — 웹페이지가
+    `new WebSocket('ws://127.0.0.1:8765/ws')`로 그냥 붙을 수 있어서 fetch보다 큰 구멍이었다.
+    브라우저 WS는 헤더를 못 붙이므로 토큰을 쿼리(`?token=`)로 받는다. (BL-14)
     """
+    if get_settings().auth_enabled and not auth.is_authorized(
+        "/ws", None, websocket.query_params.get(auth.QUERY_NAME), _AUTH_TOKEN
+    ):
+        # accept() 하기 전에 끊는다 — 핸드셰이크 자체를 거절한다.
+        await websocket.close(code=1008)   # 1008 = Policy Violation
+        return
+
     await websocket.accept()
     agent = get_graph_agent()
 
+    # 감시 알림을 밀어넣을 대상으로 등록한다(인증을 통과한 뒤에만).
+    _ws_clients.add(websocket)
     try:
+        # UI가 새로 떴거나 재연결됐을 수 있다 — 놓친 알림과 현재 감시 상태를 맞춘다.
+        await _flush_pending(websocket)
+        try:
+            from core.screen_monitor import get_monitor
+            st = get_monitor().status()
+            await websocket.send_json({"type": "watch_state",
+                                       "active": bool(st.get("active")),
+                                       "what": st.get("what", "")})
+        except Exception as e:
+            print(f"[Monitor] 감시 상태 동기화 생략(무시): {e}")
+
         while True:
             data = await websocket.receive_json()
             text = data.get("text", "")
@@ -448,6 +825,8 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:
             pass
+    finally:
+        _ws_clients.discard(websocket)
 
 
 # ── 진입점 ────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@
 P3-4 하이브리드 LLM 판정기 검증 (mock judge — API 불필요)
 실행: python test_guardrail_hybrid.py
 """
+import _testenv  # noqa: F401  — 제품 로그를 더럽히지 않는다(tests/_testenv.py 참조)
 import sys, os, asyncio, importlib.util, types
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core")

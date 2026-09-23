@@ -9,7 +9,10 @@ import json
 import os
 from datetime import datetime
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.db")
+# ⚠️ `PLUIZ_SESSION_DB`를 존중한다 — 테스트가 사용자의 대화 기록을 고치지
+#    않게 하려고 `_testenv`가 이 변수를 임시 경로로 돌린다(BL-11 계열, 2026-09-10).
+DB_PATH = os.environ.get("PLUIZ_SESSION_DB") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "session.db")
 
 
 class SessionMemory:

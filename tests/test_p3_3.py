@@ -2,6 +2,7 @@
 P3-3 검증: 출력 마스킹 연결 + 자기검증 프롬프트 + open_app UWP 정직 보고(정적)
 실행: python test_p3_3.py
 """
+import _testenv  # noqa: F401  — 제품 로그를 더럽히지 않는다(tests/_testenv.py 참조)
 import sys, os, asyncio, importlib.util
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

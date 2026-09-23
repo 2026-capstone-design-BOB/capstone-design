@@ -2,7 +2,9 @@ name: tests
 
 on:
   push:
-    branches: [main, develop, "feature/**"]
+    # dev/** 가 빠져 있어서 dev/post-demo 21커밋 동안 CI가 한 번도 안 돌았다.
+    # 병합일(main)에 CI가 처음 켜지며 빨갛게 뜨는 것을 막는다. (2026-09-21)
+    branches: [main, develop, "feature/**", "dev/**"]
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
@@ -23,10 +25,17 @@ jobs:
       # mock 테스트는 llm·tools·security_check를 전부 주입받으므로
       # Windows API나 LLM 키 없이 동작한다. requirements.txt 전체(playwright·
       # faster-whisper·pyautogui 등)는 불필요하고 헤드리스에서 깨지므로 설치하지 않는다.
-      - name: 의존성 설치
+      # ⚠️ 버전 숫자를 여기에 적지 말 것. 적는 순간 requirements.lock.txt와 두 곳이 되고,
+      #   한쪽만 갱신돼 어긋난다(이 저장소가 이미 겪은 사고다). lock에서 뽑아 쓴다.
+      #   하한(">=")으로 두면 매번 최신이 들어와 **코드를 안 고쳐도 어느 날 깨진다** —
+      #   실제로 requirements.txt는 langgraph>=0.2.0인데 도는 것은 1.x다.
+      - name: 의존성 설치 (버전은 requirements.lock.txt에서)
         run: |
           python -m pip install --upgrade pip
-          pip install "langgraph>=0.2.0" "langchain-core>=0.3.0"
+          pins=$(grep -E '^(langgraph|langchain-core)==' requirements.lock.txt | tr -d '\r')
+          test -n "$pins" || { echo "::error::lock에서 langgraph/langchain-core를 못 찾았다"; exit 1; }
+          echo "$pins"
+          pip install $pins
 
       - name: 문법 검사
         run: |
@@ -39,6 +48,11 @@ jobs:
       # - test_dependencies : requirements.txt 전체가 설치된 **로컬 개발 환경**을 검사한다.
       #   이 잡은 의도적으로 langgraph·langchain-core 만 설치하므로 여기선 항상 실패한다.
       #   (설치 여부는 개발자가 로컬에서 확인 — docs/WORKFLOW.md)
+      # - test_llm_config : 같은 이유다. §1(BL-57 본체)이 langchain_google_genai 를 요구하는데
+      #   이 잡은 그걸 안 깐다. 예전에는 §1이 조용히 건너뛰어지고 «2/2 통과»가 나왔다(BL-59) —
+      #   이제 판정 불가로 죽으므로 **여기서 제외한다.**
+      #   🔑 검사가 없어진 게 아니라 «없다는 사실이 보이게» 된 것이다. 이 파일은
+      #   로컬 `pluiz` 환경(= run_mock_suite.py)이 담당한다.
       - name: mock 테스트
         env:
           PYTHONIOENCODING: utf-8
@@ -52,6 +66,9 @@ jobs:
                 continue ;;
               test_dependencies.py)
                 echo "::notice::건너뜀 test_dependencies.py — 로컬 전체 설치 환경 전용"
+                continue ;;
+              test_llm_config.py)
+                echo "::notice::건너뜀 test_llm_config.py — langchain_google_genai 필요 (BL-59)"
                 continue ;;
             esac
             echo "── $(basename "$f")"
@@ -80,7 +97,7 @@ jobs:
       - name: 상대링크·이미지 참조 검증
         run: |
           python - <<'EOF'
-          import os, re, glob, sys
+          import os, re, glob, sys, subprocess
 
           LINK = re.compile(r'\[([^\]]*)\]\(([^)#]+?)(#[^)]*)?\)')
           IMG  = re.compile(r'src="([^"]+)"')
@@ -92,8 +109,28 @@ jobs:
               실제 참조로 오인하지 않도록 한다."""
               return INLINE.sub('', FENCE.sub('', s))
 
+          def gitignored(paths):
+              """.gitignore 가 무시하는 경로의 집합.
+
+              check-ignore 는 파일이 없어도 «패턴으로» 판정하므로, 체크아웃에
+              아예 존재하지 않는 docs/planning·docs/meetings 가 여기서 잡힌다.
+
+              이 저장소는 개인 계획·미팅 문서를 추적하지 않는데(.gitignore 82~83줄)
+              로컬에는 있어서 링크가 정상 동작한다. 그 링크를 CI가 «깨졌다»고 세면
+              검사가 상시 빨간 상태가 되고, 그러면 진짜 깨진 링크를 못 본다 —
+              2026-09-21에 실제로 14건이 이 이유로 쌓여 있었다.
+              (기존 관례는 «백틱 인라인 코드로 적는다»였지만, 그러면 로컬에서도
+               클릭이 안 된다. 사람이 읽는 쪽을 살리고 검사를 고쳤다.)"""
+              cand = sorted({p for p in paths if p and not p.startswith('..')})
+              if not cand:
+                  return set()
+              r = subprocess.run(['git', 'check-ignore', '--stdin', '-z'],
+                                 input='\0'.join(cand).encode(),
+                                 stdout=subprocess.PIPE)
+              return {x for x in r.stdout.decode().split('\0') if x}
+
           files = glob.glob('*.md') + glob.glob('docs/**/*.md', recursive=True) + glob.glob('archive/*.md')
-          bad = tot = 0
+          refs = []
           for f in files:
               base = os.path.dirname(f)
               text = strip_code(open(f, encoding='utf-8').read())
@@ -102,11 +139,18 @@ jobs:
               for t, kind in targets:
                   if t.startswith(('http://', 'https://', 'mailto:', 'data:')):
                       continue
-                  tot += 1
-                  if not os.path.exists(os.path.normpath(os.path.join(base, t))):
-                      bad += 1
-                      print(f"::error file={f}::깨진 {kind} -> {t}")
-          print(f"참조 {tot}개 검사 / 깨진 것 {bad}개")
+                  refs.append((f, t, kind, os.path.normpath(os.path.join(base, t))))
+
+          skip = gitignored([r[3] for r in refs])
+          bad = skipped = 0
+          for f, t, kind, rel in refs:
+              if rel in skip:
+                  skipped += 1
+                  continue
+              if not os.path.exists(rel):
+                  bad += 1
+                  print(f"::error file={f}::깨진 {kind} -> {t}")
+          print(f"참조 {len(refs)}개 검사 / 건너뜀(.gitignore) {skipped}개 / 깨진 것 {bad}개")
           sys.exit(1 if bad else 0)
           EOF
 

@@ -5,6 +5,7 @@ P2-3 오케스트레이터 레벨 HITL 흐름 검증 (실제 사용 경로, mock
 - run_async("아니")    → 취소
 실행: python test_hitl_agent.py
 """
+import _testenv  # noqa: F401  — 제품 로그를 더럽히지 않는다(tests/_testenv.py 참조)
 import sys, os, asyncio, importlib.util
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -67,7 +68,10 @@ def make():
     return GA.PluizGraphAgent(
         llm=DeleteLLM(), tools=[delete_file],
         security_check=fake_security, fast_resolve=fake_fast_resolve,
-        session_memory=mem, settings=FakeSettings()), mem
+        session_memory=mem, settings=FakeSettings(),
+        # 가짜 경로('바탕화면/test.txt')를 쓰므로 존재 확인을 통과시킨다.
+        # 이걸 안 넣으면 hitl이 "대상 없음"으로 보고 승인 절차 자체를 건너뛴다.
+        target_exists=lambda dcall: True), mem
 
 
 async def run():
