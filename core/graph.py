@@ -59,7 +59,38 @@ _log = get_logger("Graph")
 # 무엇을 어디서 누를지 사용자가 보고 승인해야 한다. (2026-09-03)
 _NL = chr(10)
 
-DANGEROUS_TOOLS = {"delete_file", "delete_folder", "click_ui_element"}
+# force_close_app: 저장하지 않은 내용이 사라진다. `close_app`은 `WM_CLOSE`로
+# **곱게** 닫으므로 여기 없다 — *"계산기 꺼줘"* 마다 승인을 띄우지 않는다.
+# 🔑 앞의 셋은 «(A) 대상 확인»이고 `force_close_app`은 «(B) 손실 고지»다.
+#   → docs/design/G-05-19_승인의_경계.md §2·§4-2
+DANGEROUS_TOOLS = {"delete_file", "delete_folder", "click_ui_element",
+                   "force_close_app"}
+
+# ── 덮어쓰기는 보통 승인 대상이 **아니다** (G-05) ─────────────────
+#
+# `create_file`·`write_excel`은 옛 파일을 **휴지통으로 보내고** 쓴다(1층).
+# 되돌릴 수 있으니 묻지 않는다 — *"메모 저장해줘"* 마다 승인이 뜨면
+# **승인 피로가 승인 절차 전체를 무력화한다**(ADR §3-1).
+#
+# 🚨 **딱 한 환경에서만 3층으로 내려간다** — `send2trash`가 없으면 휴지통이
+#   없고, 그러면 덮어쓰기가 **영구 손실**이 된다. 그 환경에서는 1층이 성립하지
+#   않으므로 이 둘을 승인 대상에 넣는다. → `dangerous_tools_now()`
+OVERWRITE_TOOLS = {"create_file", "write_excel"}
+
+
+def dangerous_tools_now() -> set:
+    """이 환경에서 승인을 받아야 하는 도구 이름.
+
+    🔑 **호출마다가 아니라 «환경마다» 달라진다.** `send2trash` 설치 여부는
+      프로세스가 도는 동안 바뀌지 않으므로 그래프를 **조립할 때 한 번** 물으면 된다.
+      (`build_graph(dangerous_tools=...)`가 이미 주입 가능하게 돼 있다)
+
+    ⚠️ `DANGEROUS_TOOLS` 자체를 바꾸지 않는다 — 그 상수는 «항상 위험한 것»의
+      목록이고 테스트가 그 이름으로 고정돼 있다.
+    """
+    if _deletion_is_recoverable():
+        return set(DANGEROUS_TOOLS)
+    return set(DANGEROUS_TOOLS) | OVERWRITE_TOOLS
 
 # 계획의 **안 해 본 단계**를 한 번 더 시도할 때만 묶는 도구들 (M-01 · M3-2)
 #
@@ -272,7 +303,10 @@ def _target_name(dcall: Optional[dict]) -> str:
     if not dcall:
         return ""
     args = dcall.get("args", {}) or {}
-    target = args.get("file_path") or args.get("folder_path") or ""
+    # 🔑 덮어쓰기 도구는 인자 이름이 다르다(`name`·`filename`). 여집합으로 두면
+    #   승인 질문이 «'' 파일»이 된다 — 무엇을 승인하는지 모르는 질문이 나간다.
+    target = (args.get("file_path") or args.get("folder_path")
+              or args.get("name") or args.get("filename") or "")
     return os.path.basename(str(target).rstrip("/\\")) or str(target)
 
 
@@ -289,6 +323,10 @@ def _describe_call(dcall: dict) -> str:
         where = str(args.get("window", "")).strip()
         place = f"'{where}' 창에서 " if where else ""
         return f"{place}'{what}'"
+    if name == "force_close_app":
+        return f"'{str(args.get('app', '')).strip() or '그 앱'}'"
+    if name in OVERWRITE_TOOLS:
+        return f"'{_target_name(dcall)}'"
     kind = "폴더" if name == "delete_folder" else "파일"
     return f"'{_target_name(dcall)}' {kind}"
 
@@ -308,11 +346,14 @@ def _confirm_question(dcalls: Any) -> str:
     if not calls:
         return f"정말 실행할까요? ({consequence})"
 
-    # 클릭은 삭제와 결과가 달라 문구도 달라야 한다. "휴지통으로 갑니다"는 거짓이 된다.
-    # 좌표는 아직 모른다 — 도구가 실행될 때 화면을 보고 정하기 때문이다.
-    # 그래서 **무엇을 어디서** 누를지만 알린다.
+    # 결과가 다르면 문구도 달라야 한다 — "휴지통으로 갑니다"가 삭제 아닌 곳에선 **거짓**이 된다.
+    # 클릭: 좌표는 아직 모른다(도구가 실행될 때 화면을 보고 정한다) → **무엇을 어디서**만 알린다.
+    # 강제 종료·덮어쓰기: 잃는 것이 파일이 아니라 «저장 안 한 내용»·«옛 내용»이다.
     clicks = [c for c in calls if c.get("name") == "click_ui_element"]
-    deletes = [c for c in calls if c.get("name") != "click_ui_element"]
+    forces = [c for c in calls if c.get("name") == "force_close_app"]
+    writes = [c for c in calls if c.get("name") in OVERWRITE_TOOLS]
+    deletes = [c for c in calls
+               if c.get("name") not in ({"click_ui_element", "force_close_app"} | OVERWRITE_TOOLS)]
 
     parts = []
     if deletes:
@@ -320,6 +361,14 @@ def _confirm_question(dcalls: Any) -> str:
     if clicks:
         parts.append(f"{_join_targets(clicks)}을(를) 찾아서 클릭할까요? "
                      "(클릭은 되돌릴 수 없어요)")
+    if forces:
+        parts.append(f"저장하지 않은 내용은 사라져요. {_join_targets(forces)}을(를) "
+                     "강제로 종료할까요?")
+    if writes:
+        # 🚨 여기 오는 경우는 **휴지통을 쓸 수 없는 환경뿐**이다(`dangerous_tools_now`).
+        #   그래서 «휴지통으로 갑니다»를 쓰면 안 된다.
+        parts.append(f"{_join_targets(writes)}에 이미 내용이 있어요. "
+                     "덮어쓰면 ⚠️ 휴지통을 거치지 않고 사라져요. 덮어쓸까요?")
     return " 그리고 ".join(parts)
 
 

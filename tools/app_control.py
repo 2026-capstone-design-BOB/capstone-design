@@ -510,7 +510,7 @@ def _await_gone(procs: list, timeout: float = 3.0) -> tuple[list, list]:
         gone, alive = psutil.wait_procs(procs, timeout=max(0.0, timeout))
         return list(gone), list(alive)
     except Exception as e:                                    # noqa: BLE001
-        _log.error("[close_app] 종료 확인 실패 | %s: %s", type(e).__name__, e)
+        _log.error("[force_close_app] 종료 확인 실패 | %s: %s", type(e).__name__, e)
         gone, alive = [], []
         for p in procs:
             try:
@@ -518,6 +518,75 @@ def _await_gone(procs: list, timeout: float = 3.0) -> tuple[list, list]:
             except Exception:                                 # noqa: BLE001
                 alive.append(p)      # 판정 못 하면 «아직 있다» 쪽이다
         return gone, alive
+
+
+def _app_windows(app_key: str, app: str) -> list[int]:
+    """앱의 **사용자가 실제로 볼 수 있는** 최상위 창 전부. (G-19)
+
+    🔑 `_find_app_window` 는 **하나만** 준다. 닫으려면 전부 있어야 한다 —
+      크롬처럼 창이 여럿인 앱에서 하나만 닫고 «종료했다»고 하면 거짓이 된다.
+      골라 쓰는 쪽이 아니라 **닫는 쪽**이라 목록이 필요하다.
+
+    ⚠️ cloaked(유령) 창은 세지 않는다 — `_is_real_window` 가 이미 거른다.
+    """
+    targets = {t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
+    target_pids: set[int] = set()
+    for proc in psutil.process_iter(["name", "pid"]):
+        try:
+            pname = (proc.info.get("name") or "")
+        except Exception:                                     # noqa: BLE001
+            continue
+        if pname.lower() in targets:
+            target_pids.add(proc.info["pid"])
+
+    hwnds: list[int] = []
+
+    def _cb(h, _):
+        if not _is_real_window(h):
+            return True
+        buf = ctypes.wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(h, ctypes.byref(buf))
+        if buf.value in target_pids:
+            hwnds.append(int(h))
+        return True
+
+    if target_pids:
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND,
+                                         ctypes.wintypes.LPARAM)
+        ctypes.windll.user32.EnumWindows(WNDENUMPROC(_cb), 0)
+
+    if not hwnds:
+        # UWP 폴백 — 제목으로. (ApplicationFrameHost 등)
+        display = APP_DISPLAY_NAMES.get(app_key, app)
+        h = _find_hwnd_by_title([display, app, app_key])
+        if h:
+            hwnds.append(h)
+    return hwnds
+
+
+def _await_windows_gone(hwnds: list[int], timeout: float = 3.0,
+                        poll: float = 0.2) -> list[int]:
+    """창이 실제로 사라졌는지 기다려 확인한다. 아직 남은 HWND 목록을 돌려준다.
+
+    🚨 **`_await_gone` 의 창 버전이다.** `WM_CLOSE` 도 `terminate()` 와 똑같이
+      **요청이지 결과가 아니다** — 저장 대화상자가 뜨면 창은 그대로 남는다.
+      그 «남았다»가 바로 우리가 원하던 것이다(OS 가 승인을 받고 있는 중이다).
+
+    ⚠️ **모르면 «사라졌다»고 하지 않는다.** 판정에 실패하면 살아 있는 쪽으로 센다.
+    """
+    deadline = time.time() + max(0.0, timeout)
+    remaining = list(hwnds)
+    while remaining and time.time() < deadline:
+        time.sleep(poll)
+        still = []
+        for h in remaining:
+            try:
+                if ctypes.windll.user32.IsWindow(h) and _is_real_window(h):
+                    still.append(h)
+            except Exception:                                 # noqa: BLE001
+                still.append(h)          # 판정 못 하면 «아직 있다» 쪽이다
+        remaining = still
+    return remaining
 
 
 def _launched_or_honest(app_key: str, name: str, eul_reul: str,
@@ -623,14 +692,15 @@ def open_app(app: str, new: bool = False) -> str:
 @tool
 def close_app(app: str) -> str:
     """
-    실행 중인 앱을 종료합니다. **정말 닫혔는지 확인한 뒤** 답합니다 —
-    닫히지 않았으면 그렇게 말하니 결과를 그대로 전하세요.
+    실행 중인 앱을 **곱게** 종료합니다 — 창에 닫기를 요청하므로, 저장하지 않은 내용이
+    있으면 앱이 저장할지 묻는 창을 띄웁니다. 그 경우 닫히지 않고 그렇게 답하니
+    **결과를 그대로 전하세요.** 억지로 닫아야 할 때만 force_close_app 을 쓰세요.
     app: 앱 이름 (예: chrome, notepad, calculator 등)
     """
-    # ⚠️ **저장 안 한 내용은 여전히 사라진다.** `terminate()` 는 Windows 에서
-    #   `TerminateProcess` 라 저장 대화상자를 띄우지 않는다. 감사 G-07은 그것도
-    #   같이 지적했는데, **여기서 고치지 않았다** — «언제 강제로 꺼도 되나»는
-    #   값 판단이라 G-05처럼 결정이 먼저다. → 감사 G-19
+    # 🔑 **저장 대화상자가 곧 승인이다** (G-19). 우리가 승인을 만들 필요가 없었다 —
+    #   `terminate()`(= Windows `TerminateProcess`)가 **OS 의 승인을 억누르고**
+    #   있었을 뿐이다. 그래서 여기서는 `WM_CLOSE` 만 보낸다.
+    #   → docs/design/G-05-19_승인의_경계.md §4-2
     app_key = _normalize(app)
 
     # BUG-11: explorer.exe는 Windows 셸 프로세스 — 종료 시 바탕화면·작업표시줄 전체 소멸
@@ -639,6 +709,64 @@ def close_app(app: str) -> str:
             "⚠️ 파일 탐색기는 Windows 시스템 프로세스라 프로그램으로 닫을 수 없어요. "
             "창 우측 상단 ✕ 버튼으로 직접 닫아주세요. "
             "(열기는 가능합니다 — open_app 도구를 사용하세요)"
+        )
+
+    name = _display_name(app_key, app)
+    eul_reul = _korean_particle(name, "을", "를")
+    i_ga = _korean_particle(name, "이", "가")
+
+    if not _is_running(app_key):
+        return f"✗ '{name}'{i_ga} 실행 중이지 않습니다."
+
+    hwnds = _app_windows(app_key, app)
+    if not hwnds:
+        # 🚨 창이 없는데 **강제로 끄지 않는다.** 백그라운드 프로세스일 수 있고,
+        #   그건 사용자가 «닫아 달라»고 한 그 창이 아니다. 말하고 멈춘다.
+        return (f"⚠️ {name}{i_ga} 실행 중이지만 닫을 창을 찾지 못했어요. "
+                f"백그라운드에서 도는 중일 수 있어요 — 억지로 끄려면 "
+                f"«{name} 강제로 꺼줘»라고 말해 주세요.")
+
+    for h in hwnds:
+        try:
+            ctypes.windll.user32.PostMessageW(h, _WM_CLOSE, 0, 0)
+        except Exception as e:                                # noqa: BLE001
+            _log.error("[close_app] 닫기 요청 실패 | 앱=%s | hwnd=%s | %s: %s",
+                       name, h, type(e).__name__, e)
+
+    left = _await_windows_gone(hwnds)
+    if not left:
+        return f"✓ {name}{eul_reul} 종료했습니다."
+
+    # 🔑 **여기가 이 수정의 값이다.** 예전에는 이 자리가 없었다 —
+    #   저장 대화상자가 뜰 겨를도 없이 프로세스가 죽었다.
+    return (f"⚠️ {name}{eul_reul} 닫지 못했어요. 저장할지 묻는 창이 떠 있을 수 있어요 — "
+            f"화면을 확인해 주세요. 저장하지 않고 꺼도 되면 "
+            f"«{name} 강제로 꺼줘»라고 말해 주세요.")
+
+
+#: `WM_CLOSE` — «닫아 달라»는 **요청**이다. 앱은 거절할 수 있고(저장 대화상자),
+#: 그 거절이 G-19가 되살리려는 바로 그 승인이다.
+_WM_CLOSE = 0x0010
+
+
+@tool
+def force_close_app(app: str) -> str:
+    """앱을 **강제로** 종료합니다. 저장하지 않은 내용은 사라집니다.
+    되돌릴 수 없는 위험 동작이라 반드시 사용자 승인을 받은 뒤 실행됩니다.
+
+    먼저 close_app 을 쓰세요. 그것이 "저장할지 묻는 창이 떠 있다"고 답했고
+    사용자가 "그냥 꺼줘"처럼 **명시적으로** 강제 종료를 원할 때만 이 도구를 씁니다.
+    app: 앱 이름 (예: chrome, notepad, calculator 등)
+    """
+    # 🚨 **`close_app(force=True)` 로 만들지 않았다.** 절대규칙 9와 같은 모양이다 —
+    #   «LLM 이 넘길 수 있으면 언젠가 지어낸다.» 좌표가 그랬듯 `force=True` 도 그렇게 된다.
+    #   **이름이 다른 도구**여야 `DANGEROUS_TOOLS` 가 그것만 걸 수 있다. → ADR §4-2
+    app_key = _normalize(app)
+
+    if app_key == "explorer":
+        return (
+            "⚠️ 파일 탐색기는 Windows 시스템 프로세스라 프로그램으로 닫을 수 없어요. "
+            "창 우측 상단 ✕ 버튼으로 직접 닫아주세요."
         )
 
     targets = {t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
@@ -662,7 +790,7 @@ def close_app(app: str) -> str:
             #   못 한** 프로세스는 `killed` 에 안 들어갔고, 전부 그러면
             #   «실행 중이지 않습니다»가 나갔다 — **켜져 있는데도.**
             denied.append(proc)
-            _log.error("[close_app] 종료 요청 실패 | 앱=%s | pid=%s | %s: %s",
+            _log.error("[force_close_app] 종료 요청 실패 | 앱=%s | pid=%s | %s: %s",
                        pname, getattr(proc, "pid", "?"), type(e).__name__, e)
 
     name = _display_name(app_key, app)

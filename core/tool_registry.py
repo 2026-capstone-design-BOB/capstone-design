@@ -14,6 +14,7 @@ def get_all_tools() -> List[BaseTool]:
     from tools.app_control import (
         open_app,
         close_app,
+        force_close_app,
         maximize_window,
         minimize_window,
         show_desktop,
@@ -141,5 +142,12 @@ def get_all_tools() -> List[BaseTool]:
     # → core/graph.py 의 DANGEROUS_TOOLS 에 등록돼 hitl 노드가 interrupt 를 건다.
     #   새 위험 도구를 추가할 땐 DANGEROUS_TOOLS 에도 반드시 추가할 것.
     tools += [delete_file, delete_folder]
+
+    # 강제 종료(위험 동작 — 저장하지 않은 내용이 사라진다). 승인 대상이다.
+    # 🔑 `close_app` 은 `WM_CLOSE` 로 곱게 닫으므로 승인이 없다. 둘을 **이름이 다른
+    #   도구**로 나눈 것이 이 설계의 핵심이다 — `force=True` 인자였다면 LLM 이
+    #   언젠가 지어낸다(절대규칙 9와 같은 모양).
+    #   → docs/design/G-05-19_승인의_경계.md §4-2
+    tools += [force_close_app]
 
     return tools

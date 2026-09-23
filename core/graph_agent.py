@@ -29,7 +29,7 @@ from langgraph.types import Command
 
 from core.graph import (
     build_pluiz_graph, extract_response, current_turn_messages, _NOTHING_HAPPENED_MSG,
-    OfflineSkip,
+    OfflineSkip, dangerous_tools_now,
 )
 from core.logger import get_logger
 
@@ -51,17 +51,34 @@ def _prod_llm(settings):
     return build_llm(settings)
 
 def _prod_target_exists(dcall: dict) -> bool:
-    """삭제 대상이 실제로 존재하는가. (hitl 노드가 승인을 묻기 **전에** 확인)
+    """이 호출이 **묻을 가치가 있나**. (hitl 노드가 승인을 묻기 **전에** 확인)
 
     없는 대상인데 "정말 삭제할까요?"를 먼저 묻고 승인한 뒤에야 "없네요"라고
     답하던 문제를 막는다. 경로 해석은 도구와 **같은 규칙**을 써야 하므로
     `tools/filesystem.py`의 것을 그대로 재사용한다 — 여기서 따로 구현하면
     "바탕화면/..." 해석이 어긋나 엉뚱한 판정이 난다.
+
+    🔑 **덮어쓰기(G-05)는 기준이 다르다** — «있나»가 아니라 **«내용이 있나»** 다.
+      빈 파일을 덮어쓰면 아무것도 안 잃으므로 묻지 않는다. → ADR §4-1
+      (이 경로는 휴지통을 못 쓰는 환경에서만 지나간다 — `dangerous_tools_now()`)
     """
     import os
-    from tools.filesystem import _resolve_location_in_path
+    from tools.filesystem import _resolve_location_in_path, _has_content, _resolve_location
+    from core.graph import OVERWRITE_TOOLS
 
     args = dcall.get("args", {}) or {}
+
+    if dcall.get("name") in OVERWRITE_TOOLS:
+        fname = str(args.get("name") or args.get("filename") or "")
+        if not fname:
+            return True        # 판단할 수 없으면 원래대로 승인 절차를 밟는다
+        if dcall.get("name") == "write_excel" and not fname.endswith(".xlsx"):
+            fname += ".xlsx"   # 도구가 붙이는 확장자를 여기서도 붙인다 — 안 그러면 다른 파일을 본다
+        base = _resolve_location(str(args.get("location") or "desktop"))
+        if not base:
+            return True
+        return _has_content(os.path.join(base, fname))
+
     target = args.get("file_path") or args.get("folder_path") or ""
     if not target:
         return True            # 판단할 수 없으면 원래대로 승인 절차를 밟는다
@@ -297,6 +314,10 @@ class PluizGraphAgent:
             visual_check=self.visual_check,
             plan_decompose=self.plan_decompose,
             is_offline=self._offline_confirmed,
+            # 🚨 **환경에 따라 하나 늘 수 있다** — 휴지통(`send2trash`)이 없으면
+            #   덮어쓰기가 영구 손실이라 `create_file`·`write_excel`이 승인 대상이 된다.
+            #   → core/graph.py `dangerous_tools_now()` · ADR §4-1
+            dangerous_tools=dangerous_tools_now(),
         )
 
     #: 🚨 **단락 직전의 재확인** — `_offline_now()`의 TTL(10초) 캐시를 그대로 믿지 않는다.
