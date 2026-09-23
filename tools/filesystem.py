@@ -84,9 +84,7 @@ def create_file(name: str, location: str = "desktop", content: str = "") -> str:
     #   ⚠️ `✗` 가 아니라 `⚠️` 다: 도구가 터진 게 아니라 **되묻는** 것이다.
     #   → docs/design/G-05-19_승인의_경계.md §4-1 (2026-09-23 개정)
     if how == OVERWRITE_BLOCKED:
-        return (f"⚠️ '{name}'이(가) {location}에 이미 있고 내용이 들어 있어요. "
-                f"덮어쓰지 않았어요 — 다른 이름으로 할까요? "
-                f"정말 덮어쓰려면 «덮어써 줘»라고 말해 주세요.")
+        return _already_there(name, location, path)
 
     return f"✓ '{name}' 파일을 {location}에 만들었어요.\n경로: {path}"
 
@@ -719,9 +717,7 @@ def write_excel(filename: str, headers: str, rows: str, location: str = "desktop
         return f"✗ 엑셀 파일 생성 실패: {e}"
 
     if how == OVERWRITE_BLOCKED:
-        return (f"⚠️ '{filename}'이(가) {location}에 이미 있고 내용이 들어 있어요. "
-                f"덮어쓰지 않았어요 — 다른 이름으로 할까요? "
-                f"정말 덮어쓰려면 «덮어써 줘»라고 말해 주세요.")
+        return _already_there(filename, location, path)
     return f"✓ '{filename}' 엑셀 파일을 저장했어요.\n경로: {path}"
 
 
@@ -752,6 +748,9 @@ def overwrite_file(name: str, location: str = "desktop", content: str = "") -> s
         with open(target, "w", encoding="utf-8") as f:
             f.write(content)
 
+    # ⚠️ **쓰기 전에** 봐야 한다 — 쓰고 나면 옛 파일이 없다.
+    had_content = _has_content(path)
+
     try:
         how = _write_preserving(path, _write, overwrite=True)
     except Exception as e:
@@ -762,8 +761,12 @@ def overwrite_file(name: str, location: str = "desktop", content: str = "") -> s
         return (f"⚠️ 이 환경은 휴지통을 쓸 수 없어서 덮어쓰면 되돌릴 수 없어요. "
                 f"'{name}'을(를) 그대로 뒀어요 — 다른 이름으로 저장해 주세요.")
     if how == "overwritten":
-        return (f"✓ '{name}'을(를) 덮어썼어요. 옛 내용은 휴지통에 있어요.\n경로: {path}")
-    # 덮어쓰라고 했는데 덮을 것이 없었다 — 있는 그대로 말한다(«덮어썼다»가 거짓이 된다)
+        # 🔑 **빈 파일은 휴지통에 안 갔다.** 갔다고 말하면 사용자가 거기서 찾는다.
+        where = ("옛 내용은 휴지통에 있어요" if had_content
+                 else "옛 파일은 비어 있어서 휴지통에 안 넣었어요")
+        return f"✓ '{name}'을(를) 덮어썼어요. {where}.\n경로: {path}"
+    # 덮어쓰라고 했는데 그 이름이 아예 없었다 — 있는 그대로 말한다
+    # («덮어썼다»가 거짓이 된다. 빈 파일이었던 경우는 위 "overwritten" 으로 간다)
     return (f"✓ '{name}'이(가) 없어서 새로 만들었어요.\n경로: {path}")
 
 
@@ -852,6 +855,25 @@ def _has_content(path: str) -> bool:
         return False
 
 
+def _already_there(name: str, location: str, path: str) -> str:
+    """«이미 있어요»를 한 곳에서 만든다. `create_file`·`write_excel` 이 같이 쓴다.
+
+    🔑 **빈 파일인지도 말한다.** 사용자가 바로 판단할 수 있어야 한다 —
+      비어 있으면 대개 «그냥 덮어써»가 답이고, 내용이 있으면 «다른 이름»이 답이다.
+
+    🚨 **비어 있어도 묻는다.** 이름이 이미 쓰이고 있다는 사실 자체가 사용자가
+      알아야 할 것이고, **그 빈 파일을 누가 왜 뒀는지 우리는 모른다.**
+      (2026-09-23 실기에서 여기가 새어 0바이트 `a.txt` 에 대고 «만들었어요»가 나갔다)
+    """
+    what = ("이미 있고 내용이 들어 있어요" if _has_content(path)
+            else "이미 있어요 (비어 있는 파일이에요)")
+    # ⚠️ **마커를 여기서 붙인다.** 호출부가 붙이면 마커와 문구가 갈라지고,
+    #   [BL-29](../docs/design/BL-29_도구_결과_계약.md) 계약 검사가 이 함수를
+    #   «마커 없는 사용자 문장»으로 본다(2026-09-23에 실제로 걸렸다).
+    return (f"⚠️ '{name}'이(가) {location}에 {what}. 덮어쓰지 않았어요 — "
+            f"다른 이름으로 할까요? 정말 덮어쓰려면 «덮어써 줘»라고 말해 주세요.")
+
+
 #: `_write_preserving()` 이 **아무것도 쓰지 않았을 때** 돌려주는 표식.
 #: 🚨 «실패»가 아니라 **«안 했다»** 는 뜻이다 — 호출부는 이걸 성공으로 읽으면 안 되고,
 #:   실패로 읽어도 안 된다(도구가 터진 게 아니다). 사용자에게 **묻는** 자리다.
@@ -887,14 +909,26 @@ def _write_preserving(path: str, writer, overwrite: bool = False) -> str:
     ⚠️ **순서가 계약이다** — 임시 파일에 먼저 쓰고 → 성공하면 옛 것을 휴지통으로 →
       바꿔치기. 먼저 휴지통에 보내고 쓰다 실패하면 **새 것도 옛 것도 없는 상태**가 된다.
     """
-    occupied = _has_content(path)
+    # 🔑 **판단이 둘로 갈린다** (2026-09-23 두 번째 수정).
+    #   `taken`  — «그 이름이 이미 쓰이고 있나». **막을지 말지**를 정한다.
+    #   `losing` — «잃을 내용이 있나». **휴지통에 보낼지**를 정한다.
+    #
+    # 🚨 처음엔 둘 다 `_has_content` 하나로 봤다. 그래서 **빈 파일은 그냥 덮어썼고**,
+    #   실기에서 이미 있는 `a.txt`(0바이트)에 대고 *"만들었어요"* 가 또 나갔다.
+    #   기준을 옛 설계(«무엇을 잃는가» — 휴지통 논리)에서 그대로 들고 온 것이 틀렸다.
+    #   지금 설계의 질문은 **«사용자가 모르는 채로 뭔가 바뀌는가»** 다.
+    #   ⚠️ 그리고 빈 파일에 같은 빈 내용을 쓰면 **아무 일도 안 일어난다** —
+    #      그때 *"만들었어요"* 는 그 자체로 거짓이다.
+    taken = os.path.exists(path)
+    losing = _has_content(path)
 
-    # 🔑 내용이 있는데 덮어쓰라는 말이 없으면 **아무것도 하지 않는다.**
-    if occupied and not overwrite:
+    # 이름이 이미 쓰이고 있는데 덮어쓰라는 말이 없으면 **아무것도 하지 않는다.**
+    if taken and not overwrite:
         return OVERWRITE_BLOCKED
 
-    # 덮어쓰라고 했는데 휴지통을 못 쓰면 되돌릴 길이 없다 — 그때도 안 한다.
-    if occupied and not trash_is_available():
+    # 덮어쓰라고 했는데 **잃을 내용이 있고** 휴지통을 못 쓰면 되돌릴 길이 없다.
+    # 🔑 빈 파일은 여기 안 걸린다 — 잃을 게 없으니 휴지통도 필요 없다.
+    if losing and not trash_is_available():
         return OVERWRITE_BLOCKED
 
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -905,7 +939,8 @@ def _write_preserving(path: str, writer, overwrite: bool = False) -> str:
         _quiet_remove(tmp)
         raise
 
-    if occupied:
+    # 🔑 **빈 파일은 휴지통에 안 보낸다.** 잃을 게 없는데 휴지통만 지저분해진다.
+    if losing:
         try:
             _to_trash(path)
         except Exception:
@@ -916,7 +951,8 @@ def _write_preserving(path: str, writer, overwrite: bool = False) -> str:
     except Exception:
         _quiet_remove(tmp)
         raise
-    return "overwritten" if occupied else "created"
+    # ⚠️ «덮어썼다»의 기준은 `taken` 이다 — 빈 파일을 갈아치운 것도 덮어쓴 것이다.
+    return "overwritten" if taken else "created"
 
 
 def _quiet_remove(path: str) -> None:
