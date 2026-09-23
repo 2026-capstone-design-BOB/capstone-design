@@ -47,7 +47,8 @@ def get_all_tools() -> List[BaseTool]:
         volume_down,
         set_volume,
         get_volume,
-        mute_toggle,
+        mute,
+        unmute,
         brightness_up,
         brightness_down,
         set_brightness,
@@ -102,7 +103,10 @@ def get_all_tools() -> List[BaseTool]:
         volume_up,
         volume_down,
         set_volume,
-        mute_toggle,
+        # 🔑 **방향이 있는 도구 둘.** 토글 하나였을 때는 *"소리 켜 줘"* 가
+        #   이미 켜져 있으면 **소리를 껐다**(2026-09-23 실기).
+        mute,
+        unmute,
         brightness_up,
         brightness_down,
         set_brightness,

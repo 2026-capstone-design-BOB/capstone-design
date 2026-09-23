@@ -58,7 +58,7 @@ GROUPS = {
     "날씨": ["get_weather"],
     "파일": ["create_file", "create_folder", "find_file", "list_directory",
              "open_recent_file", "open_file", "write_excel", "delete_file", "delete_folder"],
-    "시스템": ["volume_up", "volume_down", "set_volume", "get_volume", "mute_toggle",
+    "시스템": ["volume_up", "volume_down", "set_volume", "get_volume", "mute", "unmute",
                "brightness_up", "brightness_down", "set_brightness", "get_brightness",
                "take_screenshot", "get_battery_status", "get_current_time",
                "get_running_apps"],

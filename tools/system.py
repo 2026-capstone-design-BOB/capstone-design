@@ -60,6 +60,12 @@ def _ensure_com() -> None:
     _com_ready.done = True
 
 
+#: 🔑 **바깥에서도 이 함수를 쓴다** — `services/tts.py` 의 로컬(SAPI) 합성도
+#  워커 스레드에서 돌아 COM 이 필요하다. **사본을 만들지 않는다**:
+#  같은 문제를 푼 코드가 둘로 갈리면 한쪽만 고쳐진다(감사 G-08 · BL-64 가 그 모양이었다).
+ensure_com = _ensure_com
+
+
 # ── 🔑 이 파일의 규칙 — «맞췄다»와 «맞았다»는 다른 말이다 (감사 G-11) ──────
 #
 # 볼륨·밝기는 **설정한 값을 되읽을 수 있는 몇 안 되는 자리**다. 그런데 예전 코드는
@@ -156,6 +162,73 @@ def _set_volume_level(level: int) -> bool:
     return False              # 눌렀을 뿐이다. 맞았는지는 모른다
 
 
+def _get_mute() -> int:
+    """음소거 상태. 1=음소거 · 0=아님 · -1=읽을 수 없음."""
+    ep = _endpoint_volume()
+    if ep is None:
+        return -1
+    try:
+        return int(bool(ep.GetMute()))
+    except Exception:                                         # noqa: BLE001
+        return -1
+
+
+def _set_mute(on: bool) -> int:
+    """음소거를 **직접** 설정하고 되읽은 값. 1=음소거 · 0=아님 · -1=못 함.
+
+    🚨 **키를 누르지 않는다.** 예전 `mute_toggle` 은 `keybd_event` 로 음소거 키를
+      **주입**하고 곧바로 상태를 읽었는데, 키 주입은 **비동기**라 읽기가 앞지른다.
+      2026-09-23 실기 로그에 그 증거가 남아 있다:
+
+          WARNING [음소거] 눌렀는데 상태가 그대로다 (1)
+
+      볼륨·밝기는 COM 으로 직접 설정해서 이 문제가 없었다 — 여기만 달랐다.
+    """
+    ep = _endpoint_volume()
+    if ep is None:
+        return -1
+    try:
+        ep.SetMute(1 if on else 0, None)
+    except Exception:                                         # noqa: BLE001
+        return -1
+    return _get_mute()
+
+
+def _apply_mute(want: bool) -> str:
+    """음소거를 **원하는 쪽으로** 맞춘다. (`mute` · `unmute` 공용)
+
+    🔑 **토글이 아니라 방향이다.** 토글은 «지금 상태»에 답이 걸려 있어서,
+      이미 켜져 있을 때 *"소리 켜 줘"* 가 **소리를 끈다.** 정직하게
+      *"✓ 음소거했어요"* 라고 말해도 사용자가 시킨 것의 반대다.
+      (2026-09-23 실기 — *"소리 다시 켜 줘"* 가 갈 곳이 없었다)
+
+    🔑 **여러 번 말해도 같은 결과다**(멱등). 음성은 같은 말을 두 번 하기 쉽다.
+    """
+    before = _get_mute()
+
+    if before < 0:
+        # 상태를 못 읽는 PC. **방향을 보장할 수 없다** — 키를 눌러 뒤집고
+        # «어느 쪽이 됐는지 모른다»고 말한다. 지어내지 않는다.
+        ctypes.windll.user32.keybd_event(0xAD, 0, 0, 0)  # VK_VOLUME_MUTE
+        ctypes.windll.user32.keybd_event(0xAD, 0, 2, 0)
+        _log.warning("[음소거] 상태를 못 읽어 토글로 대신했다 (원한 쪽=%s)", want)
+        return ("✓ 음소거 키를 눌렀어요. "
+                "(이 PC는 상태를 읽지 못해 껐는지 켰는지 확인은 못 했어요)")
+
+    if before == int(want):
+        return "✓ 이미 음소거 상태예요." if want else "✓ 이미 소리가 켜져 있어요."
+
+    after = _set_mute(want)
+    if after < 0:
+        _log.warning("[음소거] 설정에 실패했다 (원한 쪽=%s)", want)
+        return "✗ 음소거를 바꾸지 못했어요."
+    if after != int(want):
+        # 되읽기가 어긋났다. 볼륨·밝기의 `_readback` 과 같은 자리다.
+        _log.warning("[음소거] 원한 쪽=%d ↔ 되읽기=%d", int(want), after)
+        return "⚠️ 음소거를 바꾸려 했는데 상태가 그대로예요. 다시 해볼까요?"
+    return "✓ 음소거했어요." if want else "✓ 음소거를 해제했어요."
+
+
 def _readback(what: str, before: int, target: int, read, *,
               eul_reul: str) -> str:
     """설정한 **뒤** 다시 읽고, 본 대로 말한다. (감사 G-11)
@@ -246,33 +319,17 @@ def get_volume() -> str:
     return f"✓ 지금 볼륨은 {level}%예요."
 
 
-def _get_mute() -> int:
-    """음소거 상태. 1=음소거 · 0=아님 · -1=읽을 수 없음."""
-    ep = _endpoint_volume()
-    if ep is None:
-        return -1
-    try:
-        return int(bool(ep.GetMute()))
-    except Exception:                                         # noqa: BLE001
-        return -1
+
+@tool
+def mute() -> str:
+    """소리를 끕니다(음소거). 이미 음소거 상태면 그대로 둡니다."""
+    return _apply_mute(True)
 
 
 @tool
-def mute_toggle() -> str:
-    """볼륨을 음소거하거나 음소거를 해제합니다."""
-    # 🚨 «전환했습니다»도 의도였다 (감사 G-11과 같은 자리). 키를 눌렀을 뿐이고,
-    #   상태가 정말 바뀌었는지는 보지 않았다. 볼륨과 달리 여기는 **어느 쪽이
-    #   됐는지**가 사용자에게 중요하다 — «껐어요»와 «켰어요»는 반대말이다.
-    before = _get_mute()
-    ctypes.windll.user32.keybd_event(0xAD, 0, 0, 0)  # VK_VOLUME_MUTE
-    ctypes.windll.user32.keybd_event(0xAD, 0, 2, 0)
-    after = _get_mute()
-    if before < 0 or after < 0:
-        return "✓ 음소거 키를 눌렀어요. (이 PC는 상태를 읽지 못해 확인은 못 했어요)"
-    if after == before:
-        _log.warning("[음소거] 눌렀는데 상태가 그대로다 (%d)", before)
-        return "⚠️ 음소거 키를 눌렀는데 상태가 그대로예요. 다시 해볼까요?"
-    return "✓ 음소거했어요." if after else "✓ 음소거를 해제했어요."
+def unmute() -> str:
+    """음소거를 해제해 소리를 다시 켭니다. 이미 켜져 있으면 그대로 둡니다."""
+    return _apply_mute(False)
 
 
 # ── 밝기 ─────────────────────────────────────────────────────────

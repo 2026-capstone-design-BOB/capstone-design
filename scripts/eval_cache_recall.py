@@ -36,7 +36,7 @@ HOLD_POS = [
     ("메모장 이제 닫아줘",           "close_app"),
     ("소리 조금만 더 크게",          "volume_up"),
     ("볼륨 좀 낮춰봐",              "volume_down"),
-    ("소리 안 들리게 해줘",          "mute_toggle"),
+    ("소리 안 들리게 해줘",          "mute"),
     ("화면이 어두워 밝게 좀",         "brightness_up"),
     ("화면 좀 어둡게 해줘",          "brightness_down"),
     ("지금 화면 캡처 좀",            "take_screenshot"),
@@ -61,7 +61,7 @@ HOLD_NEG = [
     "이거 왜 이렇게 느려",
     "고마워",
 ]
-TOOLS_OK = {"open_app","close_app","volume_up","volume_down","mute_toggle",
+TOOLS_OK = {"open_app","close_app","volume_up","volume_down","mute","unmute",
             "brightness_up","brightness_down","take_screenshot","get_battery_status",
             "get_running_apps","show_desktop","open_url","maximize_window","minimize_window",
             "get_current_time","open_recent_file"}
