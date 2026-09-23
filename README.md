@@ -34,7 +34,7 @@
 ## 아키텍처
 
 <div align="center">
-  <img src="docs/presentation/pluiz_architecture_white.png" alt="Pluiz 아키텍처" width="760">
+  <img src="docs/assets/pluiz_architecture_white.png" alt="Pluiz 아키텍처" width="760">
 </div>
 
 에이전트는 LangGraph **명시적 StateGraph**로 구성됩니다.
@@ -45,9 +45,15 @@ START → input_guard ─(차단)────→ output_guard → END
         fast_path ─(캐시 히트)──→ output_guard → END
            │(miss)
          agent ⇄ tools ────────→ output_guard → END
+           │        │
+           │        └─(못 믿을 도구)→ visual_verify (화면 확인) → agent
            │
            └─(삭제 등 위험 도구)→ hitl (사람 승인) → tools | output_guard
 ```
+
+> `visual_verify`는 `type_text`·`open_app`처럼 **거짓으로 성공을 보고한 적이 있는 도구**의
+> 결과를 화면으로 확인해 그 증거를 붙입니다. 판정하거나 재시도하지 않고 **정직하게
+> 보고만** 합니다. → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#실행-결과-시각적-검증--visual_verify-2026-09-03)
 
 **설계의 핵심은 모든 경로가 단일 상태(`messages`)를 공유한다는 점입니다.**
 
@@ -64,16 +70,17 @@ START → input_guard ─(차단)────→ output_guard → END
 
 | | |
 |---|---|
-| **도구 33개** | 앱 제어 · 파일 · 웹 · 시스템 설정 · 키보드 입력 · 캘린더 |
-| **다층 보안** | 규칙 필터 → 하이브리드 LLM 판정 → 사람 승인(HITL) → 출력 마스킹 |
+| **도구 35개** | 앱 제어 · 파일 · 웹 · 시스템 설정 · 키보드 입력 · 캘린더 · 화면 이해(Vision) |
+| **다층 보안** | 접근 제어 → 규칙 필터 → 하이브리드 LLM 판정 → 사람 승인(HITL) → 출력 마스킹 |
 | **오프라인 캐시** | 인텐트 기반 2단계 매칭. 성공한 명령의 표현을 안전하게 학습 |
 | **맥락 유지** | 모든 실행 경로가 단일 상태에 누적. 지시대명사 해석 가능 |
 | **음성 I/O** | STT는 온라인/오프라인 하이브리드, TTS는 edge-tts |
 
-### 보안 — 4층 방어 (OWASP LLM Top 10)
+### 보안 — 5층 방어 (OWASP LLM Top 10)
 
 | 층 | 하는 일 |
 |---|---|
+| **접근 제어** | 서버 기동 시 토큰 발급 → UI만 보유. **호출자가 누구인지**를 가장 먼저 확인 |
 | **규칙 필터** | 위험 명령·경로 순회·프롬프트 인젝션·민감정보 요청 차단. 오프라인·저지연 |
 | **LLM 판정** | 규칙을 통과했지만 의심스러운 입력만 escalate. 실패 시 규칙 결과로 fail-safe |
 | **HITL 승인** | 삭제 등 되돌릴 수 없는 작업은 `interrupt()`로 멈추고 사람에게 확인 |
@@ -82,6 +89,11 @@ START → input_guard ─(차단)────→ output_guard → END
 > 삭제 도구는 그래프의 `DANGEROUS_TOOLS`에 등록돼 있어 **`hitl` 노드가 실행을 멈추고
 > 사람 승인을 받습니다.** 프롬프트로 "조심해줘"라고 부탁하는 대신 그래프 구조가 강제하므로,
 > LLM이 설득당해도 승인 없이는 실행되지 않습니다.
+>
+> **접근 제어(1층)를 나중에 추가한 이유**도 문서에 남겼습니다. 나머지 층은 전부 *입력의
+> 내용*을 검사하는데, PC를 조작하는 로컬 서버에 **인증이 없어** 사용자가 열어 둔 아무
+> 웹페이지가 `fetch` 한 줄로 명령을 넣을 수 있었습니다. 가장 큰 구멍이 가드레일 바깥에
+> 있었던 셈입니다. → [docs/BACKLOG.md BL-14](docs/BACKLOG.md)
 >
 > 한계도 문서에 남겼습니다 — 무한 패러프레이즈를 100% 막을 수는 없습니다.
 > 목표는 완벽 차단이 아니라 겹층으로 실질적 난이도를 올리는 것입니다.
@@ -120,7 +132,8 @@ python tests/test_cache_learn.py      # 캐시 동적 학습
 python tests/test_guardrail_hybrid.py # 하이브리드 가드레일
 ```
 
-전체 mock 스위트 17파일 228개. push마다 CI가 자동 실행합니다.
+전체 mock 스위트는 push마다 CI가 자동 실행합니다.
+(현재 개수는 [docs/README.md 상태표](docs/README.md#지금-상태-2026-09-03-기준) — 숫자의 출처는 그 표 하나입니다.)
 
 ---
 
@@ -143,7 +156,9 @@ python tests/test_guardrail_hybrid.py # 하이브리드 가드레일
 ## 프로젝트 정보
 
 2026학년도 졸업 캡스톤 디자인. 1학기 데모(2026.06.15) 완료 후,
-계절학기 AI Agent 강의 개념(LangGraph · HITL · OWASP Guardrail · RAG)을
-구조에 적용하는 개선 마일스톤을 진행 중입니다.
+계절학기 AI Agent 강의 개념(LangGraph · HITL · OWASP Guardrail)을
+구조에 적용하는 개선 마일스톤(M1)을 마쳤습니다.
 
-발표 자료와 V0 → V1 → V2 발전사는 [docs/presentation/](docs/presentation/)에 있습니다.
+목표는 **"Windows 위에서 동작하는 이식 가능한 개인 적응형 에이전트"** 입니다 —
+화면을 보고 상황을 이해하고, 쓸수록 사용자를 알아가며, 오프라인에서도 동작하는
+설치형 소프트웨어. 학기 계획과 진행 상황은 [docs/ROADMAP.md](docs/ROADMAP.md)에 있습니다.

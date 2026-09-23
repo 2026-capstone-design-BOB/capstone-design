@@ -10,11 +10,12 @@
       }
     ],
     "response_template": "✓ 메모장을 실행했습니다.",
-    "hit_count": 80,
+    "hit_count": 113,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-01T22:54:16"
+    "last_used": "2026-09-12T12:39:13",
+    "imported": false
   },
   "메모장 켜줘": {
     "pattern": "메모장 켜줘",
@@ -31,7 +32,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "메모장 꺼줘": {
     "pattern": "메모장 꺼줘",
@@ -44,11 +46,12 @@
       }
     ],
     "response_template": "✓ 메모장을 종료했습니다.",
-    "hit_count": 9,
+    "hit_count": 12,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-01T22:52:48"
+    "last_used": "2026-09-19T20:01:12",
+    "imported": false
   },
   "계산기 열어줘": {
     "pattern": "계산기 열어줘",
@@ -61,11 +64,12 @@
       }
     ],
     "response_template": "✓ 계산기를 실행했습니다.",
-    "hit_count": 20,
+    "hit_count": 23,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-01T22:52:42"
+    "last_used": "2026-09-10T10:18:49",
+    "imported": false
   },
   "계산기 켜줘": {
     "pattern": "계산기 켜줘",
@@ -82,7 +86,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "크롬 열어줘": {
     "pattern": "크롬 열어줘",
@@ -99,7 +104,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "크롬 켜줘": {
     "pattern": "크롬 켜줘",
@@ -116,7 +122,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "탐색기 열어줘": {
     "pattern": "탐색기 열어줘",
@@ -129,11 +136,12 @@
       }
     ],
     "response_template": "✓ 파일 탐색기를 열었습니다.",
-    "hit_count": 8,
+    "hit_count": 10,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-01T22:54:18"
+    "last_used": "2026-09-10T10:20:29",
+    "imported": false
   },
   "파일 탐색기 열어줘": {
     "pattern": "파일 탐색기 열어줘",
@@ -150,7 +158,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "바탕화면 보여줘": {
     "pattern": "바탕화면 보여줘",
@@ -161,11 +170,12 @@
       }
     ],
     "response_template": "✓ 바탕화면을 표시했습니다.",
-    "hit_count": 8,
+    "hit_count": 10,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-01T22:52:49"
+    "last_used": "2026-09-10T10:18:56",
+    "imported": false
   },
   "창 최대화해줘": {
     "pattern": "창 최대화해줘",
@@ -180,7 +190,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "창 최소화해줘": {
     "pattern": "창 최소화해줘",
@@ -195,7 +206,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "설정 열어줘": {
     "pattern": "설정 열어줘",
@@ -212,7 +224,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "윈도우 설정 열어줘": {
     "pattern": "윈도우 설정 열어줘",
@@ -229,7 +242,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "카카오톡 열어줘": {
     "pattern": "카카오톡 열어줘",
@@ -246,7 +260,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "볼륨 올려줘": {
     "pattern": "볼륨 올려줘",
@@ -257,11 +272,12 @@
       }
     ],
     "response_template": "✓ 볼륨을 높였습니다.",
-    "hit_count": 13,
+    "hit_count": 17,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-01T22:53:05"
+    "last_used": "2026-09-19T20:24:16",
+    "imported": false
   },
   "소리 올려줘": {
     "pattern": "소리 올려줘",
@@ -276,7 +292,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "볼륨 내려줘": {
     "pattern": "볼륨 내려줘",
@@ -291,7 +308,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "소리 내려줘": {
     "pattern": "소리 내려줘",
@@ -306,7 +324,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "음소거해줘": {
     "pattern": "음소거해줘",
@@ -317,11 +336,12 @@
       }
     ],
     "response_template": "✓ 음소거 상태를 변경했습니다.",
-    "hit_count": 16,
+    "hit_count": 20,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-01T22:53:10"
+    "last_used": "2026-09-10T10:19:12",
+    "imported": false
   },
   "음소거 해줘": {
     "pattern": "음소거 해줘",
@@ -336,7 +356,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "밝기 올려줘": {
     "pattern": "밝기 올려줘",
@@ -347,11 +368,12 @@
       }
     ],
     "response_template": "✓ 화면 밝기를 높였습니다.",
-    "hit_count": 0,
+    "hit_count": 5,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-19T20:22:52",
+    "imported": false
   },
   "화면 밝게 해줘": {
     "pattern": "화면 밝게 해줘",
@@ -366,7 +388,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "밝기 내려줘": {
     "pattern": "밝기 내려줘",
@@ -377,11 +400,12 @@
       }
     ],
     "response_template": "✓ 화면 밝기를 낮췄습니다.",
-    "hit_count": 0,
+    "hit_count": 2,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "2026-09-19T20:23:32",
+    "imported": false
   },
   "화면 어둡게 해줘": {
     "pattern": "화면 어둡게 해줘",
@@ -396,7 +420,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "스크린샷 찍어줘": {
     "pattern": "스크린샷 찍어줘",
@@ -407,11 +432,12 @@
       }
     ],
     "response_template": "✓ 스크린샷을 저장했습니다.",
-    "hit_count": 9,
+    "hit_count": 11,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-01T22:53:03"
+    "last_used": "2026-09-10T10:19:05",
+    "imported": false
   },
   "화면 캡처해줘": {
     "pattern": "화면 캡처해줘",
@@ -426,7 +452,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "지금 몇 시야": {
     "pattern": "지금 몇 시야",
@@ -437,11 +464,12 @@
       }
     ],
     "response_template": "현재 시각을 확인합니다.",
-    "hit_count": 58,
+    "hit_count": 70,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-01T22:52:50"
+    "last_used": "2026-09-10T10:19:01",
+    "imported": false
   },
   "배터리 얼마나 남았어": {
     "pattern": "배터리 얼마나 남았어",
@@ -452,11 +480,12 @@
       }
     ],
     "response_template": "배터리 상태를 확인합니다.",
-    "hit_count": 8,
+    "hit_count": 10,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-01T22:52:52"
+    "last_used": "2026-09-10T10:19:03",
+    "imported": false
   },
   "배터리 확인해줘": {
     "pattern": "배터리 확인해줘",
@@ -471,7 +500,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "지금 뭐 켜져 있어": {
     "pattern": "지금 뭐 켜져 있어",
@@ -482,11 +512,12 @@
       }
     ],
     "response_template": "실행 중인 앱 목록을 확인합니다.",
-    "hit_count": 8,
+    "hit_count": 10,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-01T22:52:43"
+    "last_used": "2026-09-10T10:18:51",
+    "imported": false
   },
   "실행 중인 앱 알려줘": {
     "pattern": "실행 중인 앱 알려줘",
@@ -501,7 +532,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "구글 열어줘": {
     "pattern": "구글 열어줘",
@@ -518,7 +550,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "유튜브 열어줘": {
     "pattern": "유튜브 열어줘",
@@ -535,7 +568,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "네이버 열어줘": {
     "pattern": "네이버 열어줘",
@@ -552,7 +586,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "날씨 검색해줘": {
     "pattern": "날씨 검색해줘",
@@ -569,7 +604,8 @@
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": ""
+    "last_used": "",
+    "imported": false
   },
   "최근에 열었던 파일 보여줘": {
     "pattern": "최근에 열었던 파일 보여줘",
@@ -580,11 +616,12 @@
       }
     ],
     "response_template": "최근 파일을 확인합니다.",
-    "hit_count": 8,
+    "hit_count": 10,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-01T22:53:23"
+    "last_used": "2026-09-10T10:19:23",
+    "imported": false
   },
   "메모장 띄워봐": {
     "pattern": "메모장 띄워봐",
@@ -601,24 +638,8 @@
     "is_seed": false,
     "source": "dynamic",
     "learned_at": "2026-08-19T10:08:00",
-    "last_used": "2026-08-19T10:08:00"
-  },
-  "계산기 말고 메모장 열어줘": {
-    "pattern": "계산기 말고 메모장 열어줘",
-    "tool_calls": [
-      {
-        "name": "open_app",
-        "args": {
-          "app": "메모장"
-        }
-      }
-    ],
-    "response_template": "✓ 실행했어요.",
-    "hit_count": 2,
-    "is_seed": false,
-    "source": "dynamic",
-    "learned_at": "2026-09-01T22:40:14",
-    "last_used": "2026-09-01T22:52:12"
+    "last_used": "2026-08-19T10:08:00",
+    "imported": false
   },
   "메모장 불러와줘": {
     "pattern": "메모장 불러와줘",
@@ -635,6 +656,183 @@
     "is_seed": false,
     "source": "dynamic",
     "learned_at": "2026-09-01T22:52:08",
-    "last_used": "2026-09-01T22:52:08"
+    "last_used": "2026-09-01T22:52:08",
+    "imported": false
+  },
+  "지금 실행 중인 앱 목록 알려줘": {
+    "pattern": "지금 실행 중인 앱 목록 알려줘",
+    "tool_calls": [
+      {
+        "name": "get_running_apps",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 실행했어요.",
+    "hit_count": 1,
+    "is_seed": false,
+    "source": "dynamic",
+    "learned_at": "2026-09-09T17:25:39",
+    "last_used": "2026-09-09T17:25:39",
+    "imported": false
+  },
+  "지금 켜져 있는 앱 목록들 최대한 전부 알려줘": {
+    "pattern": "지금 켜져 있는 앱 목록들 최대한 전부 알려줘",
+    "tool_calls": [
+      {
+        "name": "get_running_apps",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 실행했어요.",
+    "hit_count": 1,
+    "is_seed": false,
+    "source": "dynamic",
+    "learned_at": "2026-09-10T16:18:32",
+    "last_used": "2026-09-10T16:18:32",
+    "imported": false
+  },
+  "지금 켜져있는 앱 알려줘": {
+    "pattern": "지금 켜져있는 앱 알려줘",
+    "tool_calls": [
+      {
+        "name": "get_running_apps",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 실행했어요.",
+    "hit_count": 1,
+    "is_seed": false,
+    "source": "dynamic",
+    "learned_at": "2026-09-12T12:29:07",
+    "last_used": "2026-09-12T12:29:07",
+    "imported": false
+  },
+  "최대화 해줘": {
+    "pattern": "최대화 해줘",
+    "tool_calls": [
+      {
+        "name": "maximize_window",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 실행했어요.",
+    "hit_count": 1,
+    "is_seed": false,
+    "source": "dynamic",
+    "learned_at": "2026-09-19T19:59:21",
+    "last_used": "2026-09-19T19:59:21",
+    "imported": false
+  },
+  "밝기 얼마야": {
+    "pattern": "밝기 얼마야",
+    "tool_calls": [
+      {
+        "name": "get_brightness",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 지금 화면 밝기를 알려드렸습니다.",
+    "hit_count": 1,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "2026-09-19T22:33:11",
+    "imported": false
+  },
+  "밝기 알려줘": {
+    "pattern": "밝기 알려줘",
+    "tool_calls": [
+      {
+        "name": "get_brightness",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 지금 화면 밝기를 알려드렸습니다.",
+    "hit_count": 0,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "",
+    "imported": false
+  },
+  "볼륨 얼마야": {
+    "pattern": "볼륨 얼마야",
+    "tool_calls": [
+      {
+        "name": "get_volume",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 지금 볼륨을 알려드렸습니다.",
+    "hit_count": 0,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "",
+    "imported": false
+  },
+  "볼륨 알려줘": {
+    "pattern": "볼륨 알려줘",
+    "tool_calls": [
+      {
+        "name": "get_volume",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 지금 볼륨을 알려드렸습니다.",
+    "hit_count": 0,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "",
+    "imported": false
+  },
+  "음소거됐어": {
+    "pattern": "음소거됐어",
+    "tool_calls": [
+      {
+        "name": "get_volume",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 지금 음소거 상태를 알려드렸습니다.",
+    "hit_count": 0,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "",
+    "imported": false
+  },
+  "지금 밝기는": {
+    "pattern": "지금 밝기는",
+    "tool_calls": [
+      {
+        "name": "get_brightness",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 실행했어요.",
+    "hit_count": 1,
+    "is_seed": false,
+    "source": "dynamic",
+    "learned_at": "2026-09-19T22:33:25",
+    "last_used": "2026-09-19T22:33:25",
+    "imported": false
+  },
+  "소리는 지금 얼마야": {
+    "pattern": "소리는 지금 얼마야",
+    "tool_calls": [
+      {
+        "name": "get_volume",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 실행했어요.",
+    "hit_count": 1,
+    "is_seed": false,
+    "source": "dynamic",
+    "learned_at": "2026-09-19T22:33:49",
+    "last_used": "2026-09-19T22:33:49",
+    "imported": false
   }
 }

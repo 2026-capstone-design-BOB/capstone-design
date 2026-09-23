@@ -57,3 +57,50 @@ models/
 *.mp3
 *.wav
 *.webm
+
+# 웨이크워드 학습 데이터 (M7) — 저장소가 public이고 용량이 크다.
+# 🚨 확장자로 막는 것으로는 부족하다. *.wav 는 이미 위에서 막히지만
+#    `ingest_wakeword.py` 가 만드는 .npy(수십 MB)와 .json 은 안 막혔다 —
+#    2026-09-16에 하마터면 커밋될 뻔했다. **폴더째 막는다.**
+# 🔒 그리고 이건 용량 문제만이 아니다. 여기 들어오는 것은
+#    **사람들 목소리**다. 동의를 받은 범위는 «졸업작품 학습»이지
+#    «공개 저장소 게시»가 아니다.
+data/
+
+# 로컬 API 접근 토큰 (BL-14) — 서버가 기동할 때마다 새로 발급한다.
+# cache/ 는 command_cache.json 을 추적하므로 폴더 통째로 무시할 수 없다.
+cache/.auth_token
+# BL-27 마이그레이션 백업 — 사용자 데이터라 커밋하지 않는다
+# 백업은 전부 무시한다. 예전엔 command_cache만 적어 둬서
+# favorites 백업이 커밋에 딸려 들어갔다 (2026-09-10)
+cache/*.backup-*
+
+# 개인 작성용 문서 — 저장소가 public이라 올리지 않는다 (2026-09-08 결정).
+# 로컬에는 그대로 남아 있고, 다른 docs/ 문서에서 링크가 아니라 **경로 문자열로만**
+# 언급한다. 링크로 걸면 CI 링크 검사(체크아웃에는 이 폴더가 없다)와 GitHub 양쪽에서
+# 깨진다 — 그래서 참조를 전부 `docs/…` 형태의 코드 표기로 바꿔 뒀다.
+docs/meetings/
+docs/planning/
+docs/presentation/
+
+# 학교에서 받은 서류(평가표·계획서 양식 등). 내가 쓴 문서가 아니고 public 저장소에
+# 올릴 것도 아니다. 확장자로 막는다 — 파일이 하나씩 늘 때마다 여기 적는 걸 잊으면
+# 그때 한 번 올라가고, 히스토리에서는 지워지지 않는다.
+docs/*.docx
+docs/*.hwp
+docs/*.hwpx
+docs/*.pdf
+
+# 웨이크워드 실제 녹음 — 저장소에 넣지 않는다.
+# ① 실제 사람 목소리(본인·팀원)라 개인정보다. ② 9MB짜리 원본이고,
+# 저장소에 필요한 산출물은 학습 결과인 services/wakeword_model.npz 하나다.
+# 만드는 법은 scripts/record_wakeword.py (docs/TASKS.md ③)
+wake_voice*.npy
+models/embed/
+
+# Vision 기준선 출력 — 화면 이미지와 응답 원문이다. 공개 저장소에 올리지 않는다.
+logs/vision_baseline/
+
+# Vision 기준선 fixture — 내용의 출처는 scripts/vision_baseline.py 의 FIXTURE_TEXT 다.
+# 두 벌을 두면 한쪽만 고쳐진다(이 저장소가 반복해서 데인 모양).
+cache/vision_baseline_fixture.txt

@@ -13,6 +13,11 @@ import ctypes.wintypes
 import psutil
 from langchain_core.tools import tool
 
+from core.logger import get_logger
+
+#: 종료 **요청조차 못 한** 경우를 셀 수 있게 한다. 예전엔 `except: pass` 였다 (감사 G-02 모양).
+_log = get_logger("AppControl")
+
 # ── 앱 정보 매핑 ──────────────────────────────────────────────────
 
 APP_ALIASES: dict[str, str] = {
@@ -31,6 +36,16 @@ APP_ALIASES: dict[str, str] = {
     "터미널": "terminal", "cmd": "terminal",
     # 설정
     "설정": "settings", "윈도우설정": "settings", "windows설정": "settings",
+    # 🆕 2026-09-11 — 오프라인 실기에서 «그림판 열어줘»가 네 번 실패했다.
+    #   원인은 모델이 아니라 **사전이 얇은 것**이었다. 오프라인 차별점은
+    #   «LLM 없이 도는 범위»가 곧 제품의 크기다 — 여기를 넓히는 것이 가장 싸다.
+    #   ⚠️ **이 PC에 실제로 있는지 확인한 것만 넣었다**(없는 앱을 넣으면 또 거짓 약속이다).
+    #      워드패드는 Windows 11에서 제거돼 넣지 않았다.
+    "그림판": "paint", "페인트": "paint", "mspaint": "paint",
+    "작업관리자": "taskmgr", "작업 관리자": "taskmgr", "태스크매니저": "taskmgr",
+    "제어판": "control",
+    "캡처도구": "snippingtool", "캡처 도구": "snippingtool", "화면캡처도구": "snippingtool",
+    "돋보기": "magnify", "확대기": "magnify",
 }
 
 # ── 한국어 표시 이름 ──────────────────────────────────────────────
@@ -49,12 +64,88 @@ APP_DISPLAY_NAMES: dict[str, str] = {
     "kakaotalk":  "카카오톡",
     "terminal":   "터미널",
     "settings":   "설정",
+    "paint":         "그림판",
+    "taskmgr":       "작업 관리자",
+    "control":       "제어판",
+    "snippingtool":  "캡처 도구",
+    "magnify":       "돋보기",
 }
 
 
 def _display_name(app_key: str, original: str) -> str:
     """앱 표시 이름 반환 (한국어 우선)."""
     return APP_DISPLAY_NAMES.get(app_key, original)
+
+
+def is_window_cloaked(hwnd: int) -> bool:
+    """DWM이 **가려 둔(cloaked)** 창인가. 가려져 있으면 사용자 눈에 **안 보인다.**
+
+    🚨 **2026-09-09 — 이 한 줄이 없어서 «설정 창을 열었다»고 세 번 거짓말했다.**
+
+    Windows는 정지된 UWP 앱(설정·계산기 등)의 창을 **닫지 않고 cloak** 한다.
+    그 창은 이렇게 보인다:
+
+        IsWindowVisible : True          ← «보인다»고 나온다
+        IsIconic        : False         ← 최소화도 아니다
+        GetWindowRect   : 1536x912      ← 크기까지 정상
+        제목            : '설정'
+        DWMWA_CLOAKED   : 2             ← 실제로는 **가려져 있다**
+
+    그래서 `IsWindowVisible`만 보면 **없는 창을 있다고 센다.** 포커스는 «성공»하고,
+    캡처는 **낡거나 빈 픽셀**을 준다(포인팅 고리가 엉뚱한 데 그려진 이유이기도 하다).
+
+    ⚠️ 실패하면 **False**(가려지지 않음)로 본다 — 판정 실패 때문에 멀쩡한 창을
+      없다고 하면 그게 더 나쁘다.
+    """
+    try:
+        cloaked = ctypes.c_int(0)
+        # DWMWA_CLOAKED = 14
+        hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            hwnd, 14, ctypes.byref(cloaked), ctypes.sizeof(cloaked))
+        return hr == 0 and cloaked.value != 0
+    except Exception:
+        return False
+
+
+#: 윈도우 **셸 자신**의 창들. 사용자는 이걸 «앱 창»이라고 부르지 않는다.
+#
+# 🚨 **2026-09-19 라이브 점검에서 잡혔다.** *"탐색기 최대화해줘"* 가
+#   `✓ 탐색기 창을 최대화했습니다` 라고 답하는데 **아무 일도 안 일어났다.**
+#   `explorer.exe` 는 파일 탐색기만이 아니라 **바탕화면(`Progman`)과 작업표시줄**도
+#   띄운다. 창 목록에서 **먼저 걸리는 것이 바탕화면**이었고, 바탕화면은
+#   `IsZoomed` 가 **원래 True** 라 — 오늘 넣은 되묻기가 **엉뚱한 창에 대해 정확히
+#   확인하고 ✓ 를 줬다.** 검증이 거짓말을 인증한 셈이다.
+#
+# 🔑 **여기(한 자리)에서 거른다.** `find_hwnd_for_app`(열기·포커스)도,
+#   `_find_app_window`(최대화·최소화)도, 캡처 경로도 전부 이 함수를 지난다 —
+#   오늘 배운 «호출부마다 붙이면 다음에 또 샌다»를 그대로 적용한다.
+_SHELL_WINDOW_CLASSES = frozenset({
+    "Progman",                  # 바탕화면
+    "WorkerW",                  # 바탕화면 배경 레이어
+    "Shell_TrayWnd",            # 작업표시줄
+    "Shell_SecondaryTrayWnd",   # 보조 모니터 작업표시줄
+    "DV2ControlHost",           # 시작 메뉴 호스트
+})
+
+
+def _window_class(hwnd: int) -> str:
+    """창 클래스 이름. 못 읽으면 빈 문자열(= 거르지 않는다)."""
+    try:
+        buf = ctypes.create_unicode_buffer(256)
+        ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
+        return buf.value or ""
+    except Exception:                                         # noqa: BLE001
+        return ""
+
+
+def _is_real_window(hwnd: int) -> bool:
+    """사용자가 **실제로 볼 수 있는** 최상위 «앱» 창인가."""
+    u = ctypes.windll.user32
+    if not u.IsWindowVisible(hwnd):
+        return False
+    if _window_class(hwnd) in _SHELL_WINDOW_CLASSES:
+        return False              # 바탕화면·작업표시줄은 «앱 창»이 아니다
+    return not is_window_cloaked(hwnd)
 
 
 def _find_hwnd_by_title(keywords: list[str]) -> int:
@@ -65,7 +156,10 @@ def _find_hwnd_by_title(keywords: list[str]) -> int:
     kws_lower = [k.lower() for k in keywords if k]
 
     def callback(h, _):
-        if not ctypes.windll.user32.IsWindowVisible(h):
+        # ⚠️ 여기도 cloaked를 걸러야 한다. 2026-09-09에 이 폴백이 정지된 UWP의
+        #   `ApplicationFrameWindow`(제목 '설정')를 집어, 프로세스 필터를 통과한
+        #   것도 아닌 **유령 창**을 «설정 창»으로 돌려줬다.
+        if not _is_real_window(h):
             return True
         buf = ctypes.create_unicode_buffer(256)
         ctypes.windll.user32.GetWindowTextW(h, buf, 256)
@@ -105,7 +199,17 @@ APP_PROCESS_MAP: dict[str, list[str]] = {
     "powerpoint": ["powerpnt.exe"],
     "vscode":     ["code.exe"],
     "kakaotalk":  ["kakaotalk.exe"],
-    "terminal":   ["wt.exe", "cmd.exe", "powershell.exe"],
+    # ⚠️ `wt.exe`는 실행 스텁이고, **실제로 떠 있는 창의 프로세스는**
+    #   `WindowsTerminal.exe`다. 2026-09-07 실기에서 확인했다 — 이게 없으면
+    #   get_running_apps가 못 보고 close_app("터미널")도 못 찾는다.
+    "terminal":   ["wt.exe", "windowsterminal.exe", "cmd.exe", "powershell.exe"],
+    # ⚠️ 프로세스 이름이 실행 이름과 다른 것들이 있다 — get_running_apps와
+    #   close_app이 **이 이름으로** 창을 찾으므로 추측하지 말고 실제 이름을 적는다.
+    "paint":        ["mspaint.exe", "paintstudio.view.exe"],   # Win11 그림판은 후자로 뜬다
+    "taskmgr":      ["taskmgr.exe"],
+    "control":      ["control.exe", "systemsettings.exe"],
+    "snippingtool": ["snippingtool.exe"],
+    "magnify":      ["magnify.exe"],
 }
 
 APP_FALLBACK_PATHS: dict[str, list[str]] = {
@@ -146,6 +250,16 @@ APP_FALLBACK_PATHS: dict[str, list[str]] = {
         os.path.join(os.environ.get("PROGRAMFILES", ""), "WindowsApps/Microsoft.WindowsCalculator*/Calculator.exe"),
     ],
     "explorer": ["C:/Windows/explorer.exe"],
+    "paint": [
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft/WindowsApps/mspaint.exe"),
+        "C:/Windows/System32/mspaint.exe",
+    ],
+    "taskmgr":      ["C:/Windows/System32/Taskmgr.exe"],
+    "control":      ["C:/Windows/System32/control.exe"],
+    "snippingtool": [
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft/WindowsApps/SnippingTool.exe"),
+    ],
+    "magnify":      ["C:/Windows/System32/Magnify.exe"],
 }
 
 
@@ -164,7 +278,8 @@ def _focus_window(app_key: str) -> bool:
 
     def _enum_cb(hwnd, _):
         nonlocal found_hwnd
-        if not ctypes.windll.user32.IsWindowVisible(hwnd):
+        # ⚠️ IsWindowVisible만으로는 부족하다 — cloaked 창이 True를 준다
+        if not _is_real_window(hwnd):
             return True
         pid_buf = ctypes.wintypes.DWORD()
         ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_buf))
@@ -183,22 +298,15 @@ def _focus_window(app_key: str) -> bool:
     if not found_hwnd:
         return False
 
-    # Windows 포그라운드 권한 우회 (AttachThreadInput 트릭)
-    try:
-        SW_RESTORE = 9
-        fg_hwnd = ctypes.windll.user32.GetForegroundWindow()
-        fg_tid  = ctypes.windll.user32.GetWindowThreadProcessId(fg_hwnd, None)
-        my_tid  = ctypes.windll.kernel32.GetCurrentThreadId()
-        if fg_tid and fg_tid != my_tid:
-            ctypes.windll.user32.AttachThreadInput(my_tid, fg_tid, True)
-        ctypes.windll.user32.ShowWindow(found_hwnd, SW_RESTORE)
-        ctypes.windll.user32.BringWindowToTop(found_hwnd)
-        ctypes.windll.user32.SetForegroundWindow(found_hwnd)
-        if fg_tid and fg_tid != my_tid:
-            ctypes.windll.user32.AttachThreadInput(my_tid, fg_tid, False)
-        return True
-    except Exception:
-        return False
+    # Windows 포그라운드 권한 우회(AttachThreadInput 트릭)는 **한 곳에만** 둔다.
+    # ⚠️ 2026-09-22 이전에는 이 함수 안에 사본이 있었고, `tools/system.py` 쪽에는
+    #   맨손 `SetForegroundWindow`만 있었다. 같은 문제를 푼 코드가 둘로 갈리면
+    #   한쪽만 고쳐진다(BL-64 커밋의 「복사본 둘」 · 감사 G-08) — 실제로 그랬고,
+    #   시연에서 설정 창이 다른 창 뒤에서 열렸다.
+    # 🚨 그리고 예전엔 **무조건 True를 돌려줬다.** 거부됐는데 「앞으로 가져왔습니다」로
+    #   끝나던 자리다(BACKLOG의 «설정은 뜨지 않았다»). 이제 확인한 결과를 돌려준다.
+    from tools.system import bring_hwnd_to_front
+    return bring_hwnd_to_front(found_hwnd)
 
 
 def _resolve_path(app_key: str) -> str | None:
@@ -272,8 +380,11 @@ def _is_running(app_key: str) -> bool:
 
 def find_hwnd_for_app(app_name: str) -> int:
     """
-    앱 이름(한국어 포함)으로 최상위 가시 HWND 반환. 0이면 창 없음.
-    system.py의 창별 스크린샷 등 외부 모듈에서 재사용 가능.
+    앱 이름(한국어 포함)으로 **사용자가 실제로 볼 수 있는** 최상위 HWND 반환.
+    0이면 창 없음. system.py의 창별 스크린샷 등 외부 모듈에서 재사용 가능.
+
+    ⚠️ **cloaked 창은 «없는 것»으로 센다**(→ `is_window_cloaked`). 정지된 UWP 앱의
+      유령 창을 세면, 있지도 않은 창을 «앞으로 가져왔다»고 답하게 된다.
     """
     app_key = _normalize(app_name)
     targets = {p.lower() for p in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
@@ -281,7 +392,9 @@ def find_hwnd_for_app(app_name: str) -> int:
     found = [0]
 
     def _cb(hwnd, _):
-        if not ctypes.windll.user32.IsWindowVisible(hwnd):
+        # ⚠️ cloaked 창을 세면 «있는데 안 보이는 창»을 있다고 답하게 된다.
+        #   그러면 포커스는 성공하고 캡처는 빈 픽셀을 준다 → 2026-09-09 «뻥카».
+        if not _is_real_window(hwnd):
             return True
         pid_buf = ctypes.wintypes.DWORD()
         ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_buf))
@@ -313,14 +426,191 @@ _UWP_SHELL_COMMANDS: dict[str, str] = {
 }
 
 
+# 새 작업 공간을 **탭**으로 여는 앱. 여기 없는 앱은 새 창으로 연다.
+# (Ctrl+T가 표준 단축키다 — Win11 메모장·탐색기도 지원한다)
+_TAB_APPS = {"chrome", "edge", "whale", "firefox", "notepad", "terminal", "explorer"}
+
+
+def _open_new_view(app_key: str, name: str) -> str:
+    """사용자가 **새로** 열어달라고 했을 때. 탭 지원 앱이면 탭, 아니면 새 창.
+
+    ⚠️ 반드시 창을 **포커스한 뒤에** 단축키를 보낸다. 포커스에 실패했는데 키를
+    보내면 사용자가 보고 있던 **다른 창**에 Ctrl+T가 들어간다 (BL-12와 같은 함정).
+    그래서 포커스 성공을 확인하지 못하면 단축키를 아예 보내지 않는다.
+    """
+    if app_key in _TAB_APPS and _focus_window(app_key):
+        try:
+            import pyautogui
+            time.sleep(0.3)
+            pyautogui.hotkey("ctrl", "t")
+            return f"✓ {name}에 새 탭을 열었습니다."
+        except Exception as e:
+            print(f"[open_app] 새 탭 단축키 실패 → 새 창으로 폴백: {e}")
+
+    # 탭을 못 쓰거나 실패 → 새 인스턴스
+    if app_key in _UWP_SHELL_COMMANDS:
+        try:
+            subprocess.Popen(_UWP_SHELL_COMMANDS[app_key], shell=True)
+            time.sleep(0.5)
+            return f"✓ {name}을(를) 새 창으로 열었습니다."
+        except Exception as e:
+            return f"✗ {name} 새 창 열기 실패: {e}"
+
+    path = _resolve_path(app_key)
+    if not path:
+        return f"✗ '{name}' 앱을 찾을 수 없어 새로 열지 못했습니다."
+    try:
+        subprocess.Popen([path])
+        time.sleep(0.8)
+        return f"✓ {name}을(를) 새 창으로 열었습니다."
+    except Exception as e:
+        return f"✗ {name} 새 창 열기 실패: {e}"
+
+
 # ── 도구 정의 ─────────────────────────────────────────────────────
 
-@tool
-def open_app(app: str) -> str:
+def _await_window(app_key: str, timeout: float = 5.0, poll: float = 0.25) -> int:
+    """창이 **실제로 뜰 때까지** 기다린다. 뜨면 hwnd, 아니면 0.
+
+    🚨 **2026-09-09 — 이 함수가 없어서 거짓말을 했다.**
+      `open_app("설정")`이 셸 명령(`ms-settings:`)을 쏘고 `time.sleep(0.5)` 뒤에
+      **«✓ 설정 창을 앞으로 가져왔습니다»** 라고 답했다. 창이 떴는지 보지 않았고,
+      실제로 설정 창은 뜨지 않았다. 사용자 평: *"설정창 띄워주지도 않고 거짓말도 하네."*
+
+    ⚠️ UWP 앱(설정 등)은 **0.5초로는 안 뜬다.** 그리고 `_is_running`이 True여도
+      창이 없을 수 있다 — Windows가 `SystemSettings.exe`를 창 없이 **살려 둔다.**
+      «프로세스가 있다»와 «창이 보인다»는 다른 사실이고, 사용자가 원한 건 뒤쪽이다.
     """
-    Windows 앱을 실행하거나 이미 실행 중이면 창을 활성화합니다.
+    import time as _t
+    deadline = _t.monotonic() + max(0.0, timeout)
+    while True:
+        hwnd = find_hwnd_for_app(app_key)
+        if hwnd:
+            return hwnd
+        if _t.monotonic() >= deadline:
+            return 0
+        _t.sleep(poll)
+
+
+def _await_gone(procs: list, timeout: float = 3.0) -> tuple[list, list]:
+    """종료를 요청한 **뒤** 실제로 사라졌는지 기다려 확인한다. (감사 G-07)
+
+    🚨 **`_await_window` 의 대칭이다.** 여는 쪽은 2026-09-09에 «창이 떴는지 본다»로
+      고쳤는데(BL-26), **닫는 쪽은 만들어지지 않았다.** `terminate()` 는
+      **요청이지 결과가 아니다** — 받아들여지기만 하면 «✓ 종료했습니다»가 나갔다.
+
+    ⚠️ **모르면 «사라졌다»고 하지 않는다.** 기다리다 실패하면 살아 있는 쪽으로 센다 —
+      이 함수가 틀리는 방향은 «못 닫았는데 닫았다고 말하는» 쪽이면 안 된다.
+
+    Returns: (사라진 것, 아직 살아 있는 것)
+    """
+    if not procs:
+        return [], []
+    try:
+        gone, alive = psutil.wait_procs(procs, timeout=max(0.0, timeout))
+        return list(gone), list(alive)
+    except Exception as e:                                    # noqa: BLE001
+        _log.error("[force_close_app] 종료 확인 실패 | %s: %s", type(e).__name__, e)
+        gone, alive = [], []
+        for p in procs:
+            try:
+                (alive if p.is_running() else gone).append(p)
+            except Exception:                                 # noqa: BLE001
+                alive.append(p)      # 판정 못 하면 «아직 있다» 쪽이다
+        return gone, alive
+
+
+def _app_windows(app_key: str, app: str) -> list[int]:
+    """앱의 **사용자가 실제로 볼 수 있는** 최상위 창 전부. (G-19)
+
+    🔑 `_find_app_window` 는 **하나만** 준다. 닫으려면 전부 있어야 한다 —
+      크롬처럼 창이 여럿인 앱에서 하나만 닫고 «종료했다»고 하면 거짓이 된다.
+      골라 쓰는 쪽이 아니라 **닫는 쪽**이라 목록이 필요하다.
+
+    ⚠️ cloaked(유령) 창은 세지 않는다 — `_is_real_window` 가 이미 거른다.
+    """
+    targets = {t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
+    target_pids: set[int] = set()
+    for proc in psutil.process_iter(["name", "pid"]):
+        try:
+            pname = (proc.info.get("name") or "")
+        except Exception:                                     # noqa: BLE001
+            continue
+        if pname.lower() in targets:
+            target_pids.add(proc.info["pid"])
+
+    hwnds: list[int] = []
+
+    def _cb(h, _):
+        if not _is_real_window(h):
+            return True
+        buf = ctypes.wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(h, ctypes.byref(buf))
+        if buf.value in target_pids:
+            hwnds.append(int(h))
+        return True
+
+    if target_pids:
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND,
+                                         ctypes.wintypes.LPARAM)
+        ctypes.windll.user32.EnumWindows(WNDENUMPROC(_cb), 0)
+
+    if not hwnds:
+        # UWP 폴백 — 제목으로. (ApplicationFrameHost 등)
+        display = APP_DISPLAY_NAMES.get(app_key, app)
+        h = _find_hwnd_by_title([display, app, app_key])
+        if h:
+            hwnds.append(h)
+    return hwnds
+
+
+def _await_windows_gone(hwnds: list[int], timeout: float = 3.0,
+                        poll: float = 0.2) -> list[int]:
+    """창이 실제로 사라졌는지 기다려 확인한다. 아직 남은 HWND 목록을 돌려준다.
+
+    🚨 **`_await_gone` 의 창 버전이다.** `WM_CLOSE` 도 `terminate()` 와 똑같이
+      **요청이지 결과가 아니다** — 저장 대화상자가 뜨면 창은 그대로 남는다.
+      그 «남았다»가 바로 우리가 원하던 것이다(OS 가 승인을 받고 있는 중이다).
+
+    ⚠️ **모르면 «사라졌다»고 하지 않는다.** 판정에 실패하면 살아 있는 쪽으로 센다.
+    """
+    deadline = time.time() + max(0.0, timeout)
+    remaining = list(hwnds)
+    while remaining and time.time() < deadline:
+        time.sleep(poll)
+        still = []
+        for h in remaining:
+            try:
+                if ctypes.windll.user32.IsWindow(h) and _is_real_window(h):
+                    still.append(h)
+            except Exception:                                 # noqa: BLE001
+                still.append(h)          # 판정 못 하면 «아직 있다» 쪽이다
+        remaining = still
+    return remaining
+
+
+def _launched_or_honest(app_key: str, name: str, eul_reul: str,
+                        timeout: float = 5.0) -> str:
+    """실행을 시도한 **뒤** 창을 확인하고, 본 대로 답한다.
+
+    창이 안 뜨면 «열었다»고 하지 않는다 — 이 저장소가 반복해서 고쳐 온 결함이
+    **«안 한 걸 했다고 말하는 것»** 이다(BL-12·BL-19·BL-21).
+    """
+    if _await_window(app_key, timeout):
+        return f"✓ {name}{eul_reul} 열었습니다."
+    return (f"⚠️ {name} 실행을 시도했지만 창이 나타나지 않았습니다. "
+            f"잠시 뒤 다시 시도하거나 직접 열어 주세요.")
+
+
+@tool
+def open_app(app: str, new: bool = False) -> str:
+    """
+    Windows 앱을 엽니다. **이미 실행 중이면 새 창을 만들지 않고 그 창을 앞으로 가져옵니다.**
     app: 앱 이름 (예: chrome, notepad, calculator, kakaotalk, edge, explorer, word, excel, powerpoint, vscode, terminal, 설정)
     한국어도 가능 (크롬, 메모장, 계산기, 카카오톡, 설정 등)
+    new: 사용자가 **"새로 열어줘" · "하나 더" · "새 탭"** 처럼 새 작업 공간을 원할 때만 True.
+         탭을 지원하는 앱(크롬·엣지·메모장·터미널·탐색기)은 **새 탭**을,
+         나머지는 새 창을 엽니다. 그냥 "열어줘"면 False로 두세요.
     """
     app_key = _normalize(app)
     name = _display_name(app_key, app)
@@ -328,6 +618,9 @@ def open_app(app: str) -> str:
 
     # ── explorer 전용: 셸 프로세스로 항상 떠 있어서 _is_running이 항상 True
     # _is_running 체크 전에 별도 처리 → 항상 새 탐색기 창 열기
+    # ⚠️ "기존 창 재사용" 규칙의 **유일한 예외**다. explorer.exe에는 바탕화면·작업표시줄
+    #    창도 딸려 있어서 _focus_window가 그쪽을 잡을 수 있다. 탐색기는 여러 창을 띄워
+    #    쓰는 게 보통이라 새 창이 사용자 기대에도 맞다.
     if app_key == "explorer":
         try:
             subprocess.Popen("explorer.exe", shell=True)
@@ -336,27 +629,35 @@ def open_app(app: str) -> str:
         except Exception as e:
             return f"✗ {name} 실행 실패: {e}"
 
-    # ── 이미 실행 중이면 창 활성화 (새 창 열지 않음) ──────────────
+    # ── 이미 실행 중 ─────────────────────────────────────────────
     if _is_running(app_key):
-        # A(정직 보고): UWP·셸 앱은 focus API 신뢰도가 낮음(설정 등 실제로 안 떴는데
-        # 성공 반환하던 문제) → 셸 명령으로 확실히 전면화.
+        if new:
+            return _open_new_view(app_key, name)
+
+        # ⚠️ **포커스를 먼저 시도한다.** 예전엔 UWP 목록에 있으면 셸 명령을 먼저
+        #    실행했는데, `notepad.exe`를 다시 띄우는 건 전면화가 아니라
+        #    **새 창을 만드는 것**이다. 그래놓고 "창을 앞으로 가져왔습니다"라고
+        #    답해서, 사용자는 계속 새 메모장이 쌓이는 걸 봐야 했다(2026-09-02 실기).
+        #    셸 명령은 포커스가 **실패했을 때만** 폴백으로 쓴다
+        #    (설정 앱처럼 창 핸들을 못 잡는 경우가 있다 — 그때는 원래 동작 그대로).
+        if _focus_window(app_key):
+            return f"✓ {name} 창을 앞으로 가져왔습니다."
         if app_key in _UWP_SHELL_COMMANDS:
             try:
                 subprocess.Popen(_UWP_SHELL_COMMANDS[app_key], shell=True)
-                time.sleep(0.5)
-                return f"✓ {name} 창을 앞으로 가져왔습니다."
+                # ⚠️ **«앞으로 가져왔습니다»라고 하지 않는다.** 포커스는 이미 실패했고
+                #   여기서 하는 일은 **새로 띄우는 것**이다. 그리고 떴는지 확인한다 —
+                #   확인 없이 성공을 보고하던 게 2026-09-09의 그 거짓말이다.
+                return _launched_or_honest(app_key, name, eul_reul)
             except Exception:
                 pass
-        if _focus_window(app_key):
-            return f"✓ {name} 창을 앞으로 가져왔습니다."
         # 프로세스는 살아있지만 visible 창이 없음 (트레이 앱 등)
         # → exe 재실행하면 트레이 앱은 메인 창을 올려줌
         path = _resolve_path(app_key)
         if path:
             try:
                 subprocess.Popen([path])
-                time.sleep(0.8)
-                return f"✓ {name} 창을 열었습니다."
+                return _launched_or_honest(app_key, name, eul_reul)
             except Exception:
                 pass
         return f"⚠️ {name}은(는) 실행 중인데 창을 앞으로 못 가져왔어요. 작업표시줄/트레이에서 직접 클릭해 주세요."
@@ -365,8 +666,9 @@ def open_app(app: str) -> str:
     if app_key in _UWP_SHELL_COMMANDS:
         try:
             subprocess.Popen(_UWP_SHELL_COMMANDS[app_key], shell=True)
-            time.sleep(0.5)
-            return f"✓ {name}{eul_reul} 실행했습니다."
+            # UWP는 뜨는 데 몇 초 걸린다. 0.5초 자고 «실행했습니다»라고 하면
+            # 사용자가 보기엔 아무 일도 안 일어난 채 성공 메시지만 뜬다.
+            return _launched_or_honest(app_key, name, eul_reul)
         except Exception as e:
             return f"✗ {name} 실행 실패: {e}"
 
@@ -390,9 +692,15 @@ def open_app(app: str) -> str:
 @tool
 def close_app(app: str) -> str:
     """
-    실행 중인 앱을 종료합니다.
+    실행 중인 앱을 **곱게** 종료합니다 — 창에 닫기를 요청하므로, 저장하지 않은 내용이
+    있으면 앱이 저장할지 묻는 창을 띄웁니다. 그 경우 닫히지 않고 그렇게 답하니
+    **결과를 그대로 전하세요.** 억지로 닫아야 할 때만 force_close_app 을 쓰세요.
     app: 앱 이름 (예: chrome, notepad, calculator 등)
     """
+    # 🔑 **저장 대화상자가 곧 승인이다** (G-19). 우리가 승인을 만들 필요가 없었다 —
+    #   `terminate()`(= Windows `TerminateProcess`)가 **OS 의 승인을 억누르고**
+    #   있었을 뿐이다. 그래서 여기서는 `WM_CLOSE` 만 보낸다.
+    #   → docs/design/G-05-19_승인의_경계.md §4-2
     app_key = _normalize(app)
 
     # BUG-11: explorer.exe는 Windows 셸 프로세스 — 종료 시 바탕화면·작업표시줄 전체 소멸
@@ -403,23 +711,230 @@ def close_app(app: str) -> str:
             "(열기는 가능합니다 — open_app 도구를 사용하세요)"
         )
 
-    targets = APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])
+    name = _display_name(app_key, app)
+    eul_reul = _korean_particle(name, "을", "를")
+    i_ga = _korean_particle(name, "이", "가")
 
-    killed = []
+    if not _is_running(app_key):
+        return f"✗ '{name}'{i_ga} 실행 중이지 않습니다."
+
+    hwnds = _app_windows(app_key, app)
+    if not hwnds:
+        # 🚨 창이 없는데 **강제로 끄지 않는다.** 백그라운드 프로세스일 수 있고,
+        #   그건 사용자가 «닫아 달라»고 한 그 창이 아니다. 말하고 멈춘다.
+        return (f"⚠️ {name}{i_ga} 실행 중이지만 닫을 창을 찾지 못했어요. "
+                f"백그라운드에서 도는 중일 수 있어요 — 억지로 끄려면 "
+                f"«{name} 강제로 꺼줘»라고 말해 주세요.")
+
+    for h in hwnds:
+        try:
+            ctypes.windll.user32.PostMessageW(h, _WM_CLOSE, 0, 0)
+        except Exception as e:                                # noqa: BLE001
+            _log.error("[close_app] 닫기 요청 실패 | 앱=%s | hwnd=%s | %s: %s",
+                       name, h, type(e).__name__, e)
+
+    left = _await_windows_gone(hwnds)
+    if not left:
+        return f"✓ {name}{eul_reul} 종료했습니다."
+
+    # 🔑 **여기가 이 수정의 값이다.** 예전에는 이 자리가 없었다 —
+    #   저장 대화상자가 뜰 겨를도 없이 프로세스가 죽었다.
+    return (f"⚠️ {name}{eul_reul} 닫지 못했어요. 저장할지 묻는 창이 떠 있을 수 있어요 — "
+            f"화면을 확인해 주세요. 저장하지 않고 꺼도 되면 "
+            f"«{name} 강제로 꺼줘»라고 말해 주세요.")
+
+
+#: `WM_CLOSE` — «닫아 달라»는 **요청**이다. 앱은 거절할 수 있고(저장 대화상자),
+#: 그 거절이 G-19가 되살리려는 바로 그 승인이다.
+_WM_CLOSE = 0x0010
+
+
+@tool
+def force_close_app(app: str) -> str:
+    """앱을 **강제로** 종료합니다. 저장하지 않은 내용은 사라집니다.
+    되돌릴 수 없는 위험 동작이라 반드시 사용자 승인을 받은 뒤 실행됩니다.
+
+    먼저 close_app 을 쓰세요. 그것이 "저장할지 묻는 창이 떠 있다"고 답했고
+    사용자가 "그냥 꺼줘"처럼 **명시적으로** 강제 종료를 원할 때만 이 도구를 씁니다.
+    app: 앱 이름 (예: chrome, notepad, calculator 등)
+    """
+    # 🚨 **`close_app(force=True)` 로 만들지 않았다.** 절대규칙 9와 같은 모양이다 —
+    #   «LLM 이 넘길 수 있으면 언젠가 지어낸다.» 좌표가 그랬듯 `force=True` 도 그렇게 된다.
+    #   **이름이 다른 도구**여야 `DANGEROUS_TOOLS` 가 그것만 걸 수 있다. → ADR §4-2
+    app_key = _normalize(app)
+
+    if app_key == "explorer":
+        return (
+            "⚠️ 파일 탐색기는 Windows 시스템 프로세스라 프로그램으로 닫을 수 없어요. "
+            "창 우측 상단 ✕ 버튼으로 직접 닫아주세요."
+        )
+
+    targets = {t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
+
+    # 🚨 `killed` 라는 이름이 결함의 절반이었다 (감사 G-07). 여기서 알 수 있는 것은
+    #   «종료를 **요청**했다»뿐이고, 죽었는지는 `_await_gone` 이 답한다.
+    found: list = []
+    denied: list = []
     for proc in psutil.process_iter(["name", "pid"]):
-        if proc.info["name"].lower() in [t.lower() for t in targets]:
-            try:
-                proc.terminate()
-                killed.append(proc.info["name"])
-            except Exception:
-                pass
+        try:
+            pname = (proc.info.get("name") or "")
+        except Exception:                                     # noqa: BLE001
+            continue                  # 훑는 중에 사라진 프로세스 — 우리 대상도 아니다
+        if pname.lower() not in targets:
+            continue
+        found.append(proc)
+        try:
+            proc.terminate()
+        except Exception as e:                                # noqa: BLE001
+            # 🚨 예전엔 여기가 `except: pass` 였다. 권한이 없어 **종료를 요청조차
+            #   못 한** 프로세스는 `killed` 에 안 들어갔고, 전부 그러면
+            #   «실행 중이지 않습니다»가 나갔다 — **켜져 있는데도.**
+            denied.append(proc)
+            _log.error("[force_close_app] 종료 요청 실패 | 앱=%s | pid=%s | %s: %s",
+                       pname, getattr(proc, "pid", "?"), type(e).__name__, e)
 
     name = _display_name(app_key, app)
-    if killed:
-        eul_reul = _korean_particle(name, "을", "를")
-        return f"✓ {name}{eul_reul} 종료했습니다."
+    eul_reul = _korean_particle(name, "을", "를")
     i_ga = _korean_particle(name, "이", "가")
-    return f"✗ '{name}'{i_ga} 실행 중이지 않습니다."
+
+    if not found:
+        return f"✗ '{name}'{i_ga} 실행 중이지 않습니다."
+
+    gone, alive = _await_gone(found)
+    if not alive:
+        return f"✓ {name}{eul_reul} 종료했습니다."
+
+    # ⚠️ 여기서 **개수를 말하지 않는다.** 사용자가 보는 것은 창이고 우리가 센 것은
+    #   프로세스다 — 크롬은 창 하나에 프로세스가 여럿이다([BL-55](../docs/BACKLOG.md)와 같은 함정).
+    if len(denied) == len(found):
+        return (f"⚠️ {name} 종료 요청이 거부됐어요. 관리자 권한이 필요한 앱일 수 있어요. "
+                f"창에서 직접 닫아 주세요.")
+    if gone:
+        return (f"⚠️ {name}{eul_reul} 완전히 닫지 못했어요 — 일부가 아직 실행 중입니다. "
+                f"저장하지 않은 내용이 있는지 확인해 주세요.")
+    return (f"⚠️ {name} 종료를 요청했지만 아직 닫히지 않았습니다. "
+            f"저장하지 않은 내용이 있는지 확인하고 창에서 직접 닫아 주세요.")
+
+
+# ── 창 상태 바꾸기 — **바꾸고 나서 본다** (감사 G-08) ──────────────
+#
+# 🚨 예전에는 `maximize_window` 와 `minimize_window` 가 **복사본 둘**이었고,
+#   둘 다 같은 구멍 둘을 갖고 있었다:
+#
+#     ① `IsWindowVisible` 만 봤다 → **cloaked(유령) 창이 True 를 준다.**
+#        BL-26 원인③으로 `is_window_cloaked()` 를 만들어 놓고 **여기엔 안 붙였다.**
+#        정지된 UWP(설정·계산기)에 «최대화해줘» 하면 아무 일도 없이 «✓» 가 나갔다.
+#     ② `ShowWindow` 를 부르고 **결과를 안 봤다.**
+#
+# ⚠️ **`ShowWindow` 의 반환값은 «성공»이 아니다** — «이전에 보이는 창이었나»다.
+#   감사는 «반환값도 안 본다»라고 적었지만, 반환값을 봐도 답이 안 나온다.
+#   진짜 답은 **창에 되묻는 것**이다: `IsZoomed`(최대화됨) · `IsIconic`(최소화됨).
+#
+# 🔑 그리고 **둘을 한 함수로 합쳤다.** 같은 결함이 두 벌로 있으면 한쪽만 고쳐진다 —
+#   이 저장소가 반복해 데인 모양이고, 실제로 여기가 그렇게 됐다.
+
+_SW_MAXIMIZE = 3
+_SW_MINIMIZE = 6
+
+
+def _window_state_is(hwnd: int, kind: str) -> bool:
+    """창이 실제로 그 상태인가. (`max` → IsZoomed · `min` → IsIconic)"""
+    try:
+        u = ctypes.windll.user32
+        return bool(u.IsZoomed(hwnd)) if kind == "max" else bool(u.IsIconic(hwnd))
+    except Exception:                                         # noqa: BLE001
+        return False
+
+
+def _await_window_state(hwnd: int, kind: str, timeout: float = 0.8) -> bool:
+    """상태가 **바뀔 때까지** 잠깐 기다린다. `_await_window`·`_await_gone` 과 같은 자리.
+
+    최소화는 애니메이션이 있어 즉시 반영되지 않을 수 있다. 그렇다고 `sleep` 을
+    박아 두면 되는 경우에도 매번 그만큼 느려진다 — 그래서 **폴링**이다.
+    """
+    deadline = time.monotonic() + max(0.0, timeout)
+    while True:
+        if _window_state_is(hwnd, kind):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
+def _find_app_window(app_key: str, app: str) -> "tuple[int, bool]":
+    """앱의 **사용자가 실제로 볼 수 있는** 창 하나.
+
+    Returns:
+        `(hwnd, 실행중인가)`. 창이 없으면 hwnd 가 0이다.
+    """
+    targets = {t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
+
+    # 매칭 프로세스 PID 전체 수집 (Chrome 등 멀티 프로세스 대응)
+    target_pids: set[int] = set()
+    for proc in psutil.process_iter(["name", "pid"]):
+        try:
+            pname = (proc.info.get("name") or "")
+        except Exception:                                     # noqa: BLE001
+            continue
+        if pname.lower() in targets:
+            target_pids.add(proc.info["pid"])
+    if not target_pids:
+        return (0, False)
+
+    found = ctypes.c_void_p(0)
+
+    def callback(h, _):
+        # 🚨 여기가 G-08 의 본체다. 예전엔 `IsWindowVisible` 이었다 —
+        #   유령 창이 그 검사를 **통과한다.**
+        if not _is_real_window(h):
+            return True
+        buf = ctypes.wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(h, ctypes.byref(buf))
+        if buf.value in target_pids:
+            found.value = h
+            return False
+        return True
+
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND,
+                                     ctypes.wintypes.LPARAM)
+    ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), 0)
+    if found.value:
+        return (int(found.value), True)
+
+    # UWP 앱 폴백: 창 제목으로 (ApplicationFrameHost 등).
+    # ⚠️ 이 폴백은 **이미** cloaked 를 거른다 — `_find_hwnd_by_title` 안에 있다.
+    display = APP_DISPLAY_NAMES.get(app_key, app)
+    return (_find_hwnd_by_title([display, app, app_key]), True)
+
+
+def _change_window_state(app: str, cmd: int, kind: str, verb: str) -> str:
+    """창 상태를 바꾸고 **정말 그렇게 됐는지 보고** 말한다."""
+    if not app:
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        if not hwnd:
+            return f"⚠️ 지금 앞에 있는 창을 찾지 못해 {verb}하지 못했어요."
+        ctypes.windll.user32.ShowWindow(hwnd, cmd)
+        if _await_window_state(hwnd, kind):
+            return f"✓ 현재 창을 {verb}했습니다."
+        _log.warning("[창] %s 실패 | 대상=현재 창 | hwnd=%s", verb, hwnd)
+        return f"⚠️ 지금 앞에 있는 창을 {verb}하지 못했어요."
+
+    app_key = _normalize(app)
+    hwnd, running = _find_app_window(app_key, app)
+    if not running:
+        return f"✗ {app}이(가) 실행 중이지 않습니다."
+    if not hwnd:
+        # 프로세스는 있는데 **보이는 창이 없다.** (크롬처럼 창을 다 닫아도
+        # 백그라운드가 남는 앱 · 정지된 UWP) "실행 중인지 확인하세요"는
+        # 사실과 달라 사용자를 헷갈리게 하므로 정확히 말한다. (P3-3 정직 보고)
+        return (f"⚠️ {app}은(는) 실행 중이지만 열려 있는 창이 없어요. "
+                f"먼저 {app}을(를) 열어 주세요.")
+
+    ctypes.windll.user32.ShowWindow(hwnd, cmd)
+    if _await_window_state(hwnd, kind):
+        return f"✓ {app} 창을 {verb}했습니다."
+    _log.warning("[창] %s 실패 | 앱=%s | hwnd=%s", verb, app, hwnd)
+    return (f"⚠️ {app} 창을 {verb}하지 못했어요. 창이 응답하지 않는 것 같아요.")
 
 
 @tool
@@ -428,57 +943,7 @@ def maximize_window(app: str = "") -> str:
     앱 창을 최대화합니다.
     app: 앱 이름 (비워두면 현재 활성 창)
     """
-    SW_MAXIMIZE = 3
-
-    if app:
-        app_key = _normalize(app)
-        targets = {t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
-
-        # 매칭 프로세스 PID 전체 수집 (Chrome 등 멀티 프로세스 대응)
-        target_pids: set[int] = set()
-        for proc in psutil.process_iter(["name", "pid"]):
-            if proc.info["name"].lower() in targets:
-                target_pids.add(proc.info["pid"])
-
-        if not target_pids:
-            return f"✗ {app}이(가) 실행 중이지 않습니다."
-
-        found = False
-        def callback(h, _):
-            nonlocal found
-            if found:
-                return False  # 첫 번째 창 찾으면 중단
-            if not ctypes.windll.user32.IsWindowVisible(h):
-                return True
-            buf = ctypes.wintypes.DWORD()
-            ctypes.windll.user32.GetWindowThreadProcessId(h, ctypes.byref(buf))
-            if buf.value in target_pids:
-                ctypes.windll.user32.ShowWindow(h, SW_MAXIMIZE)
-                found = True
-                return False
-            return True
-        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
-        ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), 0)
-
-        if found:
-            return f"✓ {app} 창을 최대화했습니다."
-
-        # UWP 앱 fallback: 창 제목으로 검색 (ApplicationFrameHost 등)
-        display = APP_DISPLAY_NAMES.get(app_key, app)
-        hwnd = _find_hwnd_by_title([display, app, app_key])
-        if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, SW_MAXIMIZE)
-            return f"✓ {app} 창을 최대화했습니다."
-
-        # 여기 왔다는 건 프로세스는 있는데 보이는 창이 없다는 뜻이다.
-        # (크롬처럼 창을 다 닫아도 백그라운드 프로세스가 남는 앱이 있다)
-        # "실행 중인지 확인하세요"는 사실과 달라 사용자를 헷갈리게 하므로 정확히 말한다. (P3-3 정직 보고)
-        return (f"⚠️ {app}은(는) 실행 중이지만 열려 있는 창이 없어요. "
-                f"먼저 {app}을(를) 열어 주세요.")
-    else:
-        hwnd = ctypes.windll.user32.GetForegroundWindow()
-        ctypes.windll.user32.ShowWindow(hwnd, SW_MAXIMIZE)
-        return "✓ 현재 창을 최대화했습니다."
+    return _change_window_state(app, _SW_MAXIMIZE, "max", "최대화")
 
 
 @tool
@@ -487,54 +952,7 @@ def minimize_window(app: str = "") -> str:
     앱 창을 최소화합니다.
     app: 앱 이름 (비워두면 현재 활성 창)
     """
-    SW_MINIMIZE = 6
-
-    if app:
-        app_key = _normalize(app)
-        targets = {t.lower() for t in APP_PROCESS_MAP.get(app_key, [f"{app_key}.exe"])}
-
-        target_pids: set[int] = set()
-        for proc in psutil.process_iter(["name", "pid"]):
-            if proc.info["name"].lower() in targets:
-                target_pids.add(proc.info["pid"])
-
-        if not target_pids:
-            return f"✗ {app}이(가) 실행 중이지 않습니다."
-
-        found = False
-        def callback(h, _):
-            nonlocal found
-            if found:
-                return False
-            if not ctypes.windll.user32.IsWindowVisible(h):
-                return True
-            buf = ctypes.wintypes.DWORD()
-            ctypes.windll.user32.GetWindowThreadProcessId(h, ctypes.byref(buf))
-            if buf.value in target_pids:
-                ctypes.windll.user32.ShowWindow(h, SW_MINIMIZE)
-                found = True
-                return False
-            return True
-        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
-        ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), 0)
-
-        if found:
-            return f"✓ {app} 창을 최소화했습니다."
-
-        # UWP 앱 fallback: 창 제목으로 검색
-        display = APP_DISPLAY_NAMES.get(app_key, app)
-        hwnd = _find_hwnd_by_title([display, app, app_key])
-        if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, SW_MINIMIZE)
-            return f"✓ {app} 창을 최소화했습니다."
-
-        # 프로세스는 있는데 보이는 창이 없는 경우 — 정확히 보고한다. (P3-3 정직 보고)
-        return (f"⚠️ {app}은(는) 실행 중이지만 열려 있는 창이 없어요. "
-                f"먼저 {app}을(를) 열어 주세요.")
-    else:
-        hwnd = ctypes.windll.user32.GetForegroundWindow()
-        ctypes.windll.user32.ShowWindow(hwnd, SW_MINIMIZE)
-        return "✓ 현재 창을 최소화했습니다."
+    return _change_window_state(app, _SW_MINIMIZE, "min", "최소화")
 
 
 @tool

@@ -26,6 +26,7 @@
 | **실행 코드** | 서버를 돌리는 데 필요한 것 | 루트 + `core/` `tools/` `services/` `config/` `memory/` `electron-ui/` | 코드와 함께 계속 변함 |
 | **문서** | 개발자·Claude Code가 읽는 것 | `docs/` | 코드 변경에 맞춰 갱신 |
 | **산출물** | 특정 시점 제출·발표용 | `docs/presentation/` | 그 시점 이후 **동결** |
+| **개발 도구** | 서버 실행엔 불필요하지만 개발 중 돌리는 것 | `scripts/` | 필요할 때만 |
 | **아카이브** | 대체됐지만 참고용 보존 | `archive/` | 변경하지 않음 |
 
 발표자료가 `docs/presentation/`으로 따로 빠진 이유가 이것이다. 6월 데모 시점에
@@ -43,18 +44,19 @@ C:\pluiz_v2\
 │
 ├── main.py                 # FastAPI 서버 진입점
 ├── clear_cache.py          # 캐시 초기화 유틸
-├── requirements.txt
+├── requirements.txt        # 하한 + «왜 이 패키지가 필요한가» (사람이 읽는 문서)
+├── requirements.lock.txt   # 정확한 버전 — 재현용. CI도 여기서 버전을 가져온다
 ├── .env / .env.example     # API 키 (.env는 gitignore)
 ├── setup.bat               # 환경 구축 (conda + pip)
 ├── launch.bat              # 서버 + Electron 동시 실행 ← 실제 사용
 ├── start.bat               # 서버만 실행
 │
 ├── .github/workflows/      # CI — mock 테스트 · 문서 링크 · 비밀정보 가드
-├── tests/                  # 자동 테스트 18개 (mock 15 + 서버 필요 3)
+├── tests/                  # 테스트 39파일 (mock 36 + 서버 필요 3). 개수는 docs/README.md
 │
 ├── config/                 # pydantic-settings
 ├── core/                   # 에이전트 엔진 · 보안 · 캐시
-├── tools/                  # LLM이 호출하는 도구 (앱/시스템/파일/웹/입력/캘린더)
+├── tools/                  # LLM이 호출하는 도구 (앱/시스템/파일/웹/날씨/입력/캘린더)
 ├── services/               # STT · TTS · 웨이크워드
 ├── memory/                 # SQLite 세션 기록
 ├── cache/                  # 커맨드 캐시 · 즐겨찾기 (런타임 생성)
@@ -69,8 +71,11 @@ C:\pluiz_v2\
 │   ├── DEVLOG.md
 │   ├── BACKLOG.md
 │   ├── design/             # ADR (설계 결정 기록)
-│   ├── testing/            # 수동 테스트 케이스
-│   └── presentation/       # 발표 자료 (동결)
+│   ├── testing/            # 수동 테스트 — MANUAL_TESTS.md 하나뿐 (2026-09-08 통합)
+│   ├── assets/             # README가 참조하는 이미지 (저장소에 올라간다)
+│   ├── planning/           # 🔒 제품 방향·열린 결정      ─┐
+│   ├── meetings/           # 🔒 미팅 브리프 (날짜별 동결)  ├ .gitignore — 저장소에 없다
+│   └── presentation/       # 🔒 발표 자료 (동결)          ─┘
 │
 └── archive/                # 대체된 산출물 (import 되지 않음)
     ├── core_agent_v1.py    #   구 엔진 PluizAgent — M1-P5에서 대체
@@ -89,7 +94,7 @@ C:\pluiz_v2\
 
 `core/`의 모듈은 **의존성 주입 가능하게** 작성한다. `graph.py`가 llm·tools·security_check를
 인자로 받는 이유는, Windows나 LLM API 없이 mock으로 단위 테스트하기 위해서다.
-이 원칙 덕분에 mock 스위트 158개가 어떤 환경에서든 돈다.
+이 원칙 덕분에 mock 스위트가 어떤 환경에서든 돈다 (개수는 [README 상태표](README.md)).
 
 ### `tools/` — LLM이 호출하는 도구
 
@@ -133,6 +138,43 @@ V1 → V2로 어떻게 발전했는지를 보여주는 게 이 프로젝트의 �
 | `docs/presentation/`은 **평평하게** | `pluiz_presentation.html`이 `src="pluiz_paradigm.svg"`로 상대참조한다. 다이어그램을 하위 폴더로 나누면 슬라이드가 깨진다 | `docs/presentation/pluiz_presentation.html` |
 | `CLAUDE.md`는 **루트** | Claude Code가 루트에서 자동 로드한다 | 도구 규약 |
 | `cache/`는 **루트 기준 계산** | `_BASE_DIR`이 `core/`의 부모로 계산된다. `core/`를 옮기면 캐시 경로가 어긋난다 | [`core/command_cache.py`](../core/command_cache.py) |
+| `core/auth.py`는 **stdlib만 import** | CI mock 잡은 langgraph·langchain-core만 설치한다. fastapi나 pydantic-settings를 끌어오면 `test_auth.py`가 CI에서 죽는다. FastAPI 결합은 전부 `main.py`에 둔다 | [`core/auth.py`](../core/auth.py) · `.github/workflows/tests.yml` |
+| `core/net.py`도 **아무것도 import 하지 않는다** | `tools/web.py`가 망 판정을 봐야 하는데([BL-58](BACKLOG.md)), `core/graph_agent.py`를 부르면 **고리가 생긴다**(graph_agent → tool_registry → tools). 그래서 판정만 떼어 표준 라이브러리로 두었다. 여기에 프로젝트 모듈을 하나라도 import 하면 **그 고리가 되살아난다** — `test_bl58_offline_web.py` ⑤가 검사한다 | [`core/net.py`](../core/net.py) · [`tools/web.py`](../tools/web.py) |
+| 토큰 파일도 **루트 기준 계산** (`cache/.auth_token`) | Electron이 `path.join(__dirname, '..', 'cache', '.auth_token')`로 **따로** 계산한다. 한쪽만 옮기면 UI가 서버에 붙지 못한다 (`test_auth.py`가 이 계약을 검사한다) | [`core/auth.py`](../core/auth.py) · [`electron-ui/main.js`](../electron-ui/main.js) |
+
+---
+
+## `scripts/` — 개발 도구
+
+**서버 실행에는 필요 없지만 개발 중 돌리는 것**을 둔다. 2026-09-02에 생겼다.
+
+| 파일 | 용도 |
+|---|---|
+| `wakeword_data.py` | 웨이크워드 학습 데이터 생성 (edge-tts 합성 · 증강) |
+| `train_wakeword.py` | 웨이크워드 모델 학습 → **`services/wakeword_model_candidate.npz`**<br>⚠️ 런타임 모델을 바로 안 덮는다. 평가를 통과한 뒤 `--replace-runtime`<br>🆕 **코어를 다 쓴다**(`--jobs`, 기본 전부). 🔑 **이 값이 결과를 안 바꾼다** |
+| `wakeword_corpus.py` | 내려받은 말뭉치(MUSAN·RIR·Zeroth·AI Hub)로 **실측 증강** (M7 4단계) |
+| 🆕 `wakeword_parallel.py` | 일감을 코어에 나눠 주는 층 (M7 §6-2). 표준 라이브러리만 쓴다<br>🚨 **씨앗이 일감마다 박혀 있어 «몇 코어로 돌았나»가 결과에 안 샌다** — 새면 후보 둘을 나란히 재도 «설정 때문인지 코어 수 때문인지»를 못 가린다 |
+| `fetch_wakeword_corpora.py` | 그 말뭉치를 받아 `data/corpora/` 에 푼다 (M7 2단계) |
+| `record_wakeword.py` | 「플루이즈」 실제 녹음 (본인용 · Python·마이크 필요) |
+| 🆕 `플루이즈_녹음.html` | **남에게 보내는 녹음 도구.** 설치 없이 브라우저에서 돈다 → `wav` + `json`<br>🚨 **양성만이 아니라 «비슷한 다른 말»과 «잡담»도 같이 받는다** — 그게 이 파일의 존재 이유다(M7 §5-1) |
+| 🆕 `ingest_wakeword.py` | 받아 온 `wav`+`json` → `data/wakeword/` 배열 + 화자 단위 홀드아웃. **stdlib `wave` 만 쓴다** |
+| 🆕 `inspect_wakeword.py` | 받은 녹음을 **재 보고 들어 본다** — 기기별 RMS·피크 표 · `--play <이름>` 으로 구간만 모아 재생<br>🚨 «소리가 작다»가 **임계 문제가 아니라 마이크 게인 문제**임을 숫자로 가른다 |
+| `check_deps_drift.py` | `requirements.lock.txt` 고정 버전 vs PyPI 최신 대조 → [`docs/research/`](research/) ② 항목을 채운다. **stdlib만 쓴다** |
+
+> 📁 **`data/` 는 git 밖이다** (2026-09-16에 `.gitignore`에 넣었다).
+> `*.wav` 는 확장자로 이미 막혔지만 `ingest_wakeword.py` 가 만드는 **`.npy`(수십 MB)와 `.json` 은
+> 안 막혀 있었다** — 하마터면 커밋될 뻔했다. 용량 문제만이 아니라 **사람들 목소리**라서다.
+> 동의받은 범위는 «졸업작품 학습»이지 «공개 저장소 게시»가 아니다.
+
+**규칙 두 가지**
+
+1. **서버 코드(`main.py`·`core/`·`tools/`·`services/`)는 `scripts/`를 import 하지 않는다.**
+   반대 방향만 허용한다. 이걸 어기면 개발 전용 의존성(scikit-learn 등)이 런타임으로 새어든다.
+2. **여기서만 쓰는 의존성은 `requirements.txt`에 그렇게 표시한다.**
+   예: `scikit-learn`은 학습 때만 필요하고 추론은 numpy로 한다.
+   → [design/M2_웨이크워드_전용모델.md](design/M2_웨이크워드_전용모델.md)
+
+산출물(학습된 모델 등)은 `scripts/`가 아니라 **쓰는 쪽**에 둔다 (`services/wakeword_model.npz`).
 
 ---
 
@@ -144,9 +186,14 @@ V1 → V2로 어떻게 발전했는지를 보여주는 게 이 프로젝트의 �
 ├─ 서버 실행에 필요한가?
 │   ├─ Windows/OS를 직접 제어하는가? ─────────→ tools/
 │   ├─ 에이전트 흐름·보안·캐시 로직인가? ─────→ core/
+│   │   (백그라운드 감시 루프처럼 **정책**이 본체이고
+│   │    OS·LLM은 주입받는 것도 여기 — core/screen_monitor.py)
 │   ├─ STT/TTS/웨이크워드인가? ──────────────→ services/
 │   ├─ 설정 스키마인가? ─────────────────────→ config/
 │   └─ 테스트 스크립트인가? ─────────────────→ tests/  (위 제약 참조)
+│
+├─ 개발 중에만 돌리는 도구인가? ───────────────→ scripts/
+│   (모델 학습·데이터 생성 등. 서버는 이걸 import 하지 않는다)
 │
 ├─ 문서인가?
 │   ├─ "왜 이렇게 만들었나" 설계 결정 ────────→ docs/design/  (ADR)
@@ -156,7 +203,14 @@ V1 → V2로 어떻게 발전했는지를 보여주는 게 이 프로젝트의 �
 │   └─ 그 외 상시 참조 문서 ────────────────→ docs/ 루트
 │                                              (+ docs/README.md 인덱스에 추가!)
 │
-├─ 발표·제출용 산출물인가? ───────────────────→ docs/presentation/
+├─ 발표·제출용 산출물인가? ───────────────────→ docs/presentation/  🔒
+├─ 제품 방향·개인 구상인가? ──────────────────→ docs/planning/      🔒
+├─ 미팅·보고용 브리프인가? ───────────────────→ docs/meetings/      🔒
+│   🔒 = .gitignore. 로컬에만 두고 저장소에 올리지 않는다(저장소가 public).
+│        다른 문서에서 **링크가 아니라 경로 문자열로** 언급할 것 —
+│        링크로 걸면 CI 링크 검사와 GitHub 양쪽에서 깨진다.
+│
+├─ README가 보여줄 이미지인가? ───────────────→ docs/assets/  (이건 추적한다)
 │
 ├─ 대체돼서 안 쓰지만 남길 것인가? ────────────→ archive/
 │

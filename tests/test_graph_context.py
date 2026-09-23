@@ -87,6 +87,43 @@ def run():
              AIMessage(content="")]
     check("빈 응답 → ToolMessage 복원", G.verify_output(msgs3) == "배터리 82%입니다")
 
+    print("=== D. 이번 턴 경계 (과거 턴이 현재 응답을 오염시키지 않는다) ===")
+    # state["messages"]는 thread 전체 히스토리다. 예전엔 verify_output이 그걸
+    # 통째로 훑어서, 턴1의 도구 오류가 턴3의 정상 응답을 덮어썼다.
+    stale = [HumanMessage("메모장 열어줘"),
+             ToolMessage(content="[오류] 앱을 찾을 수 없습니다", tool_call_id="x"),
+             AIMessage(content="실행 중 문제가 생겼어요"),
+             HumanMessage("고마워"),
+             AIMessage(content="네, 처리했어요.")]
+    check("과거 턴의 오류로 현재 응답을 보정하지 않음", G.verify_output(stale) is None)
+
+    stale2 = [HumanMessage("배터리 확인"),
+              ToolMessage(content="배터리 82%입니다", tool_call_id="y"),
+              AIMessage(content="82% 남았어요."),
+              HumanMessage("고마워"),
+              AIMessage(content="")]
+    # 문구를 문자열로 박지 않는다 — 여기서 보는 건 "과거 턴의 '배터리 82%'를
+    # 끌어오지 않는다"는 것이다. 문구 자체는 2026-09-03에 바뀌었다
+    # ("명령을 실행했습니다" → 아무 일도 없었으면 됐다고 하지 않는다).
+    _fallback = G.verify_output(stale2)
+    check("빈 응답 복구가 과거 턴 ToolMessage를 끌어오지 않음",
+          _fallback == G._NOTHING_HAPPENED_MSG and "82%" not in _fallback)
+    check("아무 일도 없었으면 '실행했다'고 하지 않는다",
+          "실행했" not in _fallback)
+
+    check("current_turn_messages: 마지막 발화부터",
+          [type(m).__name__ for m in G.current_turn_messages(stale)]
+          == ["HumanMessage", "AIMessage"])
+
+    # 같은 턴 안의 오류는 여전히 잡아야 한다 (기능 유지 확인)
+    same_turn = [HumanMessage("메모장 열어줘"),
+                 AIMessage(content="아직"),
+                 HumanMessage("계산기 열어줘"),
+                 ToolMessage(content="[오류] 앱을 찾을 수 없습니다", tool_call_id="z"),
+                 AIMessage(content="계산기를 실행했어요.")]
+    out = G.verify_output(same_turn)
+    check("이번 턴의 오류는 그대로 보정됨", out is not None and "문제가 생겼어요" in out)
+
     print(f"\n결과: {passed}/{total} 통과")
     return passed == total
 

@@ -153,10 +153,16 @@ if "def get_clipboard_text()" in src_ic:
 else:
     fail("get_clipboard_text 도구 없음")
 
-if src_ic.count("@tool") == 3:
-    ok("@tool 데코레이터 3개 (type_text, get_clipboard_text, press_key)")
+# ⚠️ click_ui_element가 늘면서 4개가 됐는데 이 검사는 3에 고정돼 있었다.
+# 개수를 세는 검사는 도구가 늘 때마다 낡는다 — **이름으로** 본다.
+_ic_tools = ("def type_text(", "def get_clipboard_text(", "def press_key(",
+             "def click_ui_element(")
+_missing_ic = [t for t in _ic_tools if t not in src_ic]
+if not _missing_ic and src_ic.count("@tool") == len(_ic_tools):
+    ok(f"@tool {len(_ic_tools)}개 · 이름까지 일치 (type_text/clipboard/press_key/click_ui)")
 else:
-    fail(f"@tool 데코레이터 수 이상: {src_ic.count('@tool')}개")
+    fail(f"input_control 도구 불일치: 없는 것={_missing_ic} "
+         f"@tool={src_ic.count('@tool')}개 (기대 {len(_ic_tools)})")
 
 if "get_clipboard_text" in src_tr and src_tr.count("get_clipboard_text") >= 2:
     ok("tool_registry에 import + 등록 완료")
@@ -184,10 +190,17 @@ else:
 # ── A-4. T04: 도구 실행 결과 검증 레이어 ─────────────────────────
 print(f"\n{BOLD}▶ A-4. T04: 도구 실행 결과 검증 레이어{RESET}")
 
-if "_TOOL_ERROR_RE = re.compile(" in src_ag:
-    ok("_TOOL_ERROR_RE 패턴 정의됨")
+# BL-29: 판정 규칙은 graph.py가 아니라 core/tool_result.py 하나에 있다.
+# 예전 `_TOOL_ERROR_RE`는 **`✗`가 빠져 있어** 가장 흔한 실패 표시를 놓쳤다.
+if "from core.tool_result import tool_failed" in src_ag and "if tool_failed(c):" in src_ag:
+    ok("T04가 core/tool_result.tool_failed()에 판정을 위임한다 (BL-29)")
 else:
-    fail("_TOOL_ERROR_RE 없음")
+    fail("T04가 tool_failed를 안 쓴다 — 판정 규칙이 두 벌이 됐다")
+
+if "_TOOL_ERROR_RE = re.compile(" not in src_ag:
+    ok("옛 _TOOL_ERROR_RE가 graph.py에 남아 있지 않다")
+else:
+    fail("_TOOL_ERROR_RE가 살아 있다 — 규칙이 두 벌이면 또 어긋난다")
 
 if "_SUCCESS_LIKE_RE = re.compile(" in src_ag:
     ok("_SUCCESS_LIKE_RE 패턴 정의됨")
@@ -207,12 +220,11 @@ else:
     fail("output_guard 검증 단계 없음")
 
 # 패턴 동작 단위 테스트
-_TOOL_ERROR_RE = re.compile(
-    r'^\[(?:오류|error|[가-힣a-zA-Z_]+ 오류)\]'
-    r'|^오류\s*:'
-    r'|^Error\s*:',
-    re.IGNORECASE,
-)
+#
+# ⚠️ 예전엔 여기서 _TOOL_ERROR_RE를 **복사해** 검사했다. 복사본이 통과해도
+#    진짜가 틀릴 수 있다 — BL-29가 정확히 그 모양이었다. 이제 진짜를 부른다.
+from core.tool_result import tool_failed as _tool_failed   # noqa: E402
+
 _SUCCESS_LIKE_RE = re.compile(
     r'(?<!못)(?:했어요|켰어요|열었어요|닫았어요|실행했어요|설정했어요|만들었어요|저장했어요|됐어요|완료했어요|완료)[!.]?\s*$'
 )
@@ -222,6 +234,8 @@ error_cases = [
     ("[type_text 오류] 오류", True),
     ("오류: 파일 없음", True),
     ("Error: not found", True),
+    ("✗ '메모장' 앱을 찾을 수 없습니다.", True),      # ← BL-29: 여기가 새고 있었다
+    ("⚠️ 실행 중인데 창이 없어요.", True),           # ← BL-29
     ("✓ 메모장 실행했습니다.", False),
     ("메모장을 열었어요.", False),
 ]
@@ -234,13 +248,13 @@ success_cases = [
     ("찾을 수 없었어요.", False),
 ]
 
-ep = sum(1 for t, e in error_cases if bool(_TOOL_ERROR_RE.match(t)) == e)
+ep = sum(1 for t, e in error_cases if _tool_failed(t) == e)
 sp = sum(1 for t, e in success_cases if bool(_SUCCESS_LIKE_RE.search(t)) == e)
 
 if ep == len(error_cases):
-    ok(f"_TOOL_ERROR_RE 패턴 {ep}/{len(error_cases)} 케이스 정확")
+    ok(f"tool_failed() {ep}/{len(error_cases)} 케이스 정확 (✗·⚠️ 포함)")
 else:
-    fail(f"_TOOL_ERROR_RE 패턴 오탐: {ep}/{len(error_cases)}")
+    fail(f"tool_failed() 오탐: {ep}/{len(error_cases)}")
 
 if sp == len(success_cases):
     ok(f"_SUCCESS_LIKE_RE 패턴 {sp}/{len(success_cases)} 케이스 정확 (부정형 제외 포함)")
@@ -328,8 +342,22 @@ else:
 
     import requests
 
+    # ── BL-14: 로컬 API 접근 제어 ─────────────────────────────────
+    # 인증이 생겨서 토큰 없는 요청은 전부 401이다. 서버가 기동하며
+    # cache/.auth_token 에 적어 둔 값을 읽어 세션 기본 헤더로 붙인다.
+    # ⚠️ 서버를 재시작하면 토큰이 바뀐다 — 테스트도 그때 다시 실행해야 한다.
+    from core.auth import HEADER_NAME, read_token
+
+    S = requests.Session()
+    _token = read_token()
+    if _token:
+        S.headers[HEADER_NAME] = _token
+    else:
+        print(f"{YELLOW}[경고] cache/.auth_token 을 찾지 못했습니다 — "
+              f"서버가 실행 중이 아니면 전부 401이 납니다.{RESET}")
+
     try:
-        r = requests.get(f"{API}/health", timeout=5)
+        r = S.get(f"{API}/health", timeout=5)
         info(f"서버 응답: {r.json()}")
     except Exception as e:
         print(f"\n{RED}서버 연결 실패: {e}")
@@ -338,7 +366,7 @@ else:
 
     def api(method, path, **kwargs):
         try:
-            fn = getattr(requests, method)
+            fn = getattr(S, method)   # BL-14: 세션이 토큰 헤더를 들고 있다
             return fn(f"{API}{path}", timeout=15, **kwargs)
         except Exception as e:
             return None

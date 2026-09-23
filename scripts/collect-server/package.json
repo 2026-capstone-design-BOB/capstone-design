@@ -1,0 +1,18 @@
+{
+  "name": "pluiz-collect",
+  "version": "1.0.0",
+  "private": true,
+  "description": "웨이크워드 학습용 목소리 수집 — 녹음 페이지 배포 + Blob 업로드 (M7 1-1)",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "pull": "node pull.mjs",
+    "deploy": "npm run build && npx vercel deploy --prod"
+  },
+  "dependencies": {
+    "@vercel/blob": "^2.8.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
