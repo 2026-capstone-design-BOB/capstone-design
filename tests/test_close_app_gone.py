@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""닫는 쪽도 **본 대로 말한다** — `close_app` 의 종료 확인 (감사 G-07)
+"""닫는 쪽도 **본 대로 말한다** — `force_close_app` 의 종료 확인 (감사 G-07 · G-19)
 
 실행: python tests/test_close_app_gone.py
 
@@ -30,11 +30,26 @@ if killed:
 그리고 **«실행 중이지 않습니다»가 거짓이 되는 자리**도 본다 — 권한이 없어 종료를
 요청조차 못 하면, 예전 코드는 «안 켜져 있다»고 답했다. **켜져 있는데도.**
 
-## ⏸️ 여기서 고치지 않은 절반 — 감사 G-19
+## 🔄 2026-09-23 — **주소가 옮겨졌다.** 이 스위트의 대상은 `force_close_app` 이다
+
+G-19를 닫으면서 `close_app` 이 **`terminate()` 를 더는 부르지 않는다.** 이제
+`WM_CLOSE` 로 곱게 닫고, 강제 종료는 **이름이 다른 도구**(`force_close_app`)로 갈라져
+승인을 지난다. → docs/design/G-05-19_승인의_경계.md §4-2
+
+🔑 **그래서 아래 검사를 지우지 않고 `force_close_app` 으로 겨눈다.** G-07이 잡은 결함
+(«요청을 결과로 적는다»)은 도구 이름이 바뀌었을 뿐 **그대로 살아 있고**, 지우면
+새 도구에서 같은 결함이 처음부터 다시 난다 — 이 저장소가 «복사본 둘»로 반복해 데인 모양이다.
+
+📌 **`close_app` 의 새 계약**(WM_CLOSE 를 보낸다 · 남았으면 ✓ 를 안 쓴다 · 창을 못 찾으면
+강제로 끄지 않는다)은 `tests/test_approval_boundary.py` 계약 4가 잡는다.
+
+## ✅ 고치지 않았던 절반 — 감사 G-19, 2026-09-23에 닫혔다
 
 `terminate()` 는 Windows 에서 `TerminateProcess` 라 **저장 대화상자를 띄우지 않는다.**
-저장 안 한 메모장 내용은 승인 한 번 없이 사라진다. **«언제 강제로 꺼도 되나»는
-값 판단**이라(G-05와 같은 성질) 결정이 먼저다. §5가 그 상태를 못 박아 둔다.
+저장 안 한 메모장 내용이 승인 한 번 없이 사라졌다. **«언제 강제로 꺼도 되나»는
+값 판단**이라(G-05와 같은 성질) 결정이 먼저였고, ADR 이 그 결정을 했다 —
+**저장 대화상자가 곧 승인이다.** 우리가 승인을 만든 게 아니라 `terminate()` 가
+**OS 의 승인을 억누르고 있었다.** §6이 그 상태를 못 박는다.
 """
 import io
 import logging
@@ -128,12 +143,16 @@ def run():
                   encoding="utf-8").read()
 
     def close(*procs, wait_boom=None, app="메모장"):
-        """가짜 psutil 로 갈아끼우고 `close_app` 을 돌린다. 원래 것은 되돌린다."""
+        """가짜 psutil 로 갈아끼우고 `force_close_app` 을 돌린다. 원래 것은 되돌린다.
+
+        🔄 2026-09-23 — 겨누는 도구가 `close_app` → `force_close_app` 으로 바뀌었다.
+          `terminate()` 가 그쪽으로 옮겨 갔기 때문이다(머리말 참조).
+        """
         fake = FakePsutil(list(procs), wait_boom=wait_boom)
         saved = app_control.psutil
         app_control.psutil = fake
         try:
-            return app_control.close_app.invoke({"app": app}), fake
+            return app_control.force_close_app.invoke({"app": app}), fake
         finally:
             app_control.psutil = saved
 
@@ -232,17 +251,27 @@ def run():
     #
     # 🔑 §1~§5는 «오늘 그렇게 말한다»를 본다. 여기는 **그 말의 근거가 측정인지**를 본다.
     print("\n§6 구조 — `terminate()` 뒤에 반드시 확인이 있다")
-    body = src[src.index("def close_app"):]
+    body = src[src.index("def force_close_app"):]
     # 🔑 주석은 떼고 본다 — 옛 이름(`killed`)이 **왜 결함이었는지**는 주석에 남아
     #   있어야 하고, 남아 있으면 안 되는 것은 **코드**다.
     code_only = chr(10).join(ln.split("#", 1)[0] for ln in body.splitlines())
-    check("`close_app` 이 `_await_gone` 을 부른다", "_await_gone(" in code_only)
+    check("`force_close_app` 이 `_await_gone` 을 부른다", "_await_gone(" in code_only)
     check("🚨 `terminate()` 결과를 «닫힌 것»으로 세지 않는다 (`killed` 가 사라졌다)",
           "killed" not in code_only, "요청을 결과로 적는 이름이 코드에 남아 있다")
     check("여는 쪽의 대칭이라는 근거가 적혀 있다",
           "_await_window" in src and "G-07" in src)
-    check("⏸️ 고치지 않은 절반(저장 안 한 내용)이 코드에 적혀 있다",
-          "G-19" in src and "TerminateProcess" in src)
+    check("G-19 를 닫은 근거가 코드에 적혀 있다", "G-19" in src)
+    # ── 🔑 G-19 가 실제로 닫혔는가 — **양방향으로** 본다.
+    #   «close_app 이 terminate 를 안 부른다»만 보면 «아무도 못 끄는» 수정이 통과한다.
+    close_body = src[src.index("def close_app("):src.index("def force_close_app(")]
+    close_code = chr(10).join(ln.split("#", 1)[0] for ln in close_body.splitlines())
+    check("🚨 `close_app` 이 `terminate()` 를 **안** 부른다 (G-19)",
+          ".terminate()" not in close_code)
+    check("🔑 그래도 끌 길은 남아 있다 — `force_close_app` 이 부른다",
+          ".terminate()" in code_only)
+    check("둘이 **다른 도구**다 (force 인자가 아니다 · 절대규칙 9)",
+          "def close_app(app: str) -> str:" in src
+          and "def force_close_app(app: str) -> str:" in src)
 
     # ── §7 탐색기는 예전 그대로 ───────────────────────────────────
     #

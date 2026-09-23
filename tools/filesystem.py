@@ -69,13 +69,28 @@ def create_file(name: str, location: str = "desktop", content: str = "") -> str:
         return _SECRET_REFUSE
 
     path = os.path.join(base, name)
-    try:
-        os.makedirs(os.path.dirname(path) or base, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
+
+    def _write(target: str) -> None:
+        with open(target, "w", encoding="utf-8") as f:
             f.write(content)
-        return f"✓ '{name}' 파일을 {location}에 생성했습니다.\n경로: {path}"
+
+    try:
+        how = _write_preserving(path, _write)
     except Exception as e:
         return f"✗ 파일 생성 실패: {e}"
+
+    # 🚨 휴지통을 못 쓰는 환경에서 **내용이 있는 파일**을 만났다. 덮어쓰지 않았다.
+    #   여기 도달했다는 건 3층(승인)도 안 걸렸다는 뜻이라 — 있는 그대로 말한다.
+    if how == OVERWRITE_BLOCKED:
+        return (f"⚠️ '{name}'에 이미 내용이 있어요. 이 환경은 휴지통을 쓸 수 없어서 "
+                f"덮어쓰면 되돌릴 수 없습니다. 그래서 **쓰지 않았어요** — "
+                f"다른 이름으로 저장하거나, 기존 파일을 먼저 지워 주세요.")
+
+    # ⚠️ 덮어썼으면 **덮어썼다고 말한다**(ADR §7-3 계약 6). 새로 만든 응답은 그 말을 안 한다.
+    if how == "overwritten":
+        return (f"✓ '{name}'을(를) {location}에 저장했어요. "
+                f"이미 있던 파일은 휴지통으로 옮겼어요.\n경로: {path}")
+    return f"✓ '{name}' 파일을 {location}에 생성했습니다.\n경로: {path}"
 
 
 @tool
@@ -664,6 +679,11 @@ def write_excel(filename: str, headers: str, rows: str, location: str = "desktop
     if not base:
         return f"✗ '{location}'은(는) 지원하지 않는 위치입니다."
 
+    # 🚨 `create_file` 에는 있고 여기엔 **없었다**(감사 G-06). 여집합으로 두면 또 샌다 —
+    #   기준은 «쓰는 도구는 전부»다. → ADR §4-1
+    if _is_secret_path(filename):
+        return _SECRET_REFUSE
+
     if not filename.endswith(".xlsx"):
         filename += ".xlsx"
     path = os.path.join(base, filename)
@@ -695,11 +715,19 @@ def write_excel(filename: str, headers: str, rows: str, location: str = "desktop
             ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
 
         os.makedirs(base, exist_ok=True)
-        wb.save(path)
-        return f"✓ '{filename}' 엑셀 파일을 저장했습니다.\n경로: {path}"
+        how = _write_preserving(path, wb.save)
 
     except Exception as e:
         return f"✗ 엑셀 파일 생성 실패: {e}"
+
+    if how == OVERWRITE_BLOCKED:
+        return (f"⚠️ '{filename}'에 이미 내용이 있어요. 이 환경은 휴지통을 쓸 수 없어서 "
+                f"덮어쓰면 되돌릴 수 없습니다. 그래서 **쓰지 않았어요** — "
+                f"다른 이름으로 저장하거나, 기존 파일을 먼저 지워 주세요.")
+    if how == "overwritten":
+        return (f"✓ '{filename}' 엑셀 파일을 저장했어요. "
+                f"이미 있던 파일은 휴지통으로 옮겼어요.\n경로: {path}")
+    return f"✓ '{filename}' 엑셀 파일을 저장했습니다.\n경로: {path}"
 
 
 # ── 위험 동작: 삭제 (HITL 승인 대상) ──────────────────────────────
@@ -754,6 +782,91 @@ def _to_trash(path: str) -> str:
         else:
             os.remove(path)
         return "permanent"
+
+
+# ── 덮어쓰기 — 1층으로 닫는다 (G-05 · G-06) ───────────────────────
+#
+# 🚨 예전에는 `create_file`·`write_excel` 이 **말없이 덮어썼다.** 감사 G-05·G-06이다.
+#   답은 «묻자»가 아니다 — 물으면 *"메모 저장해줘"* 마다 승인이 뜨고, 그건
+#   **승인 피로가 승인 절차를 무력화하는** 길이다.
+#   → docs/design/G-05-19_승인의_경계.md §3-1·§4-1
+#
+# 🔑 **기준은 «내용이 있나»지 «있나»가 아니다.** 빈 파일을 덮어쓰면 잃는 게 없다.
+
+def trash_is_available() -> bool:
+    """휴지통(send2trash)을 쓸 수 있나. 못 쓰면 1층이 성립하지 않는다.
+
+    🔑 `core/graph.py::_deletion_is_recoverable()` 과 **같은 사실**을 본다.
+      여기서 import 하지 않는 것은 도구가 그래프를 끌어오지 않게 두기 위해서다
+      (`_confirm_question` 이 그래프를 끌어오지 않는 것과 같은 선이다).
+    """
+    try:
+        import send2trash  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def _has_content(path: str) -> bool:
+    """덮어쓰면 **실제로 잃을 것이 있나.** 없는 파일·빈 파일은 False."""
+    try:
+        return os.path.isfile(path) and os.path.getsize(path) > 0
+    except OSError:
+        return False
+
+
+#: `_write_preserving()` 이 옛 파일을 못 치웠을 때 돌려주는 표식.
+#: 🚨 **덮어쓰지 않았다는 뜻이다** — 호출부는 이걸 성공으로 읽으면 안 된다.
+OVERWRITE_BLOCKED = "__overwrite_blocked__"
+
+
+def _write_preserving(path: str, writer) -> str:
+    """옛 내용을 잃지 않고 쓴다. `'created'|'overwritten'|OVERWRITE_BLOCKED` 반환.
+
+    ⚠️ **순서가 계약이다** — 임시 파일에 먼저 쓰고 → 성공하면 옛 것을 휴지통으로 →
+      바꿔치기. 먼저 휴지통에 보내고 쓰다 실패하면 **새 것도 옛 것도 없는 상태**가 된다.
+      🚨 되돌리려고 만든 수선이 손실 경로를 하나 더 만드는 모양이고,
+      이 저장소가 반복해 데인 자리다. → ADR §4-1
+
+    Args:
+        writer: `writer(임시경로)` — 그 경로에 실제 내용을 쓴다. 예외를 던져도 된다.
+    """
+    overwriting = _has_content(path)
+
+    # 🔑 내용이 있는데 휴지통을 못 쓰면 **아무것도 하지 않는다.**
+    #   여기서 그냥 덮어쓰면 1층(되돌릴 수 있게 만든다)이 조용히 무너진다.
+    #   이 경우는 3층(승인)으로 내려간다 — `core/graph.py` 의 `OVERWRITE_TOOLS`.
+    if overwriting and not trash_is_available():
+        return OVERWRITE_BLOCKED
+
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = f"{path}.pluiz_tmp"
+    try:
+        writer(tmp)
+    except Exception:
+        _quiet_remove(tmp)
+        raise
+
+    if overwriting:
+        try:
+            _to_trash(path)
+        except Exception:
+            _quiet_remove(tmp)       # 옛 것을 못 치웠으면 새 것도 안 남긴다
+            raise
+    try:
+        os.replace(tmp, path)
+    except Exception:
+        _quiet_remove(tmp)
+        raise
+    return "overwritten" if overwriting else "created"
+
+
+def _quiet_remove(path: str) -> None:
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
 
 
 @tool
