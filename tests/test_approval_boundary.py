@@ -48,11 +48,12 @@ def _src(relpath):
 def run():
     passed = total = 0
 
-    def check(name, cond):
+    def check(name, cond, detail=""):
         nonlocal passed, total
         total += 1
         passed += bool(cond)
-        print(f"  {'✓' if cond else '✗ FAIL'} {name}")
+        print(f"  {'✓' if cond else '✗ FAIL'} {name}"
+              + ("" if cond or not detail else f"   → {detail}"))
 
     G = _load("pluiz_graph_ab", os.path.join("core", "graph.py"))
     FS = _load("pluiz_fs_ab", os.path.join("tools", "filesystem.py"))
@@ -81,9 +82,18 @@ def run():
         full = os.path.join(tmp, "내용있음.txt")
         with open(full, "w", encoding="utf-8") as f:
             f.write("옛 내용")
+        # 🔄 2026-09-23 — 기본이 «덮어쓰지 않는다»로 뒤집혔다(사용자 지적).
+        #   *"언제 지워달랬어"* — 저장해 달라고 했지 지워 달라고 한 적이 없다.
         how = FS._write_preserving(full, lambda t: open(t, "w", encoding="utf-8").write("새 내용"))
-        check("내용 있는 파일 → 'overwritten'", how == "overwritten")
-        check("옛 것이 휴지통으로 갔다", trashed == [full])
+        check("🔑 내용 있는 파일 → **안 쓴다**", how == FS.OVERWRITE_BLOCKED, how)
+        check("🔑 옛 것이 **휴지통에 안 간다**", trashed == [], trashed)
+        check("🔑 옛 내용이 그대로다", open(full, encoding="utf-8").read() == "옛 내용")
+
+        # 명시적으로 덮어쓰라고 하면(= `overwrite_file` 도구 · 승인을 지난다) 덮어쓴다
+        how = FS._write_preserving(full, lambda t: open(t, "w", encoding="utf-8").write("새 내용"),
+                                   overwrite=True)
+        check("overwrite=True → 'overwritten'", how == "overwritten", how)
+        check("그때는 옛 것이 휴지통으로 간다", trashed == [full], trashed)
         check("새 내용이 남았다", open(full, encoding="utf-8").read() == "새 내용")
 
         # ═══ 계약 2 — 쓰기가 실패하면 옛 파일이 그대로 있다 ═══════════
@@ -97,7 +107,7 @@ def run():
             raise OSError("디스크가 꽉 찼다")
 
         try:
-            FS._write_preserving(keep, _boom)
+            FS._write_preserving(keep, _boom, overwrite=True)
             raised = False
         except OSError:
             raised = True
@@ -116,8 +126,9 @@ def run():
         blocked = os.path.join(tmp, "막혀야함.txt")
         with open(blocked, "w", encoding="utf-8") as f:
             f.write("잃으면 안 되는 것")
-        how = FS._write_preserving(blocked, lambda t: open(t, "w", encoding="utf-8").write("새것"))
-        check("휴지통 없음 + 내용 있음 → OVERWRITE_BLOCKED", how == FS.OVERWRITE_BLOCKED)
+        how = FS._write_preserving(blocked, lambda t: open(t, "w", encoding="utf-8").write("새것"),
+                                   overwrite=True)
+        check("휴지통 없음 + 덮어쓰라고 해도 → OVERWRITE_BLOCKED", how == FS.OVERWRITE_BLOCKED)
         check("🔑 **덮어쓰지 않았다**", open(blocked, encoding="utf-8").read() == "잃으면 안 되는 것")
 
         gone = os.path.join(tmp, "휴지통없어도된다.txt")
@@ -132,14 +143,17 @@ def run():
         danger_trash = G.dangerous_tools_now()
         G._deletion_is_recoverable = real_recoverable
 
-        check("휴지통 없으면 create_file 이 승인 대상이 된다",
-              "create_file" in danger_no_trash and "write_excel" in danger_no_trash)
-        check("🔑 휴지통이 있으면 **안 묻는다** (승인 피로 · ADR §3-1)",
-              "create_file" not in danger_trash and "write_excel" not in danger_trash)
-        check("어느 쪽이든 삭제·클릭·강제종료는 항상 승인 대상이다",
-              G.DANGEROUS_TOOLS <= danger_trash and G.DANGEROUS_TOOLS <= danger_no_trash)
-        check("DANGEROUS_TOOLS 상수 자체는 안 바뀐다(테스트가 그 이름에 걸려 있다)",
-              "create_file" not in G.DANGEROUS_TOOLS)
+        # 🔄 2026-09-23 — 환경에 따라 승인 목록이 달라지던 것이 없어졌다.
+        #   덮어쓰기가 **이름이 다른 도구**로 갈라지면서 «휴지통을 쓸 수 있나»가
+        #   목록을 바꾸지 않는다. (못 쓰면 `overwrite_file` 이 아예 안 쓰고 말한다)
+        check("🔑 승인 목록이 **환경에 안 달렸다**", danger_trash == danger_no_trash,
+              f"{sorted(danger_trash)} vs {sorted(danger_no_trash)}")
+        check("🔑 `create_file` 은 어느 쪽이든 **승인 대상이 아니다**",
+              "create_file" not in danger_trash)
+        check("🚨 `overwrite_file` 은 **항상** 승인 대상이다",
+              "overwrite_file" in danger_trash and "overwrite_file" in danger_no_trash)
+        check("삭제·클릭·강제종료도 항상 승인 대상이다",
+              G.DANGEROUS_TOOLS <= danger_trash)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -168,7 +182,7 @@ def run():
           "force_close_app" in G.DANGEROUS_TOOLS)
     check("🔑 close_app 은 **없다** (*'계산기 꺼줘'* 마다 묻지 않는다)",
           "close_app" not in G.DANGEROUS_TOOLS)
-    check("승인 대상은 넷이다", len(G.DANGEROUS_TOOLS) == 4)
+    check("승인 대상은 다섯이다", len(G.DANGEROUS_TOOLS) == 5, sorted(G.DANGEROUS_TOOLS))
 
     REG = _src(os.path.join("core", "tool_registry.py"))
     check("force_close_app 이 실제로 등록돼 있다", "force_close_app," in REG)
@@ -192,11 +206,12 @@ def run():
     q_click = G._confirm_question([{"name": "click_ui_element", "args": {"target": "저장"}}])
     check("클릭 질문은 여전히 «되돌릴 수 없어요»다(회귀 방지)", "되돌릴 수 없어요" in q_click)
 
-    q_write = G._confirm_question([{"name": "create_file", "args": {"name": "메모.txt"}}])
-    check("덮어쓰기 질문이 파일 이름을 부른다", "메모.txt" in q_write)
-    check("덮어쓰기 질문이 «덮어쓸까요»다", "덮어쓸까요" in q_write)
-    check("🔑 덮어쓰기 질문에 «휴지통으로 갑니다»가 **없다**",
-          "휴지통으로 갑니다" not in q_write)
+    q_write = G._confirm_question([{"name": "overwrite_file", "args": {"name": "메모.txt"}}])
+    check("덮어쓰기 질문이 파일 이름을 부른다", "메모.txt" in q_write, q_write)
+    check("덮어쓰기 질문이 «덮어쓸까요»다", "덮어쓸까요" in q_write, q_write)
+    check("🔑 잃는 것이 «파일»이 아니라 «지금 내용»이라고 말한다",
+          "지금 내용" in q_write, q_write)
+    check("🔑 조사가 안 깨진다(«…를의» 가 아니다)", "를의" not in q_write, q_write)
 
     q_two = G._confirm_question([
         {"name": "delete_file", "args": {"file_path": "a.txt"}},
@@ -205,20 +220,27 @@ def run():
     check("둘이 같이 오면 둘 다 말한다", "a.txt" in q_two and "그림판" in q_two)
 
     # ═══ 계약 6 — 덮어쓴 응답이 덮어썼다고 말한다 / 새 파일은 그 말을 안 한다 ═══
-    print("=== 계약 6 · 덮어썼으면 그렇게 말한다 ===")
+    print("=== 계약 6 · 이미 있으면 **안 쓰고 말한다** ===")
     FS_SRC = _src(os.path.join("tools", "filesystem.py"))
     cf = FS_SRC[FS_SRC.index("def create_file("):FS_SRC.index("def create_folder(")]
-    check("덮어쓴 응답에 «휴지통으로 옮겼어요»가 있다", "휴지통으로 옮겼어요" in cf)
-    check("🔑 새로 만든 응답은 **그 말을 안 한다**",
-          cf.count("휴지통으로 옮겼어요") == 1 and "'{name}' 파일을 {location}에 만들었어요" in cf)
-    check("막힌 경우엔 «쓰지 않았어요»라고 말한다", "쓰지 않았어요" in cf)
-    check("막힌 경우엔 ✓ 를 쓰지 않는다",
-          "OVERWRITE_BLOCKED" in cf and cf.index("OVERWRITE_BLOCKED") < cf.index("✓ '{name}'"))
+    check("이미 있으면 «덮어쓰지 않았어요»라고 말한다", "덮어쓰지 않았어요" in cf)
+    check("🔑 **다른 이름을 권한다** (사용자 지적)", "다른 이름으로 할까요" in cf)
+    check("🔑 덮어쓰는 길도 알려 준다", "덮어써 줘" in cf)
+    check("🚨 `create_file` 이 휴지통을 **안 부른다**",
+          "휴지통" not in cf and "_to_trash" not in cf)
+    check("막힌 응답은 ✓ 가 아니라 ⚠️ 다(도구가 터진 게 아니라 묻는 것)",
+          "⚠️ '{name}'이(가)" in cf)
 
-    we = FS_SRC[FS_SRC.index("def write_excel("):FS_SRC.index("# ── 위험 동작: 삭제")]
+    ow = FS_SRC[FS_SRC.index("def overwrite_file("):FS_SRC.index("# ── 위험 동작: 삭제")]
+    check("`overwrite_file` 이 명시적으로 덮어쓴다", "overwrite=True" in ow)
+    check("덮어썼으면 **덮어썼다고** 말한다", "덮어썼어요" in ow)
+    check("🔑 덮을 것이 없었으면 «덮어썼다»고 **안 한다**", "없어서 새로 만들었어요" in ow)
+    check("휴지통을 못 쓰면 **그때도 안 쓴다**", "되돌릴 수 없어요" in ow)
+
+    we = FS_SRC[FS_SRC.index("def write_excel("):FS_SRC.index("def overwrite_file(")]
     check("write_excel 도 같은 길을 쓴다(사본 둘이 안 된다)", "_write_preserving" in we)
     check("🚨 write_excel 에 비밀 파일 검사가 생겼다 (감사 G-06)", "_is_secret_path" in we)
-    check("write_excel 도 덮어썼다고 말한다", "휴지통으로 옮겼어요" in we)
+    check("write_excel 도 이미 있으면 안 쓴다", "덮어쓰지 않았어요" in we)
 
     # ═══ 안전망 — 승인 대상인데 등록이 안 되면 «못 하게» 된다 ═══════
     print("=== 안전망 · 승인 대상은 전부 실제 도구여야 한다 ===")

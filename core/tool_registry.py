@@ -38,6 +38,7 @@ def get_all_tools() -> List[BaseTool]:
         open_recent_file,
         open_file,
         write_excel,
+        overwrite_file,
         delete_file,
         delete_folder,
     )
@@ -149,5 +150,11 @@ def get_all_tools() -> List[BaseTool]:
     #   언젠가 지어낸다(절대규칙 9와 같은 모양).
     #   → docs/design/G-05-19_승인의_경계.md §4-2
     tools += [force_close_app]
+
+    # 덮어쓰기(위험 동작 — 옛 내용이 사라진다). 승인 대상이다.
+    # 🔑 `create_file` 은 이미 있는 이름이면 **안 쓰고 물어본다.** 둘을 이름이 다른
+    #   도구로 나눈 것이 `close_app`/`force_close_app` 과 같은 규칙이다.
+    #   → docs/design/G-05-19_승인의_경계.md §4-1
+    tools += [overwrite_file]
 
     return tools
