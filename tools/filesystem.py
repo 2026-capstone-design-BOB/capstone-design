@@ -79,17 +79,15 @@ def create_file(name: str, location: str = "desktop", content: str = "") -> str:
     except Exception as e:
         return f"✗ 파일 생성 실패: {e}"
 
-    # 🚨 휴지통을 못 쓰는 환경에서 **내용이 있는 파일**을 만났다. 덮어쓰지 않았다.
-    #   여기 도달했다는 건 3층(승인)도 안 걸렸다는 뜻이라 — 있는 그대로 말한다.
+    # 🔑 **이미 그 이름이 쓰이고 있으면 안 쓴다.** 사용자는 저장해 달라고 했지
+    #   지워 달라고 한 적이 없다 — 여기서 말없이 덮어쓰면 남의 파일을 지우는 셈이다.
+    #   ⚠️ `✗` 가 아니라 `⚠️` 다: 도구가 터진 게 아니라 **되묻는** 것이다.
+    #   → docs/design/G-05-19_승인의_경계.md §4-1 (2026-09-23 개정)
     if how == OVERWRITE_BLOCKED:
-        return (f"⚠️ '{name}'에 이미 내용이 있어요. 이 환경은 휴지통을 쓸 수 없어서 "
-                f"덮어쓰면 되돌릴 수 없어요. 그래서 **쓰지 않았어요** — "
-                f"다른 이름으로 저장하거나, 기존 파일을 먼저 지워 주세요.")
+        return (f"⚠️ '{name}'이(가) {location}에 이미 있고 내용이 들어 있어요. "
+                f"덮어쓰지 않았어요 — 다른 이름으로 할까요? "
+                f"정말 덮어쓰려면 «덮어써 줘»라고 말해 주세요.")
 
-    # ⚠️ 덮어썼으면 **덮어썼다고 말한다**(ADR §7-3 계약 6). 새로 만든 응답은 그 말을 안 한다.
-    if how == "overwritten":
-        return (f"✓ '{name}'을(를) {location}에 저장했어요. "
-                f"이미 있던 파일은 휴지통으로 옮겼어요.\n경로: {path}")
     return f"✓ '{name}' 파일을 {location}에 만들었어요.\n경로: {path}"
 
 
@@ -721,13 +719,52 @@ def write_excel(filename: str, headers: str, rows: str, location: str = "desktop
         return f"✗ 엑셀 파일 생성 실패: {e}"
 
     if how == OVERWRITE_BLOCKED:
-        return (f"⚠️ '{filename}'에 이미 내용이 있어요. 이 환경은 휴지통을 쓸 수 없어서 "
-                f"덮어쓰면 되돌릴 수 없어요. 그래서 **쓰지 않았어요** — "
-                f"다른 이름으로 저장하거나, 기존 파일을 먼저 지워 주세요.")
-    if how == "overwritten":
-        return (f"✓ '{filename}' 엑셀 파일을 저장했어요. "
-                f"이미 있던 파일은 휴지통으로 옮겼어요.\n경로: {path}")
+        return (f"⚠️ '{filename}'이(가) {location}에 이미 있고 내용이 들어 있어요. "
+                f"덮어쓰지 않았어요 — 다른 이름으로 할까요? "
+                f"정말 덮어쓰려면 «덮어써 줘»라고 말해 주세요.")
     return f"✓ '{filename}' 엑셀 파일을 저장했어요.\n경로: {path}"
+
+
+@tool
+def overwrite_file(name: str, location: str = "desktop", content: str = "") -> str:
+    """이미 있는 파일을 **덮어씁니다**. 옛 내용은 사라지고 휴지통으로 갑니다.
+    되돌리기 어려운 위험 동작이라 반드시 사용자 승인을 받은 뒤 실행됩니다.
+
+    먼저 create_file 을 쓰세요. 그것이 "이미 있어요, 덮어쓰지 않았어요"라고 답했고
+    사용자가 "덮어써 줘"처럼 **명시적으로** 덮어쓰기를 원할 때만 이 도구를 씁니다.
+    name: 파일명 (확장자 포함)
+    location: 위치 — 기본 바탕화면 (desktop/바탕화면, downloads, documents)
+    content: 새로 쓸 내용
+    """
+    # 🚨 **`create_file(overwrite=True)` 로 만들지 않았다.** 절대규칙 9와 같은 모양이다 —
+    #   «LLM 이 넘길 수 있으면 언젠가 지어낸다.» 좌표가 그랬고 `force=True` 가 그랬다.
+    #   **이름이 다른 도구**여야 `DANGEROUS_TOOLS` 가 그것만 걸 수 있다.
+    #   → docs/design/G-05-19_승인의_경계.md §4-1 (2026-09-23 개정)
+    base = _resolve_location(location)
+    if not base:
+        return f"✗ '{location}'은(는) 지원하지 않는 위치예요."
+    if _is_secret_path(name):
+        return _SECRET_REFUSE
+
+    path = os.path.join(base, name)
+
+    def _write(target: str) -> None:
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    try:
+        how = _write_preserving(path, _write, overwrite=True)
+    except Exception as e:
+        return f"✗ 덮어쓰기 실패: {e}"
+
+    # 🚨 여기 오는 경우는 **휴지통을 못 쓰는 환경뿐**이다. 되돌릴 길이 없으면 안 한다.
+    if how == OVERWRITE_BLOCKED:
+        return (f"⚠️ 이 환경은 휴지통을 쓸 수 없어서 덮어쓰면 되돌릴 수 없어요. "
+                f"'{name}'을(를) 그대로 뒀어요 — 다른 이름으로 저장해 주세요.")
+    if how == "overwritten":
+        return (f"✓ '{name}'을(를) 덮어썼어요. 옛 내용은 휴지통에 있어요.\n경로: {path}")
+    # 덮어쓰라고 했는데 덮을 것이 없었다 — 있는 그대로 말한다(«덮어썼다»가 거짓이 된다)
+    return (f"✓ '{name}'이(가) 없어서 새로 만들었어요.\n경로: {path}")
 
 
 # ── 위험 동작: 삭제 (HITL 승인 대상) ──────────────────────────────
@@ -815,28 +852,49 @@ def _has_content(path: str) -> bool:
         return False
 
 
-#: `_write_preserving()` 이 옛 파일을 못 치웠을 때 돌려주는 표식.
-#: 🚨 **덮어쓰지 않았다는 뜻이다** — 호출부는 이걸 성공으로 읽으면 안 된다.
+#: `_write_preserving()` 이 **아무것도 쓰지 않았을 때** 돌려주는 표식.
+#: 🚨 «실패»가 아니라 **«안 했다»** 는 뜻이다 — 호출부는 이걸 성공으로 읽으면 안 되고,
+#:   실패로 읽어도 안 된다(도구가 터진 게 아니다). 사용자에게 **묻는** 자리다.
 OVERWRITE_BLOCKED = "__overwrite_blocked__"
 
 
-def _write_preserving(path: str, writer) -> str:
+def _write_preserving(path: str, writer, overwrite: bool = False) -> str:
     """옛 내용을 잃지 않고 쓴다. `'created'|'overwritten'|OVERWRITE_BLOCKED` 반환.
 
-    ⚠️ **순서가 계약이다** — 임시 파일에 먼저 쓰고 → 성공하면 옛 것을 휴지통으로 →
-      바꿔치기. 먼저 휴지통에 보내고 쓰다 실패하면 **새 것도 옛 것도 없는 상태**가 된다.
-      🚨 되돌리려고 만든 수선이 손실 경로를 하나 더 만드는 모양이고,
-      이 저장소가 반복해 데인 자리다. → ADR §4-1
+    🔑 **기본은 «덮어쓰지 않는다»다** (2026-09-23 · 사용자 지적으로 뒤집혔다).
+
+    처음 설계는 *"묻지 말고 옛 것을 휴지통으로 보낸 뒤 덮어쓰자"* 였다.
+    **그 전제가 틀렸다** — 사용자는 저장해 달라고 했지 **지워 달라고 한 적이 없다.**
+
+    > *"이미 있던 파일을 휴지통으로 옮기면 안 되는 거잖아? 언제 지워달랬어.
+    >  이미 그 이름을 가진 파일이 있으니 다른 이름을 선택해야 된다고 하던가."*
+
+    맞는 지적이다. 셋 다 틀렸었다:
+      · «휴지통이니 되돌릴 수 있다»는 **사용자가 그 사실을 알아야** 성립한다.
+        음성으로 들으면 흘려듣는다.
+      · 이름이 겹치는 것은 **대부분 실수**다(그 파일이 있다는 걸 잊은 것).
+      · «승인 피로»는 **모든 저장에 승인을 걸 때**의 이야기지,
+        «이름이 겹칠 때만»은 드물어서 피로가 안 생긴다.
+
+    그래서 `close_app` / `force_close_app` 과 **같은 모양**으로 맞췄다 —
+    평소에는 안 건드리고, 덮어쓰려면 **이름이 다른 도구**가 승인을 받아서 한다.
 
     Args:
         writer: `writer(임시경로)` — 그 경로에 실제 내용을 쓴다. 예외를 던져도 된다.
-    """
-    overwriting = _has_content(path)
+        overwrite: True 면 **명시적으로 덮어쓴다**(옛 것은 휴지통으로).
+            🚨 `overwrite_file` 도구만 True 를 준다. 그 도구는 승인을 지난다.
 
-    # 🔑 내용이 있는데 휴지통을 못 쓰면 **아무것도 하지 않는다.**
-    #   여기서 그냥 덮어쓰면 1층(되돌릴 수 있게 만든다)이 조용히 무너진다.
-    #   이 경우는 3층(승인)으로 내려간다 — `core/graph.py` 의 `OVERWRITE_TOOLS`.
-    if overwriting and not trash_is_available():
+    ⚠️ **순서가 계약이다** — 임시 파일에 먼저 쓰고 → 성공하면 옛 것을 휴지통으로 →
+      바꿔치기. 먼저 휴지통에 보내고 쓰다 실패하면 **새 것도 옛 것도 없는 상태**가 된다.
+    """
+    occupied = _has_content(path)
+
+    # 🔑 내용이 있는데 덮어쓰라는 말이 없으면 **아무것도 하지 않는다.**
+    if occupied and not overwrite:
+        return OVERWRITE_BLOCKED
+
+    # 덮어쓰라고 했는데 휴지통을 못 쓰면 되돌릴 길이 없다 — 그때도 안 한다.
+    if occupied and not trash_is_available():
         return OVERWRITE_BLOCKED
 
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -847,7 +905,7 @@ def _write_preserving(path: str, writer) -> str:
         _quiet_remove(tmp)
         raise
 
-    if overwriting:
+    if occupied:
         try:
             _to_trash(path)
         except Exception:
@@ -858,7 +916,7 @@ def _write_preserving(path: str, writer) -> str:
     except Exception:
         _quiet_remove(tmp)
         raise
-    return "overwritten" if overwriting else "created"
+    return "overwritten" if occupied else "created"
 
 
 def _quiet_remove(path: str) -> None:

@@ -64,33 +64,35 @@ _NL = chr(10)
 # 🔑 앞의 셋은 «(A) 대상 확인»이고 `force_close_app`은 «(B) 손실 고지»다.
 #   → docs/design/G-05-19_승인의_경계.md §2·§4-2
 DANGEROUS_TOOLS = {"delete_file", "delete_folder", "click_ui_element",
-                   "force_close_app"}
+                   "force_close_app", "overwrite_file"}
 
-# ── 덮어쓰기는 보통 승인 대상이 **아니다** (G-05) ─────────────────
+# ── 덮어쓰기는 **이름이 다른 도구**가 맡는다 (G-05 · 2026-09-23 개정) ──
 #
-# `create_file`·`write_excel`은 옛 파일을 **휴지통으로 보내고** 쓴다(1층).
-# 되돌릴 수 있으니 묻지 않는다 — *"메모 저장해줘"* 마다 승인이 뜨면
-# **승인 피로가 승인 절차 전체를 무력화한다**(ADR §3-1).
+# 🔄 처음에는 «`create_file` 이 옛 것을 휴지통으로 보내고 덮어쓴다. 묻지 않는다» 였다.
+#   **사용자가 뒤집었다** — *"언제 지워달랬어. 이미 그 이름을 가진 파일이 있으니
+#   다른 이름을 선택해야 된다고 하던가."* 맞는 말이다. 저장해 달라고 했지
+#   지워 달라고 한 적이 없다.
 #
-# 🚨 **딱 한 환경에서만 3층으로 내려간다** — `send2trash`가 없으면 휴지통이
-#   없고, 그러면 덮어쓰기가 **영구 손실**이 된다. 그 환경에서는 1층이 성립하지
-#   않으므로 이 둘을 승인 대상에 넣는다. → `dangerous_tools_now()`
-OVERWRITE_TOOLS = {"create_file", "write_excel"}
+# 🔑 그래서 `close_app`/`force_close_app` 과 **같은 모양**으로 맞췄다 —
+#   `create_file` 은 이름이 겹치면 **안 쓰고 말하고**, 덮어쓰기는 `overwrite_file`
+#   이라는 **이름이 다른 도구**가 승인을 받아서 한다.
+#   승인 피로도 안 생긴다: 이름이 겹치는 일 자체가 드물다.
+#: 덮어쓰기 도구. 승인 문구가 «삭제»도 «클릭»도 아니라 따로 필요하다.
+OVERWRITE_TOOLS = {"overwrite_file"}
 
 
 def dangerous_tools_now() -> set:
     """이 환경에서 승인을 받아야 하는 도구 이름.
 
-    🔑 **호출마다가 아니라 «환경마다» 달라진다.** `send2trash` 설치 여부는
-      프로세스가 도는 동안 바뀌지 않으므로 그래프를 **조립할 때 한 번** 물으면 된다.
-      (`build_graph(dangerous_tools=...)`가 이미 주입 가능하게 돼 있다)
+    🔄 2026-09-23 — 환경에 따라 달라지던 것이 없어졌다. 덮어쓰기가 **이름이 다른
+      도구**로 갈라지면서 «휴지통을 쓸 수 있나»가 승인 목록을 바꾸지 않는다.
+      (휴지통을 못 쓰면 `overwrite_file` 이 **아예 안 쓰고** 그렇게 말한다)
 
-    ⚠️ `DANGEROUS_TOOLS` 자체를 바꾸지 않는다 — 그 상수는 «항상 위험한 것»의
-      목록이고 테스트가 그 이름으로 고정돼 있다.
+    함수는 남겨 둔다 — `build_graph(dangerous_tools=…)` 가 이걸 받고 있고,
+    다음에 또 환경에 달린 위험 도구가 생기면 여기가 그 자리다.
     """
-    if _deletion_is_recoverable():
-        return set(DANGEROUS_TOOLS)
-    return set(DANGEROUS_TOOLS) | OVERWRITE_TOOLS
+    return set(DANGEROUS_TOOLS)
+
 
 # 계획의 **안 해 본 단계**를 한 번 더 시도할 때만 묶는 도구들 (M-01 · M3-2)
 #
@@ -365,10 +367,15 @@ def _confirm_question(dcalls: Any) -> str:
         parts.append(f"저장하지 않은 내용은 사라져요. {_join_targets(forces)}을(를) "
                      "강제로 종료할까요?")
     if writes:
-        # 🚨 여기 오는 경우는 **휴지통을 쓸 수 없는 환경뿐**이다(`dangerous_tools_now`).
-        #   그래서 «휴지통으로 갑니다»를 쓰면 안 된다.
-        parts.append(f"{_join_targets(writes)}에 이미 내용이 있어요. "
-                     "덮어쓰면 ⚠️ 휴지통을 거치지 않고 사라져요. 덮어쓸까요?")
+        # 🔑 여기서 잃는 것은 **파일이 아니라 옛 내용**이다. 이름은 그대로 남는다.
+        #   ⚠️ `_join_targets` 는 목적격 조사를 붙인다(«…를»). 여기는 «…의»가
+        #   필요해서 그걸 쓸 수 없다 — 대상 이름만 따로 잇는다.
+        names = " · ".join(_describe_call(c) for c in writes)
+        more = "" if len(writes) == 1 else f" 총 {len(writes)}개"
+        recover = ("옛 내용은 휴지통에서 되돌릴 수 있어요"
+                   if _deletion_is_recoverable()
+                   else "⚠️ 휴지통을 못 써서 **되돌릴 수 없어요**")
+        parts.append(f"{names}{more}의 지금 내용이 사라져요. {recover}. 덮어쓸까요?")
     return " 그리고 ".join(parts)
 
 
