@@ -303,6 +303,106 @@ def _curve(model, sessions, soak_paths):
     return rows, soak_hours
 
 
+def josa(word, pair):
+    """이름 뒤에 붙는 조사를 받침에 맞춘다 — «포큐파인가 낫다»를 막는다.
+
+    `print_compare_table` 이 모델 이름을 **밖에서 받기** 때문에 필요해졌다
+    («기준/후보»만 쓰던 동안에는 손으로 적어도 맞았다).
+    """
+    a, b = pair                                  # (받침 있을 때, 없을 때)
+    last = word.strip()[-1:] if word.strip() else ""
+    if not last or not ("가" <= last <= "힣"):
+        return word + b                          # 한글이 아니면 받침을 못 따진다
+    return word + (a if (ord(last) - 0xAC00) % 28 else b)
+
+
+def print_compare_table(base_rows, cand_rows, fa_key, src, n_calls, *,
+                        base_name="기준", cand_name="후보", point_label="임계",
+                        is_soak=True, revert_hint=None):
+    """두 곡선을 **같은 FA/시간에서** 맞대고 판정까지 낸다.
+
+    🔒 `cmd_compare`(npz 후보)와 `eval_porcupine.py`(상용 대조)가 **이 함수 하나**를 쓴다.
+       판정 규칙 — «도달 가능한 가장 낮은 FA 에서 누가 나은가» · «곡선이 교차하면
+       ‹전체적으로 낫다›고 말하지 않는다» — 을 **두 곳에 베껴 두면** 언젠가 한쪽만
+       고쳐지고, 그러면 **어느 모델을 고를지가 도구에 따라 달라진다.**
+
+    `point_label` 은 운용점의 이름이다 — 우리 모델은 «임계», 포큐파인은 «민감도»이고
+    **방향도 반대**다(민감도는 올릴수록 더 깬다). 그래서 이름을 밖에서 받는다.
+    """
+
+    print(f"\n── 같은 FA/시간에서의 FRR — FA 출처: {src} · 호출 {n_calls}회 ──")
+    print(f"   괄호 안은 그 FA 예산에 맞춘 **{point_label}**(운용점)이다")
+    print(f"{'FA/시간':>8} | {base_name + ' FRR':>12} | {cand_name + ' FRR':>12} | 판정")
+    print("-" * 62)
+    wins = {"cand": 0, "base": 0, "tie": 0}
+    low_fa_verdict = None
+    any_row = False
+    for tgt in COMPARE_FA_TARGETS:
+        b = _best_under(base_rows, tgt, fa_key)
+        c = _best_under(cand_rows, tgt, fa_key)
+        if b is None and c is None:
+            print(f"{tgt:>8.0f} | {'못 간다':>12} | {'못 간다':>12} | 둘 다 이 예산으로 못 간다")
+            continue
+        any_row = True
+        # 🔑 소수 셋째 자리까지 — 0.999 를 «1.00» 으로 적으면 **없는 임계**를 말하게 된다
+        bs = f"{pct(b['frr'])} ({b['threshold']:.3f})" if b else "못 간다"
+        cs = f"{pct(c['frr'])} ({c['threshold']:.3f})" if c else "못 간다"
+        if b is None:
+            verdict, who = f"🟢 {cand_name}만 간다", "cand"
+        elif c is None:
+            verdict, who = f"🔴 {josa(cand_name, ('은', '는'))} 못 간다", "base"
+        elif abs(b["frr"] - c["frr"]) < 1e-9:
+            verdict, who = "= 같다", "tie"
+        elif c["frr"] < b["frr"]:
+            verdict, who = f"🟢 {josa(cand_name, ('이', '가'))} 낫다", "cand"
+        else:
+            verdict, who = f"🔴 {josa(base_name, ('이', '가'))} 낫다", "base"
+        wins[who] += 1
+        if low_fa_verdict is None:
+            low_fa_verdict = (tgt, who)          # 도달 가능한 **가장 낮은 FA** 에서의 판정
+        print(f"{tgt:>8.0f} | {bs:>12} | {cs:>12} | {verdict}")
+
+    print("\n── 판정 ──────────────────────────────────────")
+    if not any_row:
+        print("  ❌ **두 모델 다 어떤 FA 예산에도 못 간다.** 표를 넓히거나 자를 의심할 것")
+        return 1
+    goal = _best_under(cand_rows, 1.0, fa_key)
+    goal_b = _best_under(base_rows, 1.0, fa_key)
+    print(f"  전시회 목표(FA ≤ 1회/시간): "
+          f"{base_name} {'FRR ' + pct(goal_b['frr']) if goal_b else '**못 간다**'} · "
+          f"{cand_name} {'FRR ' + pct(goal['frr']) if goal else '**못 간다**'}")
+    print(f"  칸 수 — {cand_name} 우세 {wins['cand']} · {base_name} 우세 {wins['base']} · 같음 {wins['tie']}")
+    tgt, who = low_fa_verdict
+    말 = {"cand": f"**{josa(cand_name, ('이', '가'))} 낫다**",
+         "base": f"**{josa(base_name, ('이', '가'))} 낫다**", "tie": "**둘이 같다**"}[who]
+    print(f"  🔴 도달 가능한 가장 낮은 FA({tgt:.0f}회/시간)에서는 {말}.")
+    if wins["cand"] and wins["base"]:
+        print("  ⚠️ **곡선이 교차한다.** «전체적으로 낫다»고 적지 않는다 —")
+        print("     우리가 필요한 쪽은 **FA 가 낮은 쪽**이고, 위 한 줄이 그 답이다.")
+
+    # ── 🔴 권고 — 이 도구가 존재하는 이유다. «누가 나은가»에서 멈추지 않는다 ──
+    #    M7 § 되돌림 기준: «FA/시간이 현행보다 나쁘면 즉시 되돌린다».
+    #    그 기준에 **어느 임계에서 비교하는지가 없었고**, 그래서 여기서 정한다 —
+    #    같은 FA 예산에 맞춰 놓고 FRR 이 나쁘면 나쁜 것이다.
+    print()
+    if wins["base"] and not wins["cand"]:
+        print(f"  🚨 **되돌림 권고: {josa(cand_name, ('을', '를'))} 버린다.** "
+              f"도달 가능한 모든 FA 예산에서 {josa(base_name, ('이', '가'))} 낫다.")
+        if revert_hint:
+            print(f"     {revert_hint}")
+    elif wins["cand"] and not wins["base"]:
+        print(f"  ✅ **채택 권고: {josa(cand_name, ('이', '가'))} 낫다.** "
+              f"도달 가능한 모든 FA 예산에서 {josa(cand_name, ('이', '가'))} 낫다.")
+        print("     ⚠️ 그래도 **목표(FA ≤ 1)에 닿았는지는 따로 본다** — 위 첫 줄이 그 답이다.")
+    else:
+        print("  ⏸️ **자동으로 못 정한다.** 곡선이 교차하거나 판정이 엇갈린다 —")
+        print("     **사람이 운용점을 먼저 고르고**(FA 예산을 정하고) 그 줄만 본다.")
+    if not is_soak:
+        print("\n  🚨 **이 판정으로 되돌림을 정하지 않는다.** FA 출처가 라벨 녹음이다.")
+        print("     `--soak <긴 오디오>` 를 같이 줘야 전시회 값이 나온다.")
+    return 0
+
+
 def _best_under(rows, target, fa_key):
     """FA/시간이 `target` 이하인 운용점 중 **FRR 이 가장 낮은 것**.
 
@@ -349,74 +449,13 @@ def cmd_compare(base_model, cand_path, sessions, soak_paths, th_default):
 
     fa_key = "fa_soak" if soak_paths else "fa_rec"
     src = f"긴 오디오 {hours:.2f}시간" if soak_paths else f"라벨 녹음(참고)"
-    n_calls = base_rows[0]["pos_total"]
 
-    print(f"\n── 같은 FA/시간에서의 FRR — FA 출처: {src} · 호출 {n_calls}회 ──")
-    print(f"{'FA/시간':>8} | {'기준 FRR':>12} | {'후보 FRR':>12} | 판정")
-    print("-" * 62)
-    wins = {"cand": 0, "base": 0, "tie": 0}
-    low_fa_verdict = None
-    any_row = False
-    for tgt in COMPARE_FA_TARGETS:
-        b = _best_under(base_rows, tgt, fa_key)
-        c = _best_under(cand_rows, tgt, fa_key)
-        if b is None and c is None:
-            print(f"{tgt:>8.0f} | {'못 간다':>12} | {'못 간다':>12} | 둘 다 이 예산으로 못 간다")
-            continue
-        any_row = True
-        # 🔑 소수 셋째 자리까지 — 0.999 를 «1.00» 으로 적으면 **없는 임계**를 말하게 된다
-        bs = f"{pct(b['frr'])} ({b['threshold']:.3f})" if b else "못 간다"
-        cs = f"{pct(c['frr'])} ({c['threshold']:.3f})" if c else "못 간다"
-        if b is None:
-            verdict, who = "🟢 후보만 간다", "cand"
-        elif c is None:
-            verdict, who = "🔴 후보는 못 간다", "base"
-        elif abs(b["frr"] - c["frr"]) < 1e-9:
-            verdict, who = "= 같다", "tie"
-        elif c["frr"] < b["frr"]:
-            verdict, who = "🟢 후보가 낫다", "cand"
-        else:
-            verdict, who = "🔴 기준이 낫다", "base"
-        wins[who] += 1
-        if low_fa_verdict is None:
-            low_fa_verdict = (tgt, who)          # 도달 가능한 **가장 낮은 FA** 에서의 판정
-        print(f"{tgt:>8.0f} | {bs:>12} | {cs:>12} | {verdict}")
-
-    print("\n── 판정 ──────────────────────────────────────")
-    if not any_row:
-        print("  ❌ **두 모델 다 어떤 FA 예산에도 못 간다.** 표를 넓히거나 자를 의심할 것")
-        return 1
-    goal = _best_under(cand_rows, 1.0, fa_key)
-    goal_b = _best_under(base_rows, 1.0, fa_key)
-    print(f"  전시회 목표(FA ≤ 1회/시간): "
-          f"기준 {'FRR ' + pct(goal_b['frr']) if goal_b else '**못 간다**'} · "
-          f"후보 {'FRR ' + pct(goal['frr']) if goal else '**못 간다**'}")
-    print(f"  칸 수 — 후보 우세 {wins['cand']} · 기준 우세 {wins['base']} · 같음 {wins['tie']}")
-    tgt, who = low_fa_verdict
-    말 = {"cand": "**후보가 낫다**", "base": "**기준이 낫다**", "tie": "**둘이 같다**"}[who]
-    print(f"  🔴 도달 가능한 가장 낮은 FA({tgt:.0f}회/시간)에서는 {말}.")
-    if wins["cand"] and wins["base"]:
-        print("  ⚠️ **곡선이 교차한다.** «전체적으로 낫다»고 적지 않는다 —")
-        print("     우리가 필요한 쪽은 **FA 가 낮은 쪽**이고, 위 한 줄이 그 답이다.")
-
-    # ── 🔴 권고 — 이 도구가 존재하는 이유다. «누가 나은가»에서 멈추지 않는다 ──
-    #    M7 § 되돌림 기준: «FA/시간이 현행보다 나쁘면 즉시 되돌린다».
-    #    그 기준에 **어느 임계에서 비교하는지가 없었고**, 그래서 여기서 정한다 —
-    #    같은 FA 예산에 맞춰 놓고 FRR 이 나쁘면 나쁜 것이다.
-    print()
-    if wins["base"] and not wins["cand"]:
-        print("  🚨 **되돌림 권고: 후보를 버린다.** 도달 가능한 모든 FA 예산에서 기준이 낫다.")
-        print("     `git checkout services/wakeword_model.npz` (아직 안 바꿨다면 바꾸지 않는다)")
-    elif wins["cand"] and not wins["base"]:
-        print("  ✅ **채택 권고: 후보가 낫다.** 도달 가능한 모든 FA 예산에서 후보가 낫다.")
-        print("     ⚠️ 그래도 **목표(FA ≤ 1)에 닿았는지는 따로 본다** — 위 첫 줄이 그 답이다.")
-    else:
-        print("  ⏸️ **자동으로 못 정한다.** 곡선이 교차하거나 판정이 엇갈린다 —")
-        print("     **사람이 운용점을 먼저 고르고**(FA 예산을 정하고) 그 줄만 본다.")
-    if not soak_paths:
-        print("\n  🚨 **이 판정으로 되돌림을 정하지 않는다.** FA 출처가 라벨 녹음이다.")
-        print("     `--soak <긴 오디오>` 를 같이 줘야 전시회 값이 나온다.")
-    return 0
+    return print_compare_table(
+        base_rows, cand_rows, fa_key, src,
+        n_calls=base_rows[0]["pos_total"],
+        is_soak=bool(soak_paths),
+        revert_hint="`git checkout services/wakeword_model.npz` (아직 안 바꿨다면 바꾸지 않는다)",
+    )
 
 
 def main():

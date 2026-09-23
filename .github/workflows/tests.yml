@@ -2,7 +2,9 @@ name: tests
 
 on:
   push:
-    branches: [main, develop, "feature/**"]
+    # dev/** 가 빠져 있어서 dev/post-demo 21커밋 동안 CI가 한 번도 안 돌았다.
+    # 병합일(main)에 CI가 처음 켜지며 빨갛게 뜨는 것을 막는다. (2026-09-21)
+    branches: [main, develop, "feature/**", "dev/**"]
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
@@ -95,7 +97,7 @@ jobs:
       - name: 상대링크·이미지 참조 검증
         run: |
           python - <<'EOF'
-          import os, re, glob, sys
+          import os, re, glob, sys, subprocess
 
           LINK = re.compile(r'\[([^\]]*)\]\(([^)#]+?)(#[^)]*)?\)')
           IMG  = re.compile(r'src="([^"]+)"')
@@ -107,8 +109,28 @@ jobs:
               실제 참조로 오인하지 않도록 한다."""
               return INLINE.sub('', FENCE.sub('', s))
 
+          def gitignored(paths):
+              """.gitignore 가 무시하는 경로의 집합.
+
+              check-ignore 는 파일이 없어도 «패턴으로» 판정하므로, 체크아웃에
+              아예 존재하지 않는 docs/planning·docs/meetings 가 여기서 잡힌다.
+
+              이 저장소는 개인 계획·미팅 문서를 추적하지 않는데(.gitignore 82~83줄)
+              로컬에는 있어서 링크가 정상 동작한다. 그 링크를 CI가 «깨졌다»고 세면
+              검사가 상시 빨간 상태가 되고, 그러면 진짜 깨진 링크를 못 본다 —
+              2026-09-21에 실제로 14건이 이 이유로 쌓여 있었다.
+              (기존 관례는 «백틱 인라인 코드로 적는다»였지만, 그러면 로컬에서도
+               클릭이 안 된다. 사람이 읽는 쪽을 살리고 검사를 고쳤다.)"""
+              cand = sorted({p for p in paths if p and not p.startswith('..')})
+              if not cand:
+                  return set()
+              r = subprocess.run(['git', 'check-ignore', '--stdin', '-z'],
+                                 input='\0'.join(cand).encode(),
+                                 stdout=subprocess.PIPE)
+              return {x for x in r.stdout.decode().split('\0') if x}
+
           files = glob.glob('*.md') + glob.glob('docs/**/*.md', recursive=True) + glob.glob('archive/*.md')
-          bad = tot = 0
+          refs = []
           for f in files:
               base = os.path.dirname(f)
               text = strip_code(open(f, encoding='utf-8').read())
@@ -117,11 +139,18 @@ jobs:
               for t, kind in targets:
                   if t.startswith(('http://', 'https://', 'mailto:', 'data:')):
                       continue
-                  tot += 1
-                  if not os.path.exists(os.path.normpath(os.path.join(base, t))):
-                      bad += 1
-                      print(f"::error file={f}::깨진 {kind} -> {t}")
-          print(f"참조 {tot}개 검사 / 깨진 것 {bad}개")
+                  refs.append((f, t, kind, os.path.normpath(os.path.join(base, t))))
+
+          skip = gitignored([r[3] for r in refs])
+          bad = skipped = 0
+          for f, t, kind, rel in refs:
+              if rel in skip:
+                  skipped += 1
+                  continue
+              if not os.path.exists(rel):
+                  bad += 1
+                  print(f"::error file={f}::깨진 {kind} -> {t}")
+          print(f"참조 {len(refs)}개 검사 / 건너뜀(.gitignore) {skipped}개 / 깨진 것 {bad}개")
           sys.exit(1 if bad else 0)
           EOF
 
