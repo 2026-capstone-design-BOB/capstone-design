@@ -298,22 +298,15 @@ def _focus_window(app_key: str) -> bool:
     if not found_hwnd:
         return False
 
-    # Windows 포그라운드 권한 우회 (AttachThreadInput 트릭)
-    try:
-        SW_RESTORE = 9
-        fg_hwnd = ctypes.windll.user32.GetForegroundWindow()
-        fg_tid  = ctypes.windll.user32.GetWindowThreadProcessId(fg_hwnd, None)
-        my_tid  = ctypes.windll.kernel32.GetCurrentThreadId()
-        if fg_tid and fg_tid != my_tid:
-            ctypes.windll.user32.AttachThreadInput(my_tid, fg_tid, True)
-        ctypes.windll.user32.ShowWindow(found_hwnd, SW_RESTORE)
-        ctypes.windll.user32.BringWindowToTop(found_hwnd)
-        ctypes.windll.user32.SetForegroundWindow(found_hwnd)
-        if fg_tid and fg_tid != my_tid:
-            ctypes.windll.user32.AttachThreadInput(my_tid, fg_tid, False)
-        return True
-    except Exception:
-        return False
+    # Windows 포그라운드 권한 우회(AttachThreadInput 트릭)는 **한 곳에만** 둔다.
+    # ⚠️ 2026-09-22 이전에는 이 함수 안에 사본이 있었고, `tools/system.py` 쪽에는
+    #   맨손 `SetForegroundWindow`만 있었다. 같은 문제를 푼 코드가 둘로 갈리면
+    #   한쪽만 고쳐진다(BL-64 커밋의 「복사본 둘」 · 감사 G-08) — 실제로 그랬고,
+    #   시연에서 설정 창이 다른 창 뒤에서 열렸다.
+    # 🚨 그리고 예전엔 **무조건 True를 돌려줬다.** 거부됐는데 「앞으로 가져왔습니다」로
+    #   끝나던 자리다(BACKLOG의 «설정은 뜨지 않았다»). 이제 확인한 결과를 돌려준다.
+    from tools.system import bring_hwnd_to_front
+    return bring_hwnd_to_front(found_hwnd)
 
 
 def _resolve_path(app_key: str) -> str | None:

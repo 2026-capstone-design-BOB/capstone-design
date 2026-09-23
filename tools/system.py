@@ -476,6 +476,58 @@ def resolve_window_hwnd(window: str) -> tuple[int, str]:
     return (find_hwnd_for_app(window), window)
 
 
+def bring_hwnd_to_front(hwnd: int) -> bool:
+    """hwnd를 실제로 **전면**에 올린다. 성공 시 True.
+
+    ## 왜 이게 따로 있나 (2026-09-22 · 시연에서 깨졌다)
+
+    맨손 `SetForegroundWindow`는 **Windows가 거부한다.** 다른 앱이 활성인 상태에서
+    백그라운드 스레드가 포그라운드를 뺏는 것을 OS가 막기 때문이다. 거부되면
+    창은 «열렸지만 뒤에 있는» 상태가 되고, 그 위에 동그라미만 그려진다 —
+    9/22 시연의 「블루투스 어디서 켜」가 정확히 그 그림이었다.
+
+    ⚠️ **우회(AttachThreadInput)는 `app_control._focus_window`에 이미 있었다.**
+    사본 둘이 갈려서 한쪽만 고쳐져 있던 것이다(BL-64 커밋이 경계한 그 모양).
+    그래서 **여기 한 곳에 두고 양쪽이 같이 부른다.**
+
+    반환값은 «올라갔나»다 — `SetForegroundWindow`의 반환값이 아니라
+    **`GetForegroundWindow()`로 다시 확인한 결과**다. 호출한 쪽이 «앞에 있다»고
+    거짓 보고하지 않도록(BL-12와 같은 이유).
+    """
+    import ctypes
+    import time as _t
+
+    if not hwnd:
+        return False
+
+    u = ctypes.windll.user32
+    SW_RESTORE = 9
+    try:
+        if u.IsIconic(hwnd):
+            u.ShowWindow(hwnd, SW_RESTORE)
+
+        fg_hwnd = u.GetForegroundWindow()
+        if fg_hwnd == hwnd:
+            return True
+
+        fg_tid = u.GetWindowThreadProcessId(fg_hwnd, None)
+        my_tid = ctypes.windll.kernel32.GetCurrentThreadId()
+        attached = bool(fg_tid) and fg_tid != my_tid
+        if attached:
+            u.AttachThreadInput(my_tid, fg_tid, True)
+        try:
+            u.BringWindowToTop(hwnd)
+            u.SetForegroundWindow(hwnd)
+        finally:
+            if attached:
+                u.AttachThreadInput(my_tid, fg_tid, False)
+
+        _t.sleep(0.25)
+        return u.GetForegroundWindow() == hwnd
+    except Exception:
+        return False
+
+
 def capture_origin(window: str = "") -> tuple[int, int]:
     """캡처 이미지의 (0,0)이 화면의 어느 좌표인지. 전체화면이면 (0, 0).
 
@@ -493,8 +545,13 @@ def capture_origin(window: str = "") -> tuple[int, int]:
 def ensure_window_ready(window: str, launch: bool = True) -> dict:
     """포인팅·탐색 **전에** 창을 «볼 수 있는 상태»로 만든다.
 
-    반환 `{"ok", "action", "label", "reason"}`.
+    반환 `{"ok", "action", "label", "reason", "fronted"}`.
     `action`은 `""` · `"launched"` · `"restored"` · `"fronted"` 중 하나다.
+
+    ⚠️ **`fronted`는 `action`과 다른 것을 말한다.** `action`은 «무엇을 했나»이고
+      `fronted`는 «결과가 실제로 앞에 있나»다. 창을 열었는데 뒤에서 열리면
+      `action="launched"` · `fronted=False`가 된다. 이 둘을 한 칸에 합치면
+      「열었어요」라고 말하면서 사용자 눈에는 아무것도 안 보이는 상태가 된다.
 
     ## 왜 필요한가 (2026-09-09 사용자 요청)
 
@@ -515,7 +572,7 @@ def ensure_window_ready(window: str, launch: bool = True) -> dict:
     import ctypes
     import time as _t
 
-    out = {"ok": True, "action": "", "label": window, "reason": ""}
+    out = {"ok": True, "action": "", "label": window, "reason": "", "fronted": True}
     if not window:
         return out                      # 전체화면 — 만들 상태가 없다
 
@@ -545,25 +602,30 @@ def ensure_window_ready(window: str, launch: bool = True) -> dict:
             return out
         out.update(action="launched", label=label or window)
         _t.sleep(0.6)                   # 첫 렌더가 끝나도록
-        return out
+        # 🚨 **여기서 return 하지 않는다.** 예전엔 했고, 그래서 **새로 연 창만**
+        #    ③(전면화)을 건너뛰었다. 이미 떠 있던 창은 앞으로 오는데 방금 연 창은
+        #    뒤에서 열리는 비대칭이었다 — 2026-09-22 시연에서 설정이 다른 창 뒤에서
+        #    열리고 그 위에 동그라미만 그려진 원인이다.
+        #    (`fast_path` 히트를 조기 return으로 «최적화»하지 말라는 것과 같은 모양이다.)
 
     # ② 최소화돼 있다 → 되살린다 (그리고 **다시 최소화하지 않는다**)
     if u.IsIconic(hwnd):
         u.ShowWindow(hwnd, 9)           # SW_RESTORE
         _t.sleep(0.4)
-        out["action"] = "restored"
+        if not out["action"]:
+            out["action"] = "restored"
 
     # ③ 뒤에 있다 → 앞으로. 실패해도 진행한다 —
     #    Windows가 포그라운드 전환을 거부하는 경우가 있는데(다른 앱이 활성),
-    #    그때도 창은 보이므로 캡처와 표시는 된다.
-    try:
-        if u.GetForegroundWindow() != hwnd:
-            u.SetForegroundWindow(hwnd)
-            _t.sleep(0.25)
+    #    그때도 창은 보이므로 캡처(PrintWindow)는 된다. 다만 **사용자 눈에는 안 보이므로**
+    #    실패를 `fronted_failed`로 남긴다 — 「앞으로 가져왔습니다」라고 거짓 보고하지 않는다.
+    if u.GetForegroundWindow() != hwnd:
+        if bring_hwnd_to_front(hwnd):
             if not out["action"]:
                 out["action"] = "fronted"
-    except Exception:
-        pass
+        else:
+            out["fronted"] = False
+            out["reason"] = f"'{out['label']}' 창을 전면에 올리지 못했습니다"
     return out
 
 

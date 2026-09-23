@@ -678,11 +678,18 @@ def prepared_note(loc) -> str:
     """
     p = (loc or {}).get("prepared") or {}
     label = p.get("label") or ""
-    return {
+    note = {
         "launched": f"'{label}'이(가) 꺼져 있어서 먼저 열었어요. ",
         "restored": f"'{label}'이(가) 최소화돼 있어서 다시 띄웠어요. ",
         "fronted":  f"'{label}'을(를) 앞으로 가져왔어요. ",
     }.get(p.get("action") or "", "")
+
+    # 🚨 창이 뒤에 있으면 **표시는 보이지 않는다.** 캡처는 되니까(PrintWindow) 좌표도
+    #   나오고 동그라미도 그려지지만, 사용자 눈에는 가린 창 위에 동그라미만 뜬다 —
+    #   2026-09-22 시연에서 본 그림이다. 「열었어요」로 끝내면 거짓말이 된다.
+    if p.get("fronted") is False and label:
+        note += f"다만 '{label}' 창이 다른 창에 가려져 있어요. 그 창을 눌러서 앞으로 꺼내 주세요. "
+    return note
 
 
 @tool
