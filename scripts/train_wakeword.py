@@ -4,7 +4,7 @@
 실행:
     python scripts/train_wakeword.py                      # 실측 증강 (기본 · 말뭉치가 있어야 한다)
     python scripts/train_wakeword.py --augment mimic      # 옛 «흉내» 증강 (말뭉치 없이)
-    python scripts/train_wakeword.py --user-audio a.npy   # 실제 녹음 추가 (선택)
+    python scripts/train_wakeword.py --no-recordings       # 실제 녹음을 빼고 (합성음만)
     python scripts/train_wakeword.py --jobs 1             # 한 코어만 (기본은 전부)
 
 ## 🆕 2026-09-19 — 코어를 전부 쓴다 (M7 §6-1)
@@ -55,6 +55,7 @@ V2에서 **torch를 의도적으로 제거**했다(→ docs/presentation/pluiz_e
 
 import argparse
 import asyncio
+import io
 import os
 import sys
 import time
@@ -76,6 +77,27 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_DIR = os.path.join(ROOT, "cache", "wakeword_tts")   # 합성음 (재사용)
 MODEL_PATH = os.path.join(ROOT, "services", "wakeword_model.npz")
 WIN_SEC = 2.0
+
+# ── 🔴 실제 녹음이 **기본으로** 들어간다 (2026-09-23) ──────────────
+#
+# 🚨 여기가 비어 있던 것이 이 프로젝트가 웨이크워드를 두 번 실패한 원인이다.
+#   그런데 2026-09-23 실기에서 **세 번째로 같은 일이 일어날 뻔했다** —
+#   `ingest_wakeword.py` 가 6명의 녹음을 `data/wakeword/*.npy` 로 만들어 뒀는데
+#   학습은 `--user-audio` 를 **명시해야만** 읽었다. 그냥 돌리면:
+#
+#       ② 실제 녹음 없음 — 목소리 14개로 학습한다
+#
+#   ...그리고 검증셋도 같은 합성음이라 **94%가 나온다.** §2-4가 «학습셋과 같은
+#   편향을 공유하는 검증셋은 결함을 볼 수 없는 눈»이라고 적어 둔 그 숫자다.
+#
+# 🔑 **기본을 «넣는 쪽»으로 뒤집었다.** 빼려면 `--no-recordings` 를 명시한다.
+#   안전한 기본값은 «데이터를 안 쓰는 것»이 아니라 «있으면 쓰는 것»이다 —
+#   빠뜨려서 나는 손해가 잘못 넣어서 나는 손해보다 훨씬 크고, 조용하다.
+REC_DIR = os.path.join(ROOT, "data", "wakeword")
+REC_POS = os.path.join(REC_DIR, "positive.npy")     # 사람이 말한 「플루이즈」
+REC_NEG = os.path.join(REC_DIR, "negative.npy")     # 🔴 사람이 말한 **다른 말**
+REC_MANIFEST = os.path.join(REC_DIR, "manifest.json")
+RAW_DIR = os.path.join(ROOT, "data", "wakeword_raw")
 
 
 def make_augmenter(kind, refresh=False):
@@ -141,7 +163,8 @@ _SPEECH_PER_TASK = 25
 
 
 def plan_dataset(pos_paths, neg_paths, loud_starts, aug_per_clip,
-                 speech_negatives, seed=0, has_augmenter=True, quiet=False):
+                 speech_negatives, seed=0, has_augmenter=True, quiet=False,
+                 loud_starts_neg=()):
     """**무거운 일을 하기 전에 일감 목록을 전부 만든다.**
 
     예전에는 증강하면서 창을 리스트에 붙이고, 다 붙인 뒤 개수를 보고 «음성이 모자라면
@@ -192,6 +215,17 @@ def plan_dataset(pos_paths, neg_paths, loud_starts, aug_per_clip,
 
     # ── 음성 ──────────────────────────────────────────────────────
     neg = [Recipe("clip", p, neg_aug, 0, 0) for p in neg_paths]
+
+    # ── 🔴 **같은 마이크로 녹음한 «플루이즈가 아닌 말»** (2026-09-23) ──
+    # 위 ══ 블록이 *"실제 마이크 · 음성 : 0개 ← 여기가 비어 있다"* 라고 진단하고
+    # *"고치려면 같은 마이크로 「플루이즈가 아닌 말」을 녹음해 음성에 넣어야 한다"*
+    # 고 적어 둔 그 자리다. 🚨 **녹음은 이미 그걸 받고 있었다**(녹음 페이지가
+    # 양성·음성·자유발화를 따로 받는다). 배선만 없었다.
+    #
+    # 🔑 양성보다 **더 많이 증강한다**(×3). 양성 녹음 20문장 대 음성 10문장처럼
+    #   원본이 적은 쪽이라, 개수를 안 맞추면 지름길이 절반만 막힌다.
+    for st in loud_starts_neg:
+        neg.append(Recipe("user_neg", int(st), aug_per_clip * 3, 0, 0))
     for i in range(0, NOISE_WINDOWS, _NOISE_PER_TASK):
         neg.append(Recipe("noise", None, min(_NOISE_PER_TASK, NOISE_WINDOWS - i), 0, 0))
 
@@ -248,16 +282,21 @@ def plan_dataset(pos_paths, neg_paths, loud_starts, aug_per_clip,
 _W = {}
 
 
-def init_worker(augmenter, user_audio_path=""):
-    """워커 하나를 차린다 — ONNX 임베딩 모델 · 증강기 · 사용자 녹음.
+def init_worker(augmenter, user_audio_path="", user_neg_path=""):
+    """워커 하나를 차린다 — ONNX 임베딩 모델 · 증강기 · 사용자 녹음 **둘**.
 
     ⚠️ `ncpu=1` 을 **명시한다.** 워커를 16개 띄워 놓고 각자 스레드를 여러 개 쓰면
        서로 코어를 뺏는다(oversubscription) — 병렬화가 **느려지는** 고전적 모양이다.
+
+    🔴 **음성(negative) 녹음도 같이 싣는다.** 양성만 실으면 학습셋에서
+      «진짜 마이크 오디오»가 전부 양성이 되고, 모델은 단어가 아니라
+      «합성음이냐 마이크냐»를 배운다(위 `plan_dataset` 머리 참조).
     """
     from openwakeword.utils import AudioFeatures
     _W["af"] = AudioFeatures(ncpu=1)
     _W["augmenter"] = augmenter
     _W["ua"] = np.load(user_audio_path) if user_audio_path else None
+    _W["ua_neg"] = np.load(user_neg_path) if user_neg_path else None
 
 
 def _windows(rec, rng):
@@ -269,6 +308,11 @@ def _windows(rec, rng):
     if rec.kind == "user":
         # 발화 구간(에너지 높은 곳)만 골라 양성으로 쓴다 — 자리는 계획에서 정해졌다
         seg = _W["ua"][rec.ref:rec.ref + int(SR * WIN_SEC)]
+        return [to_window(v, rng, WIN_SEC) for v in _aug(aug, seg, rng, rec.n)]
+    if rec.kind == "user_neg":
+        # 🔴 **같은 마이크로 녹음한 «플루이즈가 아닌 말».** 이 줄이 없으면
+        #   «마이크 소리 = 양성»이라는 지름길이 학습셋에 그대로 남는다.
+        seg = _W["ua_neg"][rec.ref:rec.ref + int(SR * WIN_SEC)]
         return [to_window(v, rng, WIN_SEC) for v in _aug(aug, seg, rng, rec.n)]
     if rec.kind == "noise":
         out = []
@@ -298,6 +342,43 @@ def cook(rec):
     return rec.label, extract_features(_windows(rec, rng), _W["af"])
 
 
+def describe_recordings() -> str:
+    """녹음이 누구 것인지 한 줄로. 못 읽으면 빈 문자열(조용히 넘어간다)."""
+    try:
+        import json
+        m = json.load(io.open(REC_MANIFEST, encoding="utf-8"))
+        who = {s.get("speaker") for s in m.get("sessions", []) if s.get("speaker")}
+        return f" · 화자 {len(who)}명" if who else ""
+    except Exception:                                         # noqa: BLE001
+        return ""
+
+
+def check_recordings_fresh() -> None:
+    """녹음이 늘었는데 `.npy` 가 안 따라왔으면 **크게** 말한다.
+
+    🚨 2026-09-23에 실제로 그 상태였다 — `ingest_wakeword.py --list` 는 6명을
+      보는데 `data/wakeword/manifest.json` 에는 3명뿐이었다. 그대로 학습하면
+      **절반만 넣고 «녹음을 넣었다»고 말하게 된다.** 조용히 적게 학습하는 것이
+      이 저장소가 반복해서 데인 모양이라 여기서 소리를 낸다.
+
+    ⚠️ 막지는 않는다. 사람이 일부러 그럴 수 있고, 막으면 학습 자체가 못 돈다.
+    """
+    try:
+        import glob
+        import json
+        raw = len(glob.glob(os.path.join(RAW_DIR, "*.wav")))
+        if not raw:
+            return
+        m = json.load(io.open(REC_MANIFEST, encoding="utf-8"))
+        used = len(m.get("sessions", []))
+        if raw > used:
+            print(f"  🚨 **녹음 {raw}개 중 {used}개만 학습에 들어간다.** "
+                  f"`data/wakeword/*.npy` 가 낡았다.")
+            print(f"     먼저 이걸 돌릴 것: python scripts/ingest_wakeword.py")
+    except Exception:                                         # noqa: BLE001
+        pass
+
+
 def loud_segments(user_audio_path):
     """실제 녹음에서 **발화 구간의 시작 위치**만 고른다 (창은 워커가 뜬다).
 
@@ -312,7 +393,8 @@ def loud_segments(user_audio_path):
 
 
 def build_dataset(user_audio_path=None, aug_per_clip=3, seed=0,
-                  augmenter=None, speech_negatives=0, jobs=1):
+                  augmenter=None, speech_negatives=0, jobs=1,
+                  user_neg_path=None):
     print("① 음성 합성 (이미 있으면 재사용)")
     # 목소리가 14개라 전 조합은 양성 1400 · 음성 12950이다. 표본을 뽑아 쓴다 —
     # `limit_combos`는 **무작위 균등 추출**이라 목소리가 골고루 섞인다(앞에서 자르지 않는다).
@@ -324,19 +406,32 @@ def build_dataset(user_audio_path=None, aug_per_clip=3, seed=0,
 
     # ② 실제 녹음 (사용자 목소리) — 합성음 과적합을 막는 핵심.
     #    계획을 세우려면 **몇 개인지 먼저** 알아야 해서 여기만 부모가 훑는다.
-    loud_starts = []
+    loud_starts, loud_starts_neg = [], []
     if user_audio_path and os.path.exists(user_audio_path):
         secs, loud_starts = loud_segments(user_audio_path)
-        print(f"② 실제 녹음 추가: {secs:.1f}초 · 발화 구간 {len(loud_starts)}개")
-    else:
+        who = describe_recordings()
+        print(f"② 실제 녹음 — 양성 {secs:.1f}초 · 발화 구간 {len(loud_starts)}개{who}")
+    if user_neg_path and os.path.exists(user_neg_path):
+        secs_n, loud_starts_neg = loud_segments(user_neg_path)
+        print(f"   🔴 같은 마이크의 «플루이즈가 아닌 말» — {secs_n:.1f}초 · "
+              f"구간 {len(loud_starts_neg)}개")
+    elif loud_starts:
+        # 🚨 양성만 들어가면 «마이크 소리 = 양성»이라는 지름길이 생긴다.
+        #   조용히 넘어가면 2026-09-09 사고(검증 93.6% · 실기 86.7% 오탐)가 재현된다.
+        print("   🚨 **음성(negative) 녹음이 없다** — 양성만 넣으면 모델이 단어가 아니라")
+        print("      «합성음이냐 마이크냐»를 배운다. 녹음 페이지의 «다른 말» 구간이 필요하다.")
+    if not loud_starts:
         print("② 실제 녹음 없음 — 목소리 14개로 학습한다 "
-              "(2026-09-08 측정: 미학습 화자 98.1%. 녹음은 선택이다)")
+              "(2026-09-08 측정: 미학습 화자 98.1%)")
+        print("   ⚠️ **이 학습의 검증 성적은 아무것도 보증하지 않는다** — 합성음으로")
+        print("      배우고 합성음으로 채점한다. 진짜 자는 scripts/eval_wakeword.py 다.")
 
     # ③ 일감을 **먼저 전부** 만든다 — 그래야 코어에 나눠 줄 수 있고,
     #    «이번 학습이 창 몇 개짜리인가»를 시작할 때 말할 수 있다.
     recipes = plan_dataset(pos_paths, neg_paths, loud_starts, aug_per_clip,
                            speech_negatives, seed=seed,
-                           has_augmenter=augmenter is not None)
+                           has_augmenter=augmenter is not None,
+                           loud_starts_neg=loud_starts_neg)
     n_pos = sum(r.n for r in recipes if r.label == 1)
     n_neg = sum(r.n for r in recipes if r.label == 0)
     jobs = resolve_jobs(jobs, cap=len(recipes))
@@ -350,8 +445,9 @@ def build_dataset(user_audio_path=None, aug_per_clip=3, seed=0,
     #    `np.load` 를 하는데, 파일이 없으면 «일감이 아니라 워커가» 죽는다 —
     #    쓰지도 않을 파일 때문에.
     ua_path = user_audio_path if loud_starts else ""
+    un_path = user_neg_path if loud_starts_neg else ""
     done = pmap(cook, recipes, jobs=jobs, initializer=init_worker,
-                initargs=(augmenter, ua_path), label="일감")
+                initargs=(augmenter, ua_path, un_path), label="일감")
     el = time.time() - t0
     print(f"  완료 {el:.0f}초 ({(n_pos + n_neg) / max(el, 1e-9):.0f} 창/초)")
 
@@ -446,7 +542,15 @@ CANDIDATE_PATH = os.path.join(ROOT, "services", "wakeword_model_candidate.npz")
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--user-audio", default="", help="실제 녹음 .npy (16kHz float32)")
+    ap.add_argument("--user-audio", default="",
+                    help="양성 녹음 .npy (16kHz float32). "
+                         "비우면 data/wakeword/positive.npy 를 **자동으로** 쓴다")
+    ap.add_argument("--user-neg", default="",
+                    help="🔴 같은 마이크로 녹음한 «플루이즈가 아닌 말» .npy. "
+                         "비우면 data/wakeword/negative.npy 를 자동으로 쓴다")
+    ap.add_argument("--no-recordings", action="store_true",
+                    help="🚨 실제 녹음을 **일부러 빼고** 학습한다(합성음만). "
+                         "검증 성적이 아무것도 보증하지 않게 된다")
     ap.add_argument("--aug", type=int, default=3,
                     help="클립당 증강 개수 (목소리 14개로 늘면서 8 → 3. 창 수는 비슷하다)")
     ap.add_argument("--out", default=None,
@@ -474,8 +578,18 @@ if __name__ == "__main__":
         print("   재려면: python scripts/eval_wakeword.py --model " +
               os.path.relpath(out, ROOT).replace("\\", "/"))
 
+    # 🔑 **기본이 «넣는 쪽»이다.** 빠뜨려서 나는 손해가 잘못 넣어서 나는 손해보다
+    #   훨씬 크고 조용하다 — 2026-09-23에 6명의 녹음이 통째로 빠진 채 94%가 나왔다.
+    if args.no_recordings:
+        print("🚨 실제 녹음을 **일부러 뺐다**(--no-recordings). 합성음만으로 학습한다.")
+        rec_pos = rec_neg = None
+    else:
+        rec_pos = args.user_audio or (REC_POS if os.path.exists(REC_POS) else None)
+        rec_neg = args.user_neg or (REC_NEG if os.path.exists(REC_NEG) else None)
+        check_recordings_fresh()
+
     augmenter = make_augmenter(args.augment, refresh=args.refresh_index)
-    X, y = build_dataset(args.user_audio or None, aug_per_clip=args.aug,
+    X, y = build_dataset(rec_pos, aug_per_clip=args.aug, user_neg_path=rec_neg,
                          augmenter=augmenter, speech_negatives=args.speech_neg,
                          jobs=args.jobs)
     clf = train(X, y)
