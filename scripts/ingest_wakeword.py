@@ -224,10 +224,11 @@ def main():
     print(f"  {OUT}{os.sep}manifest.json")
 
     print("\n다음 단계")
-    print("  python scripts/train_wakeword.py --user-audio data/wakeword/wake_voice.npy")
-    print("  ⚠️ 현행 학습기는 **양성만** 받습니다. negative.npy 를 쓰려면")
-    print("     train_wakeword.py 를 고쳐야 합니다 — M7 ④ (9/23~) 입니다.")
-    print("     그때까지는 negative.npy 가 쌓이기만 합니다. **버리지 마세요.**")
+    print("  python scripts/train_wakeword.py")
+    print("  🔑 인자가 없습니다 — 학습기가 이 폴더의 positive.npy 와 negative.npy 를")
+    print("     **둘 다 자동으로** 읽습니다 (2026-09-23 배선).")
+    print("     그 전에는 양성만 받았고, `--user-audio` 를 명시하지 않으면")
+    print("     녹음이 **통째로 빠진 채** 학습이 돌았습니다.")
     return 0
 
 
