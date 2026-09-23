@@ -10,6 +10,21 @@ import subprocess
 from config.settings import get_settings
 
 
+def _spoken(text: str) -> str:
+    """읽을 글만 남긴다. 정제가 통째로 실패하면 **원문을 쓴다** — 침묵보다 낫다.
+
+    ⚠️ 정제 결과가 비면(마커와 경로뿐이었던 응답) 그때도 원문으로 돌아간다.
+      «아무 말도 안 하는 것»이 «조금 이상하게 읽는 것»보다 나쁘다.
+    """
+    try:
+        from services.speech_text import to_speech
+        cleaned = to_speech(text)
+        return cleaned if cleaned.strip() else text
+    except Exception as e:                                    # noqa: BLE001
+        print(f"[TTS] 정제 실패 — 원문 그대로 읽습니다: {type(e).__name__}: {e}")
+        return text
+
+
 class TTSService:
     def __init__(self):
         settings = get_settings()
@@ -42,12 +57,20 @@ class TTSService:
     async def to_bytes_async(self, text: str) -> bytes:
         """텍스트 → MP3 바이트 반환 (클라이언트 전송용).
         오프라인 또는 edge-tts 실패 시 빈 bytes 반환 (TTS 없이 텍스트만 전달).
+
+        🔑 **여기가 모든 음성 경로의 길목이다** — `/voice` · `/ws` · 감시 알림 ·
+          `speak_async` 가 전부 이 함수를 지난다. 그래서 «말할 것만 남기는» 정제를
+          호출부 네 곳이 아니라 **여기 한 곳**에 건다 (2-2 ⓒ).
+          🚨 호출부마다 넣으면 다음 `return` 에서 또 샌다 — 감사 G-13·G-14 가 그 모양이었다.
+
+        ⚠️ **화면 텍스트는 안 바뀐다.** 정제 결과는 오직 TTS 입력이다.
         """
         import edge_tts
+        spoken = _spoken(text)
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
             tmp_path = f.name
         try:
-            communicate = edge_tts.Communicate(text, self.voice)
+            communicate = edge_tts.Communicate(spoken, self.voice)
             await communicate.save(tmp_path)
             with open(tmp_path, "rb") as f:
                 return f.read()
