@@ -15,7 +15,7 @@
 |---|---|
 | AI 에이전트 | LangGraph 명시적 `StateGraph` + Gemini 2.5 Flash |
 | STT | Google STT(온라인 우선) + faster-whisper(오프라인 폴백) |
-| TTS | edge-tts (`ko-KR-SunHiNeural`) |
+| TTS | **자동** — 망이 되면 edge-tts(`ko-KR-SunHiNeural`), **끊기면 Windows 내장 SAPI**(한국어 Heami). 🔑 로컬은 **새 의존성이 없다**(`comtypes` 는 pycaw 가 이미 쓴다). 설정에서 엔진·목소리 선택 (계획 2-5) |
 | 서버 | FastAPI + uvicorn (:8765) |
 | UI | Electron frameless 오버레이 |
 | 설정 | pydantic-settings + `.env` |
@@ -253,7 +253,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 
 ---
 
-## 도구 (44개)
+## 도구 (47개)
 
 [`core/tool_registry.py`](../core/tool_registry.py)에 단일 등록.
 
@@ -286,7 +286,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 | 웹 | 6 | `open_url` `web_search` `youtube_search` `map_search` `fetch_web_info` `crawl_page` |
 | **날씨** | **1** | **`get_weather`** — 검색이 아니라 **실제 기상 자료**(open-meteo)로 답한다. 어제·오늘·내일 · **출처를 밝힌다** (BL-34) |
 | 파일 | 7 | `create_file` `create_folder` `find_file` **`list_directory`** `open_recent_file` `open_file` `write_excel` |
-| 시스템 | **13** | `volume_up/down/set` `mute_toggle` `brightness_up/down` **`set_brightness`** · 🆕 **읽는 도구** `get_volume` `get_brightness` · `take_screenshot` `get_battery_status` `get_current_time` `get_running_apps`<br>🚨 **읽는 도구가 없던 것이 결함이었다** — *"지금 밝기 얼마야"* 가 갈 곳이 없어 LLM 의 **잡담**으로 끝났고, 그러다 «✓ 밝기: 40% → 80%» 를 **지어냈다**([BL-61](BACKLOG.md)). 지어내는 것은 그물로 막았지만 **답은 여전히 없었다**([BL-60](BACKLOG.md))<br>🔑 이 셋은 [캐시의 조회 게이트](#캐시--2단계-매칭)와 **한 쌍**이다. 게이트만 있으면 «안 바뀌지만 답도 못 하는» 상태가 되고, 도구만 있으면 캐시가 먼저 채 가서 여기까지 오지도 못한다 |
+| 시스템 | **13** | `volume_up/down/set` `mute` **`unmute`** `brightness_up/down` **`set_brightness`** · 🆕 **읽는 도구** `get_volume` `get_brightness` · `take_screenshot` `get_battery_status` `get_current_time` `get_running_apps`<br>🚨 **읽는 도구가 없던 것이 결함이었다** — *"지금 밝기 얼마야"* 가 갈 곳이 없어 LLM 의 **잡담**으로 끝났고, 그러다 «✓ 밝기: 40% → 80%» 를 **지어냈다**([BL-61](BACKLOG.md)). 지어내는 것은 그물로 막았지만 **답은 여전히 없었다**([BL-60](BACKLOG.md))<br>🔑 이 셋은 [캐시의 조회 게이트](#캐시--2단계-매칭)와 **한 쌍**이다. 게이트만 있으면 «안 바뀌지만 답도 못 하는» 상태가 되고, 도구만 있으면 캐시가 먼저 채 가서 여기까지 오지도 못한다 |
 | 입력 | 3 | `type_text` `press_key` `get_clipboard_text` |
 | 캘린더 | 1 | `create_calendar_event` |
 | 화면 이해 | 3 | `describe_screen`(무엇이 보이나) · `find_ui_element`(어디에 있나 — **화면 좌표**) · **`point_at_element`**(그 자리를 **화면에 직접 표시**, `zoom=True`면 확대본도 — M4) — ⚠️ 셋 다 **화면 내용을 외부 LLM로 전송** (아래 참조) |
@@ -412,7 +412,7 @@ UI 헤더에는 감시 중 배지(👁)가 뜬다. **"켜 둔 걸 잊는 것"이
 
 ```
 감시 스레드 ─ set_notifier ─▶ main.py run_coroutine_threadsafe
-                                ├─ TTS mp3 → base64
+                                ├─ TTS mp3/wav → base64 (+ audio_mime)
                                 └─ 열린 /ws 전부에 {"type":"notify"}
                                         ▼
                             렌더러: 채팅 버블 + 소리 + 창을 앞으로(show-window IPC)
@@ -863,6 +863,7 @@ entity 하나만 집어서 「메모장 **말고** 계산기 열어줘」에 **�
 |---|---|---|---|
 | GET | `/health` | **면제** | 서버 상태 |
 | POST | `/chat` | 필요 | 텍스트 명령 (비스트리밍) |
+| GET · POST | `/api/tts` | 필요 | 목소리 설정 읽기·저장. GET 은 **고를 수 있는 것들**도 같이 준다 — 로컬 목록은 **PC 마다 다르다**. 🚨 «끊겨서 못 받았다»(`online_ok=false`)와 «없다»를 구분한다 |
 | POST | `/voice` | 필요 | 음성 파일 → STT + 에이전트 + TTS. **`thread_id`·`use_tts`는 `Form(...)`이어야 한다** — 빼면 폼 필드가 무시돼 음성이 텍스트와 다른 대화가 된다 |
 | WS | `/ws` | 필요 (`?token=`) | 텍스트 스트리밍 (※ 현재 단일 청크 — BACKLOG BL-04) |
 | GET/POST | `/api/config` | 필요 | LLM 설정 조회 / API 키 변경 + 에이전트 재초기화 |
