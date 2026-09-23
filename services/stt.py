@@ -31,6 +31,19 @@ _NETWORK_CACHE_TTL = 10   # 초 — 캐싱 주기
 _network_cache: dict = {"online": None, "checked_at": 0.0}
 _network_lock = threading.Lock()
 
+#: Google STT 응답을 이만큼 기다리고 **포기한다**(초). 포기하면 Whisper 가 받는다.
+#
+# 🚨 **기본값은 «무한»이다.** `speech_recognition` 의 `operation_timeout` 이 `None`
+#   이면 `urlopen(timeout=None)` 으로 나가고, 응답이 안 오면 턴이 영영 안 끝난다
+#   (2026-09-23 실기 — `인식 시작` 만 찍히고 «턴 완료» 가 없었다 · BL-69).
+#
+# 🔑 **짧게 잡는 쪽이 안전하다.** 실측 성공은 1초 안팎이고(로그 `소요 0.44~2.24s`),
+#   포기해도 **없어지는 게 아니라 로컬 Whisper 로 간다.** 늦는 것보다 안 끝나는 게 나쁘다.
+#   ⚠️ 전시 부스의 공용 와이파이를 생각하면 더욱 그렇다.
+GOOGLE_STT_TIMEOUT = 8.0
+#: 이보다 오래 걸렸으면 **성공이어도** 로그에 남긴다 — 타임아웃 값을 실측으로 고치려고.
+GOOGLE_STT_SLOW = 3.0
+
 
 def _is_online() -> bool:
     """Google 서버 TCP 연결로 네트워크 상태 확인. TTL 내 결과 캐싱."""
@@ -276,6 +289,19 @@ class STTService:
         Google STT (speech_recognition.recognize_google).
         성공 시 텍스트, 실패 시 None (→ Whisper 폴백 트리거).
         오디오 변환은 PyAV (faster-whisper 의존성)로 처리 — ffmpeg 실행 파일 불필요.
+
+        🚨 **2026-09-23 — 여기서 턴이 통째로 멈춘 적이 있다.** (BL-69)
+
+            22:01:57 [STT] 인식 시작 | 40939 bytes | google
+            (끝. 성공도 실패도 없고 «턴 완료»도 없다)
+
+        `speech_recognition` 의 `Recognizer.operation_timeout` 은 **기본값이 `None`**
+        이라 `urlopen(..., timeout=None)` 으로 나간다 — 응답이 안 오면 **영원히 기다린다.**
+        그러면 아래 Whisper 폴백까지 **같이 죽는다**: 오프라인 대비로 만들어 둔 길이
+        «네트워크가 느릴 때» 는 열리지 않는다. 사용자에게는 **무한 대기**로 보인다.
+
+        🔑 **폴백이 있는데 폴백으로 못 가는 것이 이 결함의 핵심이다.**
+          Whisper 는 로컬이라 망이 어떻든 답을 준다 — 늦게라도 가면 된다.
         """
         try:
             import av
@@ -301,7 +327,15 @@ class STTService:
 
             audio_data = sr.AudioData(raw_data, sample_rate=16000, sample_width=2)
             recognizer = sr.Recognizer()
+            # 🚨 **이 한 줄이 없으면 안 돌아온다.** (BL-69 — 위 docstring)
+            recognizer.operation_timeout = GOOGLE_STT_TIMEOUT
+            t0 = time.monotonic()
             text = recognizer.recognize_google(audio_data, language="ko-KR")
+            took = time.monotonic() - t0
+            # 느린데 «성공» 한 것도 남긴다 — 타임아웃을 어디에 둘지는 실측으로 정한다
+            if took > GOOGLE_STT_SLOW:
+                log.warning("[STT] google 이 느리다 | %.1fs (타임아웃 %.0fs)",
+                            took, GOOGLE_STT_TIMEOUT)
             print(f"[STT] 인식 결과 (Google): {text!r}")
 
             # 성공 → 온라인 캐시 즉시 갱신
@@ -312,19 +346,29 @@ class STTService:
             return text
 
         except Exception as e:
+            # 🚨 **여기는 `print` 만 하고 있었다.** 그래서 `logs/pluiz.log` 에는
+            #   «인식 시작» 만 남고 **왜 폴백했는지가 없었다** — 2026-09-23 에
+            #   턴이 멈췄을 때 로그로 원인을 좁히지 못한 이유다(BL-69).
+            #   `print` 는 콘솔이 닫히면 사라진다. 판단에 쓰는 것은 로그다.
             try:
                 import speech_recognition as sr
                 if isinstance(e, sr.UnknownValueError):
                     print("[STT] Google STT: 음성 불명확 → Whisper 폴백")
+                    log.info("[STT] google 음성 불명확 → whisper 폴백")
                 elif isinstance(e, sr.RequestError):
                     print(f"[STT] Google STT 네트워크 오류 → Whisper 폴백: {e}")
+                    log.warning("[STT] google 네트워크 오류 → whisper 폴백 | %s", e)
                     with _network_lock:
                         _network_cache["online"] = False
                         _network_cache["checked_at"] = time.monotonic()
                 else:
                     print(f"[STT] Google STT 오류 ({type(e).__name__}) → Whisper 폴백: {e}")
+                    log.warning("[STT] google 오류 → whisper 폴백 | %s: %s",
+                                type(e).__name__, e)
             except ImportError:
                 print(f"[STT] Google STT 오류 → Whisper 폴백: {e}")
+                log.warning("[STT] google 오류 → whisper 폴백 | %s: %s",
+                            type(e).__name__, e)
             return None
 
     def _transcribe_whisper(self, webm_path: str) -> str:
