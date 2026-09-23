@@ -46,6 +46,12 @@ APP_ALIASES: dict[str, str] = {
     "제어판": "control",
     "캡처도구": "snippingtool", "캡처 도구": "snippingtool", "화면캡처도구": "snippingtool",
     "돋보기": "magnify", "확대기": "magnify",
+    # 🆕 2026-09-24 (2-4) — 오프라인 커버리지 고정 20문장의 *"한글 실행해 줘"* 가 미스였다.
+    #   ⚠️ **이 PC에 실제로 있는지 확인하고 넣었다** — 한컴오피스 2024,
+    #      `C:/Program Files (x86)/Hnc/Office 2024/HOffice130/Bin/Hwp.exe`.
+    #      (위 그림판 주석과 같은 규칙이다. 없는 앱을 넣으면 거짓 약속이 된다)
+    "한글": "hwp", "한컴": "hwp", "아래아한글": "hwp",
+    "한글과컴퓨터": "hwp", "hwp": "hwp", "한컴오피스": "hwp",
 }
 
 # ── 한국어 표시 이름 ──────────────────────────────────────────────
@@ -69,6 +75,7 @@ APP_DISPLAY_NAMES: dict[str, str] = {
     "control":       "제어판",
     "snippingtool":  "캡처 도구",
     "magnify":       "돋보기",
+    "hwp":           "한글",
 }
 
 
@@ -210,6 +217,8 @@ APP_PROCESS_MAP: dict[str, list[str]] = {
     "control":      ["control.exe", "systemsettings.exe"],
     "snippingtool": ["snippingtool.exe"],
     "magnify":      ["magnify.exe"],
+    # 🆕 한컴오피스 «한글». 실행 파일과 프로세스 이름이 같다(확인함).
+    "hwp":          ["hwp.exe"],
 }
 
 APP_FALLBACK_PATHS: dict[str, list[str]] = {
@@ -260,6 +269,14 @@ APP_FALLBACK_PATHS: dict[str, list[str]] = {
         os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft/WindowsApps/SnippingTool.exe"),
     ],
     "magnify":      ["C:/Windows/System32/Magnify.exe"],
+    # 🆕 한컴오피스 «한글». `where hwp.exe` 는 실패한다(PATH·App Paths 둘 다 없다 —
+    #   2026-09-24 확인). 그래서 **여기가 유일한 경로**다.
+    #   ⚠️ 버전(Office 2024 · HOffice130)을 고정하지 않고 glob 로 둔다 — 업그레이드하면
+    #      폴더 이름이 바뀌고, 고정해 두면 그날부터 조용히 «못 찾음»이 된다.
+    "hwp": [
+        os.path.join(os.environ.get("PROGRAMFILES(X86)", ""), "Hnc/Office */HOffice*/Bin/Hwp.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES", ""), "Hnc/Office */HOffice*/Bin/Hwp.exe"),
+    ],
 }
 
 

@@ -9,7 +9,7 @@
         }
       }
     ],
-    "response_template": "✓ 메모장을 실행했습니다.",
+    "response_template": "✓ 메모장을 실행했어요.",
     "hit_count": 113,
     "is_seed": true,
     "source": "seed",
@@ -27,7 +27,7 @@
         }
       }
     ],
-    "response_template": "✓ 메모장을 실행했습니다.",
+    "response_template": "✓ 메모장을 실행했어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -45,7 +45,7 @@
         }
       }
     ],
-    "response_template": "✓ 메모장을 종료했습니다.",
+    "response_template": "✓ 메모장을 종료했어요.",
     "hit_count": 12,
     "is_seed": true,
     "source": "seed",
@@ -63,7 +63,7 @@
         }
       }
     ],
-    "response_template": "✓ 계산기를 실행했습니다.",
+    "response_template": "✓ 계산기를 실행했어요.",
     "hit_count": 23,
     "is_seed": true,
     "source": "seed",
@@ -81,7 +81,7 @@
         }
       }
     ],
-    "response_template": "✓ 계산기를 실행했습니다.",
+    "response_template": "✓ 계산기를 실행했어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -99,7 +99,7 @@
         }
       }
     ],
-    "response_template": "✓ Chrome을 실행했습니다.",
+    "response_template": "✓ Chrome을 실행했어요.",
     "hit_count": 10,
     "is_seed": true,
     "source": "seed",
@@ -117,7 +117,7 @@
         }
       }
     ],
-    "response_template": "✓ Chrome을 실행했습니다.",
+    "response_template": "✓ Chrome을 실행했어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -135,7 +135,7 @@
         }
       }
     ],
-    "response_template": "✓ 파일 탐색기를 열었습니다.",
+    "response_template": "✓ 파일 탐색기를 열었어요.",
     "hit_count": 10,
     "is_seed": true,
     "source": "seed",
@@ -153,7 +153,7 @@
         }
       }
     ],
-    "response_template": "✓ 파일 탐색기를 열었습니다.",
+    "response_template": "✓ 파일 탐색기를 열었어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -169,7 +169,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 바탕화면을 표시했습니다.",
+    "response_template": "✓ 바탕화면을 표시했어요.",
     "hit_count": 10,
     "is_seed": true,
     "source": "seed",
@@ -185,7 +185,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 창을 최대화했습니다.",
+    "response_template": "✓ 창을 최대화했어요.",
     "hit_count": 1,
     "is_seed": true,
     "source": "seed",
@@ -201,7 +201,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 창을 최소화했습니다.",
+    "response_template": "✓ 창을 최소화했어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -219,7 +219,7 @@
         }
       }
     ],
-    "response_template": "✓ 설정을 열었습니다.",
+    "response_template": "✓ 설정을 열었어요.",
     "hit_count": 5,
     "is_seed": true,
     "source": "seed",
@@ -237,7 +237,7 @@
         }
       }
     ],
-    "response_template": "✓ 설정을 열었습니다.",
+    "response_template": "✓ 설정을 열었어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -255,7 +255,7 @@
         }
       }
     ],
-    "response_template": "✓ 카카오톡을 실행했습니다.",
+    "response_template": "✓ 카카오톡을 실행했어요.",
     "hit_count": 6,
     "is_seed": true,
     "source": "seed",
@@ -271,7 +271,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 볼륨을 높였습니다.",
+    "response_template": "✓ 볼륨을 높였어요.",
     "hit_count": 17,
     "is_seed": true,
     "source": "seed",
@@ -287,7 +287,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 볼륨을 높였습니다.",
+    "response_template": "✓ 볼륨을 높였어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -303,12 +303,12 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 볼륨을 낮췄습니다.",
-    "hit_count": 4,
+    "response_template": "✓ 볼륨을 낮췄어요.",
+    "hit_count": 5,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "",
+    "last_used": "2026-09-23T22:01:31",
     "imported": false
   },
   "소리 내려줘": {
@@ -319,7 +319,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 볼륨을 낮췄습니다.",
+    "response_template": "✓ 볼륨을 낮췄어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -331,27 +331,27 @@
     "pattern": "음소거해줘",
     "tool_calls": [
       {
-        "name": "mute_toggle",
+        "name": "mute",
         "args": {}
       }
     ],
-    "response_template": "✓ 음소거 상태를 변경했습니다.",
-    "hit_count": 20,
+    "response_template": "✓ 음소거했어요.",
+    "hit_count": 21,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-10T10:19:12",
+    "last_used": "2026-09-23T21:04:38",
     "imported": false
   },
   "음소거 해줘": {
     "pattern": "음소거 해줘",
     "tool_calls": [
       {
-        "name": "mute_toggle",
+        "name": "mute",
         "args": {}
       }
     ],
-    "response_template": "✓ 음소거 상태를 변경했습니다.",
+    "response_template": "✓ 음소거했어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -367,12 +367,12 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 화면 밝기를 높였습니다.",
-    "hit_count": 5,
+    "response_template": "✓ 화면 밝기를 높였어요.",
+    "hit_count": 6,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-19T20:22:52",
+    "last_used": "2026-09-23T21:03:55",
     "imported": false
   },
   "화면 밝게 해줘": {
@@ -383,7 +383,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 화면 밝기를 높였습니다.",
+    "response_template": "✓ 화면 밝기를 높였어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -399,7 +399,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 화면 밝기를 낮췄습니다.",
+    "response_template": "✓ 화면 밝기를 낮췄어요.",
     "hit_count": 2,
     "is_seed": true,
     "source": "seed",
@@ -415,7 +415,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 화면 밝기를 낮췄습니다.",
+    "response_template": "✓ 화면 밝기를 낮췄어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -431,7 +431,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 스크린샷을 저장했습니다.",
+    "response_template": "✓ 스크린샷을 저장했어요.",
     "hit_count": 11,
     "is_seed": true,
     "source": "seed",
@@ -447,7 +447,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 스크린샷을 저장했습니다.",
+    "response_template": "✓ 스크린샷을 저장했어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -463,7 +463,7 @@
         "args": {}
       }
     ],
-    "response_template": "현재 시각을 확인합니다.",
+    "response_template": "현재 시각을 확인할게요.",
     "hit_count": 70,
     "is_seed": true,
     "source": "seed",
@@ -479,7 +479,7 @@
         "args": {}
       }
     ],
-    "response_template": "배터리 상태를 확인합니다.",
+    "response_template": "배터리 상태를 확인할게요.",
     "hit_count": 10,
     "is_seed": true,
     "source": "seed",
@@ -495,7 +495,7 @@
         "args": {}
       }
     ],
-    "response_template": "배터리 상태를 확인합니다.",
+    "response_template": "배터리 상태를 확인할게요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -511,7 +511,7 @@
         "args": {}
       }
     ],
-    "response_template": "실행 중인 앱 목록을 확인합니다.",
+    "response_template": "실행 중인 앱 목록을 확인할게요.",
     "hit_count": 10,
     "is_seed": true,
     "source": "seed",
@@ -527,7 +527,7 @@
         "args": {}
       }
     ],
-    "response_template": "실행 중인 앱 목록을 확인합니다.",
+    "response_template": "실행 중인 앱 목록을 확인할게요.",
     "hit_count": 1,
     "is_seed": true,
     "source": "seed",
@@ -545,7 +545,7 @@
         }
       }
     ],
-    "response_template": "✓ Google을 열었습니다.",
+    "response_template": "✓ Google을 열었어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -563,7 +563,7 @@
         }
       }
     ],
-    "response_template": "✓ YouTube를 열었습니다.",
+    "response_template": "✓ YouTube를 열었어요.",
     "hit_count": 1,
     "is_seed": true,
     "source": "seed",
@@ -581,7 +581,7 @@
         }
       }
     ],
-    "response_template": "✓ Naver를 열었습니다.",
+    "response_template": "✓ Naver를 열었어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -599,7 +599,7 @@
         }
       }
     ],
-    "response_template": "✓ 날씨를 검색했습니다.",
+    "response_template": "✓ 날씨를 검색했어요.",
     "hit_count": 2,
     "is_seed": true,
     "source": "seed",
@@ -615,7 +615,7 @@
         "args": {}
       }
     ],
-    "response_template": "최근 파일을 확인합니다.",
+    "response_template": "최근 파일을 확인할게요.",
     "hit_count": 10,
     "is_seed": true,
     "source": "seed",
@@ -731,7 +731,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 지금 화면 밝기를 알려드렸습니다.",
+    "response_template": "✓ 지금 화면 밝기를 알려드렸어요.",
     "hit_count": 1,
     "is_seed": true,
     "source": "seed",
@@ -747,7 +747,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 지금 화면 밝기를 알려드렸습니다.",
+    "response_template": "✓ 지금 화면 밝기를 알려드렸어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -763,7 +763,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 지금 볼륨을 알려드렸습니다.",
+    "response_template": "✓ 지금 볼륨을 알려드렸어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -779,7 +779,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 지금 볼륨을 알려드렸습니다.",
+    "response_template": "✓ 지금 볼륨을 알려드렸어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -795,7 +795,7 @@
         "args": {}
       }
     ],
-    "response_template": "✓ 지금 음소거 상태를 알려드렸습니다.",
+    "response_template": "✓ 지금 음소거 상태를 알려드렸어요.",
     "hit_count": 0,
     "is_seed": true,
     "source": "seed",
@@ -833,6 +833,86 @@
     "source": "dynamic",
     "learned_at": "2026-09-19T22:33:49",
     "last_used": "2026-09-19T22:33:49",
+    "imported": false
+  },
+  "소리 꺼줘": {
+    "pattern": "소리 꺼줘",
+    "tool_calls": [
+      {
+        "name": "mute",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 음소거했어요.",
+    "hit_count": 4,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "2026-09-23T22:17:57",
+    "imported": false
+  },
+  "볼륨 꺼줘": {
+    "pattern": "볼륨 꺼줘",
+    "tool_calls": [
+      {
+        "name": "mute",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 음소거했어요.",
+    "hit_count": 0,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "",
+    "imported": false
+  },
+  "음소거 해제해줘": {
+    "pattern": "음소거 해제해줘",
+    "tool_calls": [
+      {
+        "name": "unmute",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 음소거를 해제했어요.",
+    "hit_count": 0,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "",
+    "imported": false
+  },
+  "소리 켜줘": {
+    "pattern": "소리 켜줘",
+    "tool_calls": [
+      {
+        "name": "unmute",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 음소거를 해제했어요.",
+    "hit_count": 3,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "2026-09-23T22:18:17",
+    "imported": false
+  },
+  "볼륨 켜줘": {
+    "pattern": "볼륨 켜줘",
+    "tool_calls": [
+      {
+        "name": "unmute",
+        "args": {}
+      }
+    ],
+    "response_template": "✓ 음소거를 해제했어요.",
+    "hit_count": 0,
+    "is_seed": true,
+    "source": "seed",
+    "learned_at": "",
+    "last_used": "",
     "imported": false
   }
 }

@@ -133,7 +133,7 @@ class CacheEntry:
 # 자유 파라미터 도구(폴더명·검색어·set_volume 숫자·type_text 등)는 제외 → 오염 원천 차단.
 LEARNABLE_TOOLS = frozenset([
     "open_app", "close_app", "maximize_window", "minimize_window", "show_desktop",
-    "volume_up", "volume_down", "mute_toggle", "brightness_up", "brightness_down",
+    "volume_up", "volume_down", "mute", "unmute", "brightness_up", "brightness_down",
     "take_screenshot", "get_battery_status", "get_current_time", "get_running_apps",
     # 🆕 읽는 도구 (BL-60). 파라미터가 없고 아무것도 안 바꾼다.
     # ⚠️ `set_brightness` 는 **안 넣는다** — `level` 이 자유 파라미터라
@@ -170,8 +170,18 @@ SEED_DATA: list[tuple[str, list, str]] = [
     ("소리 올려줘",        [{"name": "volume_up", "args": {}}],                      "✓ 볼륨을 높였어요."),
     ("볼륨 내려줘",        [{"name": "volume_down", "args": {}}],                    "✓ 볼륨을 낮췄어요."),
     ("소리 내려줘",        [{"name": "volume_down", "args": {}}],                    "✓ 볼륨을 낮췄어요."),
-    ("음소거해줘",         [{"name": "mute_toggle", "args": {}}],                    "✓ 음소거 상태를 바꿨어요."),
-    ("음소거 해줘",        [{"name": "mute_toggle", "args": {}}],                    "✓ 음소거 상태를 바꿨어요."),
+    ("음소거해줘",         [{"name": "mute", "args": {}}],                           "✓ 음소거했어요."),
+    ("음소거 해줘",        [{"name": "mute", "args": {}}],                           "✓ 음소거했어요."),
+    # 🆕 2026-09-24 (2-4). 🔑 **인텐트 쌍이 다르다** — 「음소거」는 (mute, mute)인데
+    #   「소리 꺼줘」는 엔티티가 volume 이라 **(volume, mute)** 다. 동작 표만 고치면
+    #   여전히 «없는 조합»이라 미스다. 이 두 줄이 그 쌍을 인덱스에 만든다.
+    ("소리 꺼줘",          [{"name": "mute", "args": {}}],                           "✓ 음소거했어요."),
+    ("볼륨 꺼줘",          [{"name": "mute", "args": {}}],                           "✓ 음소거했어요."),
+    # 🆕 2026-09-24 실기 — **되돌릴 방법이 없었다.** 위 넷의 짝이다.
+    #   🔑 쌍이 둘이라 씨앗도 둘 필요하다 — (mute, unmute) 와 (volume, unmute).
+    ("음소거 해제해줘",    [{"name": "unmute", "args": {}}],                         "✓ 음소거를 해제했어요."),
+    ("소리 켜줘",          [{"name": "unmute", "args": {}}],                         "✓ 음소거를 해제했어요."),
+    ("볼륨 켜줘",          [{"name": "unmute", "args": {}}],                         "✓ 음소거를 해제했어요."),
     ("밝기 올려줘",        [{"name": "brightness_up", "args": {}}],                  "✓ 화면 밝기를 높였어요."),
     ("화면 밝게 해줘",     [{"name": "brightness_up", "args": {}}],                  "✓ 화면 밝기를 높였어요."),
     ("밝기 내려줘",        [{"name": "brightness_down", "args": {}}],                "✓ 화면 밝기를 낮췄어요."),
@@ -241,6 +251,18 @@ APP_ENTITIES: list[tuple[str, str, str]] = [
     ("캡처 도구",     "snippingtool", "캡처 도구"),
     ("캡처도구",      "snippingtool", "캡처 도구"),
     ("돋보기",        "magnify",     "돋보기"),
+    # 🆕 2026-09-24 (2-4) — 오프라인 커버리지 고정 20문장의 *"한글 실행해 줘"* 가 미스였다.
+    #   ⚠️ 긴 표면형을 먼저 둔다(`_match_entity` 는 위에서부터 처음 걸린 것을 쓴다).
+    #   ⚠️ `tools/app_control.py` 쪽 세 표(별칭·프로세스·경로)를 같이 채웠다 — 확인함.
+    #   📌 **「한글」은 보통명사이기도 하다.** *"한글로 써줘"* 처럼 동작이 없는 말은
+    #      intent 가 안 잡혀 그냥 LLM 으로 간다. 동작까지 있는
+    #      *"한글 파일 열어줘"* 는 이 앱을 열게 되는데, **되돌릴 수 있고 아무것도
+    #      잃지 않는 쪽**이라 감수한다(측정으로 재확인 — 로그 180발화에서 오히트 0).
+    ("한글과컴퓨터",  "hwp",         "한글"),
+    ("아래아한글",    "hwp",         "한글"),
+    ("한컴오피스",    "hwp",         "한글"),
+    ("한글",          "hwp",         "한글"),
+    ("한컴",          "hwp",         "한글"),
 ]
 
 # 앱 키 집합 (open/close 합성에 사용)
@@ -304,9 +326,31 @@ ACTION_PATTERNS: list[tuple[str, list[str]]] = [
                           "볼륨 확인", "볼륨 상태", "볼륨 뭐"]),
     # 🚨 **`mute` 보다 먼저.** 「음소거」가 `mute` 트리거라 뒤에 두면
     #   *"음소거됐어?"* 가 **음소거를 토글한다** — 상태를 물었는데 소리가 꺼진다.
+    # 🆕 2026-09-24 (2-4) — 「소리 꺼졌어?」 도 **묻는 말**이다. 아래 `mute` 에
+    #   「소리 꺼」를 넣었으므로 **여기에 먼저 물음꼴을 넣어야** 상태를 묻는 말이
+    #   음소거를 바꾸지 않는다 (위 「음소거됐어?」와 정확히 같은 이유).
     ("mute_get",         ["음소거됐", "음소거돼", "음소거상태", "음소거중",
-                          "음소거야", "음소거인가", "음소거니", "음소거 상태"]),
-    ("mute",             ["음소거"]),
+                          "음소거야", "음소거인가", "음소거니", "음소거 상태",
+                          "소리 꺼졌", "소리 꺼져", "볼륨 꺼졌", "볼륨 꺼져",
+                          "소리 껐", "볼륨 껐",
+                          "소리 켜졌", "소리 켜져", "볼륨 켜졌", "볼륨 켜져"]),
+    # 🆕 2026-09-24 실기 — **음소거에 방향이 없었다.**
+    #   도구가 `mute_toggle` 하나뿐이라 「꺼/켜/해제」가 전부 같은 토글로 무너졌다.
+    #   실기에서 *"소리 다시 켜 줘"* 는 **갈 곳이 없어 LLM 으로 갔고 거기서도 실패**했다
+    #   (모델은 도구 없이 «✓» 로 답하려다 BL-61 그물에 막혔다).
+    #   그래서 도구를 `mute` · `unmute` 둘로 갈랐다.
+    #
+    #   🚨 **`unmute` 가 `mute` 보다 먼저 와야 한다.** 「음소거 해제」는 「음소거」를
+    #     **품고 있어서** 뒤에 두면 *"음소거 해제해 줘"* 가 **음소거를 건다.**
+    #     (「음소거됐어?」가 `mute_get` 을 앞에 둬야 했던 것과 정확히 같은 모양이다)
+    ("unmute",           ["음소거 해제", "음소거해제", "음소거 풀", "음소거풀",
+                          "음소거 취소", "음소거 끄",
+                          "소리 켜", "소리 틀", "볼륨 켜", "소리 살려"]),
+    # 🆕 2026-09-24 (2-4) — *"소리 꺼줘"* 가 미스였다. 엔티티는 「소리」→volume 로
+    #   잡히는데 동작이 아래 `close` 의 「꺼줘」에 걸려 **(volume, close)** 라는
+    #   **없는 조합**이 됐다. 도구는 처음부터 있었다 — 표현만 없었다.
+    #   ⚠️ `volume_up`·`volume_down` 보다 **뒤**라서 「소리 줄여」를 뺏지 않는다.
+    ("mute",             ["음소거", "소리 꺼", "소리 끄", "볼륨 꺼", "볼륨 끄"]),
     ("screenshot",       ["스크린샷", "화면 캡처", "캡처해줘", "찍어"]),   # P4-4 "찍어"
     ("time",             ["몇 시", "몇시", "현재 시간", "지금 시간"]),
     ("battery",          ["배터리 얼마", "배터리 확인", "배터리 남았"]),
@@ -350,6 +394,31 @@ _FILLER_TOKENS = frozenset([
     "좀", "다", "빨리", "당장", "어서", "얼른", "그냥", "지금", "제발",
     "이제", "다시", "한번", "한 번", "정말", "진짜", "빨랑",
 ])
+
+
+def _strip_fillers_ns(text: str) -> str:
+    """**어절 단위로** 삽입어를 빼고 공백을 없앤 문자열. (2-4)
+
+    🚨 왜 필요한가 — **삽입어가 트리거를 두 동강 낸다.**
+
+      `ACTION_PATTERNS` 의 트리거는 「밝기 올」·「볼륨 올」처럼 **두 어절에 걸친 것**이
+      많은데, 매칭은 공백만 지운 문자열에서 한다. 그래서 사이에 「좀」이 끼면
+
+          "화면 밝기 좀 올려줘" → "화면밝기좀올려줘"   ← 「밝기올」이 **없다**
+
+      가 되어 intent 가 안 잡힌다. 실제로 오프라인 커버리지 측정(고정 20문장)에서
+      *"화면 밝기 좀 올려줘"* 가 **제안까지만** 갔다.
+
+    📌 **이미 알고 있던 결함이다.** `has_uncovered_command` 주석에 실측 오탐으로
+      *"볼륨 좀 올려줘"(「볼륨 올」 트리거가 '좀' 때문에 안 걸림)* 가 적혀 있다.
+      그때는 **게이트가 안 막도록** 처리했을 뿐 **못 맞히는 것 자체는 남아 있었다.**
+
+    ⚠️ **1차 매칭을 이걸로 대체하지 않는다.** 「지금」도 삽입어인데
+      `ACTION_PATTERNS` 의 time 트리거에 「지금 시간」이 있다 — 먼저 빼 버리면
+      *"지금 시간 알려줘"* 가 깨진다. 그래서 **원문으로 먼저 훑고, 못 맞혔을 때만**
+      이 값으로 다시 훑는다(`_match_action`). 히트를 늘릴 뿐 기존 히트를 못 바꾼다.
+    """
+    return "".join(t for t in text.split(" ") if t and t not in _FILLER_TOKENS)
 
 # 캐시가 **표현할 수 없는** 수식어. (BL-15와 같은 뿌리)
 #
@@ -436,7 +505,7 @@ _DEIXIS_TOKENS = frozenset([
 #
 # 그리고 `SIMILARITY_THRESHOLD` 가 **정확히 0.83**이다. 「알」과 「올」 하나로
 # 조회가 조작이 된다. 볼륨도 같고(`'볼륨 알려줘'` → `volume_up`),
-# 🚨 **«음소거됐어?» 는 `mute_toggle` 을 부른다** — 상태를 물었는데 **소리가 꺼진다.**
+# 🚨 **«음소거됐어?» 는 `mute` 를 부른다** — 상태를 물었는데 **소리가 꺼진다.**
 # (이건 백로그에도 없던 것이고, 셋 중 가장 나쁘다 — 사용자가 묻기만 했다)
 #
 # ## 왜 «조회 표지» 목록만으로는 안 되나
@@ -605,8 +674,14 @@ class CommandCache:
                 return (key, s)
         return None
 
-    def _match_action(self, text_ns: str) -> Optional[tuple[str, str]]:
+    def _match_action(self, text_ns: str,
+                      text_ns_nf: str = "") -> Optional[tuple[str, str]]:
         """(action 키, 실제로 걸린 트리거) — 우선순위 순서대로. 둘 다 공백 제거된 값.
+
+        🆕 **`text_ns_nf`(삽입어를 뺀 값)는 1차가 실패했을 때만 쓴다.** (2-4)
+          「밝기 올」 같은 두 어절 트리거가 *"밝기 **좀** 올려줘"* 에서 끊기는 것을
+          살린다 → `_strip_fillers_ns`. **순서가 핵심이다** — 먼저 빼 버리면
+          「지금 시간」처럼 삽입어를 품은 트리거가 죽는다. 뒤에 두면 히트만 는다.
 
         🚨 **조회 동작(`*_get`)은 «바꾸라는 말»이 같이 있으면 안 걸린다** (BL-60).
           *"밝기 얼마나 올려줘"* 는 「밝기얼마」를 품고 있어서 그냥 두면 **밝기를
@@ -616,15 +691,32 @@ class CommandCache:
           (게이트의 `_COMMANDING_ACTIONS` 면제와 **같은 생각**이다 —
            바꾸라는 말이 있으면 묻는 게 아니다)
         """
-        has_change = any(v in text_ns for v in _CHANGE_VERBS)
-        for action_key, triggers in ACTION_PATTERNS:
-            if has_change and action_key.endswith("_get"):
-                continue
-            for trigger in triggers:
-                t = trigger.replace(" ", "")
-                if t in text_ns:
-                    return (action_key, t)
-        return None
+        def _scan(s: str) -> Optional[tuple[int, str, str]]:
+            """(우선순위 순번, action 키, 트리거). 못 맞히면 None."""
+            has_change = any(v in s for v in _CHANGE_VERBS)
+            for rank, (action_key, triggers) in enumerate(ACTION_PATTERNS):
+                if has_change and action_key.endswith("_get"):
+                    continue
+                for trigger in triggers:
+                    t = trigger.replace(" ", "")
+                    if t in s:
+                        return (rank, action_key, t)
+            return None
+
+        # 🚨 **«원문이 맞히면 끝»이 아니다.** 원문에서는 *덜* 구체적인 트리거가
+        #   먼저 걸릴 수 있다 — *"소리 좀 꺼줘"* 는 「소리 꺼」가 「좀」에 끊겨
+        #   **아래쪽의 `close`(「꺼줘」)** 가 걸리고, 그러면 (volume, close) 라는
+        #   없는 조합이 된다. 그래서 둘 다 훑고 **표의 순서(=우선순위)로 고른다.**
+        #   `ACTION_PATTERNS` 의 순서가 이 파일의 정확성 장치라는 것과 같은 이야기다
+        #   (「밝기가 볼륨보다 먼저 와야 한다」 주석 참조).
+        found = [x for x in (_scan(text_ns),
+                             _scan(text_ns_nf)
+                             if text_ns_nf and text_ns_nf != text_ns else None)
+                 if x]
+        if not found:
+            return None
+        best = min(found, key=lambda x: x[0])
+        return (best[1], best[2])
 
     # ── BL-60: 조회 게이트 ────────────────────────────────────────
 
@@ -650,7 +742,8 @@ class CommandCache:
         if not self.has_query_marker(user_input):
             return False
         # «바꾸라는 말»이 실제로 있으면 묻는 게 아니다 — *"소리 얼마나 줄여줘"*
-        act = self._match_action(self._normalize(user_input).replace(" ", ""))
+        _norm = self._normalize(user_input)
+        act = self._match_action(_norm.replace(" ", ""), _strip_fillers_ns(_norm))
         if act and act[0] in _COMMANDING_ACTIONS:
             return False
         return any((c.get("name", "") or "") not in _QUERY_SAFE_TOOLS
@@ -689,7 +782,7 @@ class CommandCache:
 
     def _extract_action(self, text: str) -> Optional[str]:
         """텍스트에서 action 키 추출. 우선순위 순서대로 확인."""
-        m = self._match_action(text.replace(" ", ""))
+        m = self._match_action(text.replace(" ", ""), _strip_fillers_ns(text))
         return m[0] if m else None
 
     def has_uncovered_command(self, user_input: str) -> bool:
@@ -730,16 +823,31 @@ class CommandCache:
         #   "음소거 해줘"·"스크린샷 찍어줘"(엔티티가 아예 없음)
         # → 셋 다 action이나 entity 한쪽이 없어 S2로 가던 것들이었다.
         matched_entity = self._match_entity(text_ns_all)
-        matched_action = self._match_action(text_ns_all)
+        matched_action = self._match_action(text_ns_all,
+                                            _strip_fillers_ns(text))
         if not matched_entity or not matched_action:
             return False
 
         # 공백 없는 문자열 ↔ 어절 인덱스 매핑
         # (트리거가 "볼륨 올"처럼 두 어절에 걸쳐 있어서 공백 제거 후 찾아야 한다)
+        #
+        # 🆕 **삽입어 어절은 문자열에서 뺀다.** (2-4)
+        #   `_match_action` 이 삽입어를 뺀 값으로 맞혔을 수 있는데, 그 트리거는
+        #   원문(`text_ns_all`)에는 **없다** — 「밝기올」은 "밝기좀올려줘" 안에 없다.
+        #   그대로 두면 `find` 가 -1 을 돌려 커버가 비고, 남은 「올려줘」가
+        #   **잔여 명령으로 읽혀 히트가 통째로 무효화된다.**
+        #   ⚠️ 뺀 어절을 `covered` 에 **미리 넣지는 않는다** — `absorb_next` 가
+        #     `max(covered)` 를 기준점으로 쓰기 때문에 뒤쪽 삽입어를 미리 넣으면
+        #     정작 흡수해야 할 동사("음소거 해줘 좀 빨리"의 「해줘」)를 건너뛴다.
+        #     삽입어는 아래 잔여 계산에서 이미 제외된다.
         owner: list[int] = []
+        _parts: list[str] = []
         for i, tok in enumerate(tokens):
+            if tok in _FILLER_TOKENS:
+                continue
+            _parts.append(tok)
             owner.extend([i] * len(tok))
-        text_ns = text_ns_all
+        text_ns = "".join(_parts)
 
         # entity와 action이 **같은 낱말**인 명령이 있다("음소거", "스크린샷", "최대화").
         # 이런 건 낱말 자체가 명령이고 동사를 따로 데리고 다닌다 — "음소거 해줘",
@@ -1573,17 +1681,40 @@ class CommandCache:
         self._build_intent_index()
 
     def _seed(self):
-        added = 0
+        """`SEED_DATA` 를 캐시에 반영한다. **없으면 넣고, 달라졌으면 고친다.**
+
+        🚨 **«달라졌으면 고친다»가 없으면 씨앗이 조용히 낡는다.** (2026-09-24)
+          예전에는 «키가 없을 때만» 넣었다. 그래서 `SEED_DATA` 의 도구 이름을 바꾸면
+          **디스크에 남은 옛 항목이 그대로 살아남아 없어진 도구를 가리킨다** —
+          `execute_sync` 는 «모르는 도구»로 실패를 보고하고, 사용자에겐
+          **잘 되던 명령이 갑자기 안 되는** 것으로 보인다.
+          실제로 `mute_toggle` → `mute`·`unmute` 로 가르면서 이 자리가 드러났다.
+
+        🔑 씨앗은 **우리 것**이라 `SEED_DATA` 가 정본이다. 사용자가 학습시킨
+          동적 항목(`is_seed=False`)은 **건드리지 않는다.**
+        """
+        added = fixed = 0
         for pattern_text, tool_calls, response in SEED_DATA:
             key = self._normalize(pattern_text)
-            if key not in self._cache:
+            cur = self._cache.get(key)
+            if cur is None:
                 self._cache[key] = CacheEntry(
                     pattern=key, tool_calls=tool_calls,
                     response_template=response, hit_count=0, is_seed=True,
                 )
                 added += 1
-        if added:
-            print(f"[CommandCache] 시드 데이터 {added}개 추가")
+            elif cur.is_seed and (cur.tool_calls != tool_calls
+                                  or cur.response_template != response):
+                cur.tool_calls = tool_calls
+                cur.response_template = response
+                fixed += 1
+        if added or fixed:
+            msg = []
+            if added:
+                msg.append(f"{added}개 추가")
+            if fixed:
+                msg.append(f"{fixed}개 갱신")
+            print(f"[CommandCache] 시드 데이터 {' · '.join(msg)}")
             self._persist()
 
     @property
