@@ -705,8 +705,11 @@ async def _broadcast(payload: dict) -> None:
                        type(e).__name__, e)
         try:
             import base64
-            spoken = payload["text"].replace(chr(0x1F441), " ").strip()
-            audio = await get_tts().to_bytes_async(spoken)
+            # 🔄 2026-09-23 — 여기 있던 `.replace(눈 이모지, " ")` 를 뺐다.
+            #   **사본이 둘이면 한쪽만 고쳐진다**(BL-64 커밋이 적어 둔 그 모양).
+            #   이제 `to_bytes_async` 가 «말할 것만 남기는» 정제를 **모든 경로에** 건다
+            #   → services/speech_text.py (2-2 ⓒ)
+            audio = await get_tts().to_bytes_async(payload["text"])
             payload = {**payload, "audio_base64": base64.b64encode(audio).decode()}
         except Exception as e:
             print(f"[Monitor] 알림 TTS 실패(텍스트만 전송): {e}")
