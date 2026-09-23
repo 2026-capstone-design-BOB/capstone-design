@@ -487,6 +487,34 @@ _CHANGE_VERBS = ("올려", "올리", "높여", "높이", "키워", "키우", "�
                  "내려", "내리", "낮춰", "낮추", "줄여", "줄이", "작게",
                  "밝게", "밝혀", "어둡게", "맞춰", "설정")
 
+# ── 2026-09-23: 격상 게이트 — **«강제로»를 캐시가 그냥 삼켰다** ──────
+#
+# 승인의 경계를 구현한 날 저녁, 실기에서 이렇게 나왔다:
+#
+#   '그림판 강제로 꺼 줘' | 요청=없음 | 실행=['캐시'] | 사유=캐시 | LLM 0회(캐시)
+#
+# `force_close_app` 은 **불려 본 적이 없다.** `ACTION_PATTERNS` 의 "close" 에
+# 「꺼 줘」가 있어서 그냥 `close_app` 으로 잡혔고, **「강제로」는 캐시가 모르는 낱말**
+# 이다(이 파일에 0번 나온다). 사용자는 두 번 말했고 두 번 다 같은 답을 받았다.
+#
+# 🚨 **이번엔 방향이 다행이었다** — 약한 쪽(`close_app`)이 돌았다.
+#   **문제는 캐시가 승인 층을 통째로 우회한다는 것**이다(감사 G-03 «빠른 경로에는
+#   그물이 없다»). 캐시는 `hitl` 노드를 안 지난다. 그래서 «센 말»이 들어왔는데
+#   캐시가 **약한 도구로 답하는 것**도, 언젠가 **센 도구를 직접 실행하는 것**도
+#   둘 다 막아야 한다.
+#
+# 🔑 BL-60(조회 게이트)과 **같은 모양**이다. 다만 판정이 더 단순하다 —
+#   `LEARNABLE_TOOLS` 가 위험 도구를 이미 다 빼 놓아서 **캐시에는 «센 도구»가
+#   아예 없다.** 그러니 «센 말»이면 **무조건 캐시를 포기**하면 된다.
+#   대가는 LLM 왕복 2.5초뿐이고, 얻는 것은 «승인을 건너뛰지 않는다»이다.
+_ESCALATION_MARKERS = (
+    "강제",          # 강제로 · 강제종료
+    "억지로",
+    "무시하고",
+    "덮어써", "덮어쓰",   # 파일 덮어쓰기 — `overwrite_file` 도 승인 대상이다
+    "그냥꺼", "그냥종료", "그냥지워", "그냥삭제",
+)
+
 #: «묻는 말»의 표지. 공백을 지운 문자열에서 찾는다.
 #
 # ⚠️ **양방향으로 봐야 한다.** 의문형이지만 명령인 말(*"볼륨 30으로 맞춰 줄래"*)을
@@ -627,6 +655,32 @@ class CommandCache:
             return False
         return any((c.get("name", "") or "") not in _QUERY_SAFE_TOOLS
                    for c in tool_calls)
+
+    # ── 2026-09-23: 격상 게이트 ───────────────────────────────────
+
+    def has_escalation_marker(self, text: str) -> bool:
+        """«강제로»·«덮어써»처럼 **더 센 동작을 요구하는 말**인가.
+
+        (`has_query_marker`·`has_deixis` 와 같은 자리다)
+        """
+        return any(m in self._normalize(text).replace(" ", "")
+                   for m in _ESCALATION_MARKERS)
+
+    def escalation_conflict(self, user_input: str, tool_calls: list) -> bool:
+        """센 동작을 요구했는데 캐시가 **약한 도구**를 들고 있는가.
+
+        🔑 `query_conflict` 와 달리 도구를 따로 안 본다 — `LEARNABLE_TOOLS` 가
+          위험 도구를 전부 빼 놓아서 **캐시에 센 도구가 존재할 수 없기 때문**이다.
+          캐시가 뭘 들고 있든 «센 말»의 답은 아니다.
+
+        🚨 **이 불변식이 깨지면 여기도 같이 깨진다.** 그래서
+          `tests/test_cache_escalation.py` 가 «캐시에 승인 대상 도구가 없다»를
+          따로 못 박는다 — 캐시는 승인 노드를 안 지나므로, 하나라도 새면
+          **승인 없이 실행된다.**
+        """
+        if not tool_calls:
+            return False
+        return self.has_escalation_marker(user_input)
 
     def _extract_entity(self, text: str) -> Optional[str]:
         """텍스트에서 entity 키 추출. 더 긴 표면형 우선."""
@@ -889,6 +943,10 @@ class CommandCache:
                 print(f"[CommandCache] [BL-60] 묻는 말인데 조작 도구 → 캐시 포기, "
                       f"LLM으로: {normalized!r} ↛ {matched.pattern!r}")
                 return None
+            if self.escalation_conflict(normalized, matched.tool_calls):
+                print(f"[CommandCache] [격상] 센 동작을 요구했는데 캐시는 약한 도구 → "
+                      f"캐시 포기, LLM으로: {normalized!r} ↛ {matched.pattern!r}")
+                return None
             print(f"[CommandCache] [S1-intent] {intent} → {matched.pattern!r}")
             return matched, 0.90
 
@@ -907,6 +965,11 @@ class CommandCache:
             if self.query_conflict(normalized, best_entry.tool_calls):
                 print(f"[CommandCache] [BL-60] 묻는 말인데 조작 도구 → 캐시 포기, "
                       f"LLM으로: {normalized!r} ↛ {best_entry.pattern!r} "
+                      f"(score={best_score:.2f})")
+                return None
+            if self.escalation_conflict(normalized, best_entry.tool_calls):
+                print(f"[CommandCache] [격상] 센 동작을 요구했는데 캐시는 약한 도구 → "
+                      f"캐시 포기, LLM으로: {normalized!r} ↛ {best_entry.pattern!r} "
                       f"(score={best_score:.2f})")
                 return None
             print(f"[CommandCache] [S2-sim] score={best_score:.2f} → {best_entry.pattern!r}")
@@ -1332,6 +1395,13 @@ class CommandCache:
         if self.query_conflict(key, tool_calls):
             names = ", ".join(c.get("name", "") for c in tool_calls)
             print(f"[CommandCache] [BL-60] 학습 거부(L5:묻는 말↛조작 도구 {names}): {key!r}")
+            return False
+        # L6 — «강제로»·«덮어써» 가 든 말은 **굳히지 않는다**. (2026-09-23)
+        # 🚨 굳으면 그 말이 영영 LLM 에 안 간다 = **승인 노드에도 영영 안 간다.**
+        #   캐시에 센 도구가 없으니 학습되는 것은 언제나 «약한 도구»이고,
+        #   그러면 사용자가 «강제로»라고 말할 때마다 조용히 약한 동작이 돈다.
+        if self.has_escalation_marker(key):
+            print(f"[CommandCache] 학습 거부(L6:격상 표현은 굳히지 않는다): {key!r}")
             return False
         now = _now_iso()
         if key in self._cache:                  # 이미 알고 있음 → 사용 기록만 갱신
