@@ -73,11 +73,23 @@ def run():
         check("없던 파일엔 휴지통이 **안** 생긴다", trashed == [])
         check("내용이 실제로 쓰였다", open(new_path, encoding="utf-8").read() == "가")
 
+        # 🔄 2026-09-23 (2차 수정) — **빈 파일도 막는다.** 1차에서는 «내용이 있나»만
+        #   봤고, 실기에서 0바이트 `a.txt` 에 대고 «만들었어요»가 또 나갔다.
+        #   기준이 둘로 갈린다: **막을지**는 «이름이 있나», **휴지통에 보낼지**는
+        #   «잃을 내용이 있나».
         empty = os.path.join(tmp, "빈파일.txt")
         open(empty, "w", encoding="utf-8").close()
         how = FS._write_preserving(empty, lambda t: open(t, "w", encoding="utf-8").write("나"))
-        check("빈 파일 → 'created' (잃을 게 없다)", how == "created")
-        check("빈 파일엔 휴지통이 **안** 생긴다", trashed == [])
+        check("🚨 빈 파일이어도 **이름이 있으면 안 쓴다**", how == FS.OVERWRITE_BLOCKED, how)
+        check("   그래서 휴지통도 안 생긴다", trashed == [])
+        check("   빈 파일이 그대로 있다", os.path.getsize(empty) == 0)
+
+        # 덮어쓰라고 하면 쓴다. 단 **빈 파일은 휴지통에 안 보낸다** — 잃을 게 없다.
+        how = FS._write_preserving(empty, lambda t: open(t, "w", encoding="utf-8").write("나"),
+                                   overwrite=True)
+        check("빈 파일 + overwrite → 'overwritten'(이름이 있었으니까)", how == "overwritten", how)
+        check("🔑 빈 파일은 **휴지통에 안 간다**", trashed == [], trashed)
+        check("   새 내용이 들어갔다", open(empty, encoding="utf-8").read() == "나")
 
         full = os.path.join(tmp, "내용있음.txt")
         with open(full, "w", encoding="utf-8") as f:
@@ -223,24 +235,36 @@ def run():
     print("=== 계약 6 · 이미 있으면 **안 쓰고 말한다** ===")
     FS_SRC = _src(os.path.join("tools", "filesystem.py"))
     cf = FS_SRC[FS_SRC.index("def create_file("):FS_SRC.index("def create_folder(")]
-    check("이미 있으면 «덮어쓰지 않았어요»라고 말한다", "덮어쓰지 않았어요" in cf)
-    check("🔑 **다른 이름을 권한다** (사용자 지적)", "다른 이름으로 할까요" in cf)
-    check("🔑 덮어쓰는 길도 알려 준다", "덮어써 줘" in cf)
+    check("이미 있으면 «덮어쓰지 않았어요»라고 말한다", "_already_there" in cf)
     check("🚨 `create_file` 이 휴지통을 **안 부른다**",
           "휴지통" not in cf and "_to_trash" not in cf)
+    # 🔑 문구는 **한 곳**에서 만든다 — 사본 둘이면 한쪽만 고쳐진다
+    at = FS_SRC[FS_SRC.index("def _already_there("):FS_SRC.index("OVERWRITE_BLOCKED = ")]
     check("막힌 응답은 ✓ 가 아니라 ⚠️ 다(도구가 터진 게 아니라 묻는 것)",
-          "⚠️ '{name}'이(가)" in cf)
+          "⚠️" in at and "✓" not in at)
+    check("🔑 마커를 **문구와 같은 자리**에서 붙인다 (BL-29 계약 검사가 본다)",
+          "return (f\"⚠️" in at)
+    check("🔑 **다른 이름을 권한다** (사용자 지적)", "다른 이름으로 할까요" in at)
+    check("🔑 덮어쓰는 길도 알려 준다", "덮어써 줘" in at)
+    check("🔑 **빈 파일인지도 말한다**(사용자가 바로 판단할 수 있게)",
+          "비어 있는 파일이에요" in at)
+    check("🚨 문구를 만드는 곳이 **하나다**",
+          FS_SRC.count("def _already_there(") == 1)
 
     ow = FS_SRC[FS_SRC.index("def overwrite_file("):FS_SRC.index("# ── 위험 동작: 삭제")]
     check("`overwrite_file` 이 명시적으로 덮어쓴다", "overwrite=True" in ow)
     check("덮어썼으면 **덮어썼다고** 말한다", "덮어썼어요" in ow)
     check("🔑 덮을 것이 없었으면 «덮어썼다»고 **안 한다**", "없어서 새로 만들었어요" in ow)
+    check("🔑 빈 파일을 덮어썼으면 «휴지통에 있다»고 **안 한다**",
+          "휴지통에 안 넣었어요" in ow)
+    check("   그 판정을 **쓰기 전에** 한다(쓰고 나면 옛 파일이 없다)",
+          ow.index("had_content = _has_content(path)") < ow.index("_write_preserving"))
     check("휴지통을 못 쓰면 **그때도 안 쓴다**", "되돌릴 수 없어요" in ow)
 
     we = FS_SRC[FS_SRC.index("def write_excel("):FS_SRC.index("def overwrite_file(")]
     check("write_excel 도 같은 길을 쓴다(사본 둘이 안 된다)", "_write_preserving" in we)
     check("🚨 write_excel 에 비밀 파일 검사가 생겼다 (감사 G-06)", "_is_secret_path" in we)
-    check("write_excel 도 이미 있으면 안 쓴다", "덮어쓰지 않았어요" in we)
+    check("write_excel 도 이미 있으면 안 쓴다", "_already_there" in we)
 
     # ═══ 안전망 — 승인 대상인데 등록이 안 되면 «못 하게» 된다 ═══════
     print("=== 안전망 · 승인 대상은 전부 실제 도구여야 한다 ===")
