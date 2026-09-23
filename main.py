@@ -167,6 +167,16 @@ class WakeWordRequest(BaseModel):
     enabled: bool = True
 
 
+class TTSRequest(BaseModel):
+    """목소리 설정. (계획 2-5)"""
+    #: auto = 망이 되면 edge, 끊기면 로컬 | edge = 항상 edge | local = 항상 로컬
+    engine: str = "auto"
+    #: 온라인(edge) 목소리 이름
+    voice: str = ""
+    #: 로컬(SAPI) 목소리. 비우면 한국어를 자동으로 고른다
+    local_voice: str = ""
+
+
 # ── REST 엔드포인트 ────────────────────────────────────────────────
 
 @app.get("/health")
@@ -291,6 +301,61 @@ async def save_wakeword(req: WakeWordRequest):
     }
 
 
+@app.get("/api/tts")
+async def get_tts_config():
+    """목소리 설정과 **고를 수 있는 것들**을 함께 준다. (계획 2-5)
+
+    🔑 **«무엇이 있나»를 서버가 말해 줘야 UI 가 고르게 할 수 있다.**
+      로컬 목소리는 PC 마다 다르다 — 부스 PC 와 개발 PC 가 같다고 가정하지 않는다.
+
+    ⚠️ 온라인 목록은 **망을 탄다.** 끊겨 있으면 빈 목록이 오는데, 그건 오류가
+      아니라 «지금은 못 물어봤다» 다. 그래서 `online_ok` 로 구분해서 준다.
+    """
+    from services.tts import local_voices
+    s = get_settings()
+
+    online: list[str] = []
+    online_ok = False
+    try:
+        import edge_tts
+        voices = await edge_tts.list_voices()
+        online = sorted(v["ShortName"] for v in voices
+                        if str(v.get("Locale", "")).startswith("ko"))
+        online_ok = True
+    except Exception as e:                                    # noqa: BLE001
+        print(f"[TTS] 온라인 목소리 목록을 못 받았습니다(오프라인?): {e}")
+
+    return {
+        "engine": getattr(s, "tts_engine", "auto"),
+        "voice": s.tts_voice,
+        "local_voice": getattr(s, "tts_local_voice", ""),
+        "online_voices": online,
+        "online_ok": online_ok,
+        "local_voices": local_voices(),
+    }
+
+
+@app.post("/api/tts")
+async def save_tts_config(req: TTSRequest):
+    """목소리 설정 저장. (계획 2-5)
+
+    ⚠️ 이미 만들어 둔 `TTSService` 는 생성 때 설정을 읽는다 —
+      **싱글턴을 비워야** 다음 말부터 새 목소리로 나온다.
+    """
+    engine = req.engine if req.engine in ("auto", "edge", "local") else "auto"
+    _write_env({
+        "TTS_ENGINE": engine,
+        "TTS_VOICE": req.voice.strip(),
+        "TTS_LOCAL_VOICE": req.local_voice.strip(),
+    })
+    import services.tts as _tts
+    _tts._tts_instance = None          # 다음 호출에서 새 설정으로 다시 만든다
+    print(f"[config] 목소리 저장: engine={engine} voice={req.voice!r} "
+          f"local={req.local_voice!r}")
+    return {"status": "ok", "engine": engine,
+            "voice": req.voice.strip(), "local_voice": req.local_voice.strip()}
+
+
 @app.post("/chat")
 async def chat(req: TextRequest):
     """
@@ -354,10 +419,11 @@ async def voice_input(audio: UploadFile = File(...),
         print(f"[Security] 차단됨(voice): {repr(text[:60])}")
         if use_tts:
             tts = get_tts()
-            audio_bytes_response = await tts.to_bytes_async(reason)
+            audio_bytes_response, audio_mime = await tts.synth_async(reason)
             import base64
             return {"text": text, "response": reason,
-                    "audio_base64": base64.b64encode(audio_bytes_response).decode()}
+                    "audio_base64": base64.b64encode(audio_bytes_response).decode(),
+                    "audio_mime": audio_mime}
         return {"text": text, "response": reason}
 
     # 에이전트
@@ -367,7 +433,7 @@ async def voice_input(audio: UploadFile = File(...),
     # TTS
     if use_tts:
         tts = get_tts()
-        audio_bytes_response = await tts.to_bytes_async(response)
+        audio_bytes_response, audio_mime = await tts.synth_async(response)
         # Base64로 인코딩해서 반환
         import base64
         audio_b64 = base64.b64encode(audio_bytes_response).decode()
@@ -375,6 +441,8 @@ async def voice_input(audio: UploadFile = File(...),
             "text": text,
             "response": response,
             "audio_base64": audio_b64,
+            # 🆕 2-5 — 로컬 폴백은 **WAV** 다. 받는 쪽이 audio/mpeg 로 고정돼 있었다.
+            "audio_mime": audio_mime,
         }
 
     return {"text": text, "response": response}
@@ -709,8 +777,10 @@ async def _broadcast(payload: dict) -> None:
             #   **사본이 둘이면 한쪽만 고쳐진다**(BL-64 커밋이 적어 둔 그 모양).
             #   이제 `to_bytes_async` 가 «말할 것만 남기는» 정제를 **모든 경로에** 건다
             #   → services/speech_text.py (2-2 ⓒ)
-            audio = await get_tts().to_bytes_async(payload["text"])
-            payload = {**payload, "audio_base64": base64.b64encode(audio).decode()}
+            audio, audio_mime = await get_tts().synth_async(payload["text"])
+            payload = {**payload,
+                       "audio_base64": base64.b64encode(audio).decode(),
+                       "audio_mime": audio_mime}
         except Exception as e:
             print(f"[Monitor] 알림 TTS 실패(텍스트만 전송): {e}")
 
@@ -814,8 +884,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     import base64
                     tts = get_tts()
-                    audio_bytes = await tts.to_bytes_async(full_response)
+                    audio_bytes, audio_mime = await tts.synth_async(full_response)
                     end_payload["audio_base64"] = base64.b64encode(audio_bytes).decode()
+                    end_payload["audio_mime"] = audio_mime
                 except Exception as tts_err:
                     print(f"[TTS] 오류: {tts_err}")
 

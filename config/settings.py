@@ -93,6 +93,23 @@ class Settings(BaseSettings):
     # TTS
     tts_voice: str = "ko-KR-SunHiNeural"   # 자연스러운 한국어 여성 음성
 
+    # ── 🔊 오프라인 TTS (계획 2-5) ─────────────────────────────────
+    #
+    # 🚨 **끊기면 «명령이 반만 되는» 게 아니라 «말도 못 했다».** `edge-tts` 는
+    #   Microsoft 서버를 타므로 망이 없으면 `b""` 를 돌려줬다 — 화면에는 글이 뜨지만
+    #   **아무 소리도 안 난다.** 음성 비서에서 이건 «조금 나빠지는 것»이 아니다.
+    #
+    # 🔑 **로컬 엔진은 이미 이 PC 에 있다** — Windows 내장 SAPI 의 한국어 목소리
+    #   (Microsoft Heami). 새로 깔 것도, 내려받을 모델도 없다(2026-09-24 확인).
+    #   ⚠️ 품질은 edge-tts(신경망)보다 낮다. 그래서 **기본은 auto** 다 —
+    #     망이 되면 좋은 쪽, 끊기면 나는 쪽. STT 의 google→whisper 와 같은 모양이다.
+    #
+    #: auto = 온라인이면 edge, 실패·오프라인이면 로컬 | edge = 항상 edge | local = 항상 로컬
+    tts_engine: str = "auto"
+    #: 로컬(SAPI) 목소리. 비워 두면 **한국어 목소리를 자동으로 고른다.**
+    #  이름 일부만 적어도 된다(예: "Heami").
+    tts_local_voice: str = ""
+
     # 웨이크워드 — 사용자가 직접 정한다
     # 쉼표로 구분. 비워두면 services/wakeword.py 의 기본값("플루이즈" 계열)을 쓴다.
     # 예: WAKE_WORDS=플루이즈,헤이 플루이즈,pluiz
