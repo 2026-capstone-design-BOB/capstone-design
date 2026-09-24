@@ -314,7 +314,11 @@ check("get_weather가 등록돼 있다", "get_weather" in names, f"→ {len(name
 #   "엑셀이랑 크롬 같이 보여줘" · "이거 빼고 다 내려")
 # 🆕 2026-09-24: 60 → 62 (`list_emails` · `read_email` — 페르소나 §3-D.
 #   🚨 `gmail_send` 는 **일부러 없다** — 권한(readonly)과 도구 목록이 둘 다 경계를 진다)
-check("도구가 62개다", len(names) == 62, f"→ {len(names)}개")
+# 🆕 2026-09-25: 62 → 67 (백그라운드 약속 다섯 — `remind_me` · `list_reminders` ·
+#   `cancel_reminder` · `do_in_background` · `watch_inbox`. 페르소나 §3-E·F·J 의 빈칸.
+#   🚨 엔진은 그래프 **밖**이라 승인 노드는 한 줄도 안 건드린다(절대규칙 1)
+#   → docs/design/M9_백그라운드_작업자.md)
+check("도구가 67개다", len(names) == 67, f"→ {len(names)}개")
 
 doc = (get_weather.description or "")
 check("설명이 «날씨는 항상 이 도구»라고 못박는다", "항상 이 도구" in doc, f"→ {doc[:80]}")

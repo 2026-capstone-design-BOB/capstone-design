@@ -191,10 +191,17 @@ def run():
     check("세 예외가 모두 NotConnected 로 잡힌다 (기존 호출부가 안 깨진다)",
           issubclass(A.MissingPackages, A.NotConnected)
           and issubclass(A.NeedLogin, A.NotConnected))
-    # gmail 의 도구 둘 + calendar 의 읽기 하나 = 셋이 이유별 문장을 쓴다
+    # gmail 의 구글 접점 **전부** + calendar 의 읽기 하나가 이유별 문장을 쓴다.
+    # 🔄 2026-09-25 — 「== 2」였다. `watch_inbox` 가 세 번째 접점이 되면서 깨졌는데,
+    #   **고쳐야 할 쪽은 이 숫자였다.** 접점이 늘 때마다 여기가 깨지는 게 맞다:
+    #   빠뜨리면 새 접점만 «다시 설정하세요»로 뭉뚱그린다.
+    _POINTS = _SRC.count("get_service(")
     check("도구가 message_for 를 쓴다 (한 문장으로 안 묶는다)",
-          _SRC.count("message_for(e)") == 2 and "message_for(e)" in _CAL,
+          _SRC.count("message_for(e)") >= 3 and "message_for(e)" in _CAL,
           f"gmail {_SRC.count('message_for(e)')}곳")
+    check("🚨 구글에 닿는 **모든** 자리가 이유별 문장을 쓴다",
+          _SRC.count("message_for(e)") >= _POINTS,
+          f"접점 {_POINTS}곳 · message_for {_SRC.count('message_for(e)')}곳")
 
     print(f"{NL}=== ⑪ 🚨 대화 턴 안에서 브라우저를 안 연다 ===")
     _AUTH2 = io.open(os.path.join(_ROOT, "tools", "google_auth.py"),
