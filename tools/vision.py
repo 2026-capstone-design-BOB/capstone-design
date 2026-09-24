@@ -438,6 +438,35 @@ def locate_ui_element(target: str, window: str = "", want_crop: bool = False,
         from tools.system import (take_screenshot, capture_origin, resolve_window_hwnd,
                                   window_screen_rect)
 
+        # ── ① 접근성 API 를 **먼저** 물어본다 (2026-09-24 · 10월 항목 A) ──────
+        #
+        # 🔑 **대체가 아니라 «먼저 시도»다.** UIA 는 그림·아이콘·레이아웃을 못 보므로
+        #   못 찾으면 `None` 을 돌려주고 **그대로 아래 Vision 경로로 내려간다.**
+        #   STT 의 google→whisper, TTS 의 edge→SAPI 와 같은 모양이다.
+        #
+        # 실측 근거 → docs/research/2026-09_화면조작_성공률.md
+        #   Vision 58.3% 맞음 · 🚨 33.3% **틀린 자리** · 3.18s
+        #   UIA    100% 맞음 ·      0%                 · 0.09s (35배)
+        #   그리고 UIA 는 **화면을 외부로 안 내보낸다**(감사 G-13 계열의 덤이다).
+        #
+        # 🚨 `want_crop`·`refine` 이 켜져 있으면 건너뛴다 — 그 둘은 «이미지를 잘라
+        #   다시 본다»는 뜻이라 이미지가 있어야 성립한다. UIA 에는 이미지가 없다.
+        #
+        # ⚠️ `ensure_visible` 은 **UIA 앞에서 처리하지 않는다.** 창을 앞으로 내는 것은
+        #   아래 Vision 경로의 계약이고, UIA 는 창이 뒤에 있어도 트리를 읽는다 —
+        #   오히려 «안 건드리고 읽는» 것이 이 경로의 장점이다.
+        if not want_crop and not refine:
+            try:
+                from tools.uia_locate import locate as _uia_locate
+                _hit = _uia_locate(target, window)
+            except Exception as e:                            # noqa: BLE001
+                # 🚨 새 경로가 옛 경로를 죽이면 안 된다. 조용히 넘어가지도 않는다.
+                log.warning("[UIA] 호출 자체가 실패 — Vision 으로 | %s: %s",
+                            type(e).__name__, e)
+                _hit = None
+            if _hit:
+                return _hit
+
         # 창을 **볼 수 있는 상태**로 먼저 만든다(2026-09-09). 없으면 열고, 최소화면
         # 되살려 앞으로 낸다. ⚠️ 기본은 False다 — click_ui_element는 승인 범위를
         # 넘기지 않아야 하므로 이 경로를 타지 않는다. → tools/system.ensure_window_ready
