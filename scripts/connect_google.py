@@ -110,7 +110,17 @@ def main():
     print("\n▶ 실제로 읽히는지 확인합니다 (내용은 안 보여 드립니다)")
     ok = True
     try:
-        service.calendarList().list(maxResults=1).execute()
+        # 🚨 **도구가 실제로 부르는 호출로 확인한다.** (2026-09-24 실기에서 걸렸다)
+        #
+        #   처음에는 `calendarList().list()` 로 확인했는데 **403 이 났다.**
+        #   `calendar.events` 범위는 «일정 읽기·쓰기»를 주지만 «내 캘린더 목록»은
+        #   **안 준다** — 더 넓은 권한이 필요한 별개 자원이고 우리 기능에는 하나도
+        #   필요 없다. 그래서 **설정이 멀쩡한데 «캘린더가 안 된다»고 말했다.**
+        #
+        # 🔑 이 저장소가 측정 도구마다 못 박아 둔 규칙과 같은 자리다 —
+        #   «런타임을 다시 구현하지 않는다. 실제로 도는 그 함수를 부른다.»
+        #   확인 코드가 대리(proxy)를 부르면 확인이 아니라 **다른 것을 재는 것**이다.
+        service.events().list(calendarId="primary", maxResults=1).execute()
         print("  ✓ 일정 읽기")
     except Exception as e:                                    # noqa: BLE001
         ok = False
