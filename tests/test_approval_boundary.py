@@ -194,7 +194,18 @@ def run():
           "force_close_app" in G.DANGEROUS_TOOLS)
     check("🔑 close_app 은 **없다** (*'계산기 꺼줘'* 마다 묻지 않는다)",
           "close_app" not in G.DANGEROUS_TOOLS)
-    check("승인 대상은 다섯이다", len(G.DANGEROUS_TOOLS) == 5, sorted(G.DANGEROUS_TOOLS))
+    # 🔑 개수가 아니라 **목록 자체**를 고정한다. 개수만 세면 «하나 빼고 하나 넣기»가
+    #   조용히 지나가고, 승인 대상이 늘 때 여기를 고치는 것이 **의도를 남기는 자리**다.
+    #   🆕 2026-09-24 — `move_file`·`rename_file` 추가(5 → 7).
+    #   🚨 `copy_file` 은 **일부러 없다**: 원본이 그대로 남아 되돌릴 수 있다.
+    #      판별은 «사용자가 되돌릴 수 있나» 한 줄이다(페르소나 §4-②).
+    check("승인 대상 목록이 정확히 일곱이다",
+          G.DANGEROUS_TOOLS == {"delete_file", "delete_folder", "click_ui_element",
+                                "force_close_app", "overwrite_file",
+                                "move_file", "rename_file"},
+          sorted(G.DANGEROUS_TOOLS))
+    check("🚨 copy_file 은 승인 대상이 **아니다** (되돌릴 수 있다)",
+          "copy_file" not in G.DANGEROUS_TOOLS)
 
     REG = _src(os.path.join("core", "tool_registry.py"))
     check("force_close_app 이 실제로 등록돼 있다", "force_close_app," in REG)

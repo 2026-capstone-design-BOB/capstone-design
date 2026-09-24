@@ -176,3 +176,40 @@ def check_security(user_input: str) -> Tuple[bool, str]:
         return True, reason
 
     return False, ""
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 보내기 전 검사 — 2026-09-24 신설 (페르소나 §3-K · §5 🟢)
+#
+# 🔑 **새 표면이 아니다.** 위 `mask_sensitive_output` 이 쓰는 패턴을 **«가리기»가
+#   아니라 «찾기»로 돌려 쓰는 것**이다. 정규식을 새로 쓰면 둘이 갈라지고,
+#   그러면 «검사는 통과했는데 마스킹은 걸리는» 상태가 생긴다.
+#
+# 🚨 그래서 아래는 **같은 `_RRN_RE` · `_CARD_RE` · `_GKEY_RE` · `_OKEY_RE` 를 그대로
+#   쓴다.** 패턴을 늘릴 일이 있으면 위쪽 한 곳만 고치면 양쪽이 같이 는다.
+# ══════════════════════════════════════════════════════════════════════
+
+#: (표시 이름, 정규식) — 위에서 이미 쓰고 있는 것들
+_SCAN_TARGETS = [
+    ("주민등록번호", _RRN_RE),
+    ("카드번호",     _CARD_RE),
+    ("Google API 키", _GKEY_RE),
+    ("OpenAI API 키", _OKEY_RE),
+]
+
+
+def scan_sensitive_text(text: str) -> list[tuple[str, int]]:
+    """민감정보가 몇 건씩 들어 있나 → [(종류, 건수), ...]. 없으면 빈 목록.
+
+    🚨 **찾은 값 자체는 돌려주지 않는다.** 돌려주면 그것이 응답·로그·TTS 를 타고
+      다시 밖으로 나간다 — 가리려고 만든 도구가 새는 구멍이 되는 셈이다.
+      «무엇이 몇 건»까지만 말하고, 사용자는 자기 화면에서 찾으면 된다.
+    """
+    if not text:
+        return []
+    out = []
+    for label, rx in _SCAN_TARGETS:
+        n = len(rx.findall(text))
+        if n:
+            out.append((label, n))
+    return out

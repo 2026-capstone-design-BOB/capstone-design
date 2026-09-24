@@ -888,3 +888,143 @@ def get_running_apps() -> str:
         return ("✓ 실행 중인 앱:\n"
                 + "\n".join(f"  • {app}" for app in found) + tail)
     return "✓ Pluiz가 아는 앱 중에는 실행 중인 것이 없어요." + tail
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 업무 환경 — 알림 끄기 · 화면 안 꺼지게 (2026-09-24 신설 · 페르소나 §3-H)
+#
+# 🎯 *"화면 공유하니까 알림 꺼줘"* 는 페르소나 표에서 **«직장인 맥락에서 가장 실질적인
+#   빈칸»** 으로 꼽힌 자리다. 회의 전마다 하는 동작인데 갈 곳이 없었다.
+#
+# 🔑 **방향을 가진 도구 둘로 만든다.** 토글 하나로 두면 이미 꺼져 있을 때
+#   *"알림 꺼줘"* 가 **알림을 켠다** — `mute_toggle` 이 2026-09-23 실기에서
+#   정확히 그렇게 깨졌다(그래서 `mute`·`unmute` 로 갈랐다).
+#
+# 🔑 **읽는 도구를 같이 만든다.** 쓰기만 만들면 *"지금 알림 켜져 있어?"* 가 갈 곳이
+#   없어 LLM 잡담으로 끝나고, 그러다 값을 지어낸다(BL-60·61 이 그 모양이었다).
+#   [페르소나 §4-①](../docs/planning/페르소나_직장인.md)이 규칙으로 굳혀 둔 것이다.
+#
+# 🚨 **승인 대상이 아니다.** 판별은 «사용자가 되돌릴 수 있나» 한 줄인데,
+#   *"알림 다시 켜줘"* 한 마디면 돌아온다. 볼륨·밝기와 같은 칸이다.
+# ══════════════════════════════════════════════════════════════════════
+
+#: 알림(토스트) 전역 스위치. Windows 설정이 쓰는 바로 그 값이다.
+_NOTIF_KEY = r"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings"
+_NOTIF_VAL = "NOC_GLOBAL_SETTING_TOASTS_ENABLED"
+
+
+def _read_notifications() -> bool | None:
+    """알림이 켜져 있나. 못 읽으면 None — **모르면 모른다고 한다.**
+
+    🔑 값이 **없는 것이 «켜짐»** 이다. Windows 는 기본값일 때 키를 안 쓴다.
+    """
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _NOTIF_KEY) as k:
+            try:
+                v, _ = winreg.QueryValueEx(k, _NOTIF_VAL)
+                return bool(v)
+            except FileNotFoundError:
+                return True          # 키가 없으면 기본값 = 켜짐
+    except Exception as e:
+        log.warning("[알림] 상태를 못 읽었다 | %s: %s", type(e).__name__, e)
+        return None
+
+
+def _write_notifications(on: bool) -> bool:
+    """알림을 켜고 끈다. **쓰고 나서 다시 읽어 확인한다.**
+
+    🚨 «눌렀는데 상태가 안 바뀌던» 사고가 있었다(2026-09-23 `mute_toggle`).
+      그래서 쓰기만 하고 성공을 보고하지 않는다.
+    """
+    try:
+        import winreg
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, _NOTIF_KEY, 0,
+                                winreg.KEY_SET_VALUE) as k:
+            winreg.SetValueEx(k, _NOTIF_VAL, 0, winreg.REG_DWORD, 1 if on else 0)
+    except Exception as e:
+        log.warning("[알림] 쓰기 실패 | %s: %s", type(e).__name__, e)
+        return False
+    return _read_notifications() is on
+
+
+@tool
+def notifications_off() -> str:
+    """알림(팝업 메시지)을 끕니다. 회의·화면 공유·발표 전에 씁니다.
+    이미 꺼져 있으면 그대로 둡니다. '알림 켜줘'라고 하면 되돌릴 수 있습니다.
+    """
+    before = _read_notifications()
+    if before is False:
+        return "✓ 알림은 이미 꺼져 있어요."
+    if not _write_notifications(False):
+        return "✗ 알림을 끄지 못했어요. 설정 > 시스템 > 알림에서 직접 꺼 주시겠어요?"
+    return "✓ 알림을 껐어요. 다시 켜시려면 '알림 켜줘'라고 말씀해 주세요."
+
+
+@tool
+def notifications_on() -> str:
+    """알림(팝업 메시지)을 다시 켭니다. 이미 켜져 있으면 그대로 둡니다."""
+    before = _read_notifications()
+    if before is True:
+        return "✓ 알림은 이미 켜져 있어요."
+    if not _write_notifications(True):
+        return "✗ 알림을 켜지 못했어요. 설정 > 시스템 > 알림에서 직접 켜 주시겠어요?"
+    return "✓ 알림을 다시 켰어요."
+
+
+@tool
+def get_notifications_status() -> str:
+    """지금 알림이 켜져 있는지 꺼져 있는지 알려줍니다."""
+    state = _read_notifications()
+    if state is None:
+        return "✗ 알림 설정을 읽지 못했어요."
+    return "알림이 켜져 있어요." if state else "알림이 꺼져 있어요."
+
+
+# ── 화면 안 꺼지게 ────────────────────────────────────────────────────
+#
+# 🔑 `SetThreadExecutionState` 는 **이 프로세스가 살아 있는 동안만** 유효하다.
+#   서버가 꺼지면 Windows 가 알아서 원래대로 돌아간다 — 설정을 영구히 바꾸는 것이
+#   아니라서 «되돌리기»가 공짜다.
+
+_ES_CONTINUOUS       = 0x80000000
+_ES_SYSTEM_REQUIRED  = 0x00000001
+_ES_DISPLAY_REQUIRED = 0x00000002
+
+#: 지금 우리가 잡고 있나. 🚨 레지스트리와 달리 **밖에서 읽을 방법이 없어서**
+#   우리 쪽 기억이 유일한 진실이다. 그래서 «모른다»가 아니라 «우리가 건 적 있나»만 답한다.
+_awake_held = False
+
+
+@tool
+def keep_awake() -> str:
+    """화면이 자동으로 꺼지거나 컴퓨터가 잠들지 않게 붙잡습니다.
+    발표·화면 공유·오래 걸리는 작업 중에 씁니다. '화면 꺼져도 돼'라고 하면 풉니다.
+    """
+    global _awake_held
+    try:
+        ok = ctypes.windll.kernel32.SetThreadExecutionState(
+            _ES_CONTINUOUS | _ES_SYSTEM_REQUIRED | _ES_DISPLAY_REQUIRED)
+        if not ok:
+            return "✗ 화면 유지를 걸지 못했어요."
+    except Exception as e:
+        log.warning("[화면유지] 실패 | %s: %s", type(e).__name__, e)
+        return "✗ 화면 유지를 걸지 못했어요."
+    _awake_held = True
+    return ("✓ 화면이 꺼지지 않게 해 뒀어요. 끝나면 '화면 꺼져도 돼'라고 말씀해 주세요 "
+            "— 프로그램을 닫아도 자동으로 풀려요.")
+
+
+@tool
+def allow_sleep() -> str:
+    """화면 자동 꺼짐을 다시 허용합니다(keep_awake로 걸어 둔 것을 풉니다)."""
+    global _awake_held
+    if not _awake_held:
+        return "✓ 지금도 원래 설정대로예요. 따로 붙잡고 있지 않아요."
+    try:
+        ctypes.windll.kernel32.SetThreadExecutionState(_ES_CONTINUOUS)
+    except Exception as e:
+        log.warning("[화면유지] 해제 실패 | %s: %s", type(e).__name__, e)
+        return "✗ 화면 유지를 풀지 못했어요."
+    _awake_held = False
+    return "✓ 화면 자동 꺼짐을 다시 허용했어요."

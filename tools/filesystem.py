@@ -1005,3 +1005,181 @@ def delete_folder(folder_path: str) -> str:
         return f"✓ '{os.path.basename(resolved)}' 폴더를 {where}."
     except Exception as e:
         return f"✗ 삭제 실패: {e}"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 이동 · 이름변경 · 복사 — 2026-09-24 신설 (페르소나 §5 🟢)
+#
+# 🚨 **여기에 도구가 하나도 없었다.** 만들기 · 찾기 · 지우기뿐이었고,
+#   *"다운로드 폴더 정리해줘"* · *"이름 바꿔줘"* · *"백업해둬"* 가 전부 갈 곳이
+#   없었다([페르소나 §3-G](../docs/planning/페르소나_직장인.md)).
+#   결함이 아니라 **미구현**이라 BACKLOG 에 없었다.
+#
+# 🔑 **셋을 가른 기준은 «사용자가 되돌릴 수 있나» 한 줄이다**(페르소나 §4-②).
+#
+#   | | 되돌릴 수 있나 | 승인 |
+#   |---|---|---|
+#   | `copy_file`   | 원본이 그대로 있다 | **불필요** |
+#   | `move_file`   | 어디로 갔는지 모르면 못 되돌린다 | **필요** |
+#   | `rename_file` | 옛 이름을 모르면 못 되돌린다 | **필요** |
+#
+# 🚨 **`move_file`·`rename_file` 에는 재귀 탐색을 붙이지 않았다.** 이건 실수가
+#   아니라 `_locate_for_open` 의 주석이 못 박아 둔 비대칭을 그대로 따른 것이다 —
+#   승인 질문은 **이름만** 보여주므로, 하위 폴더에서 우연히 이름이 맞은 다른 파일이
+#   잡혀도 사용자는 그것을 알 수 없다. *"보고서.docx 옮겨줘"* 가 **생각한 적 없는
+#   파일**을 옮기면 승인을 받아도 사고다.
+#   `copy_file` 만 탐색을 허용한다 — 원본이 안 사라지므로 최악이 «엉뚱한 사본 하나»다.
+# ══════════════════════════════════════════════════════════════════════
+
+#: 덮어쓰기를 막고 붙이는 꼬리. `create_file` 이 «안 쓰고 되묻는» 것과 같은 규칙이다.
+_COLLIDE = ("✗ '{name}' 이(가) 그 자리에 이미 있어요. "
+            "덮어쓰지 않았어요 — 다른 이름을 알려 주시면 그걸로 할게요.")
+
+
+def _dest_dir(destination: str) -> str | None:
+    """목적지 문자열 → 폴더 경로. 위치 키워드도 절대경로도 받는다."""
+    resolved = _resolve_location(destination)
+    if resolved:
+        return resolved
+    return _resolve_location_in_path(destination) if destination else None
+
+
+def _guard_source(path: str, verb: str) -> str | None:
+    """원본 쪽 공통 관문. 막을 이유가 있으면 그 문장을, 없으면 None."""
+    if not os.path.exists(path):
+        return f"✗ '{os.path.basename(path)}' 을(를) 찾을 수 없어요. 어디에 있는지 알려 주시겠어요?"
+    if _is_protected_path(path):
+        return f"✗ 시스템/보호 경로의 파일은 {verb} 수 없어요."
+    if _is_secret_path(path):
+        return _SECRET_REFUSE
+    return None
+
+
+@tool
+def copy_file(file_path: str, destination: str) -> str:
+    """파일을 다른 폴더로 복사합니다(원본은 그대로 남습니다). 백업할 때 씁니다.
+
+    file_path: 파일 경로 또는 상대경로(바탕화면/문서/다운로드).
+    destination: 복사해 넣을 폴더. '바탕화면' 같은 위치 이름도 됩니다.
+    """
+    resolved = _resolve_location_in_path(file_path)
+
+    # 🔑 복사만 탐색을 허용한다 — 원본이 안 사라지므로 최악이 «엉뚱한 사본 하나»다.
+    if not os.path.exists(resolved):
+        hits = _locate_for_open(file_path)
+        if len(hits) > 1:
+            names = ", ".join(f"{loc}" for loc, _ in hits[:3])
+            return (f"✗ '{os.path.basename(file_path)}' 이(가) 여러 곳에 있어요({names}). "
+                    f"어느 것인지 알려 주시겠어요?")
+        if hits:
+            resolved = hits[0][1]
+
+    blocked = _guard_source(resolved, "복사할")
+    if blocked:
+        return blocked
+    if os.path.isdir(resolved):
+        return f"✗ '{os.path.basename(resolved)}' 은(는) 폴더예요. 지금은 파일만 복사할 수 있어요."
+
+    dest_dir = _dest_dir(destination)
+    if not dest_dir:
+        return f"✗ '{destination}' 이(가) 어디인지 모르겠어요."
+    if _is_protected_path(dest_dir):
+        return "✗ 시스템/보호 경로로는 복사할 수 없어요."
+    if not os.path.isdir(dest_dir):
+        return f"✗ '{destination}' 폴더가 없어요."
+
+    name = os.path.basename(resolved)
+    target = os.path.join(dest_dir, name)
+    if os.path.normcase(os.path.abspath(target)) == os.path.normcase(os.path.abspath(resolved)):
+        return "✗ 원본과 같은 자리예요. 다른 폴더를 알려 주세요."
+    if os.path.exists(target):
+        return _COLLIDE.format(name=name)
+
+    try:
+        import shutil
+        shutil.copy2(resolved, target)
+        return f"✓ '{name}' 을(를) {destination} 에 복사했어요. 원본은 그대로 있어요."
+    except Exception as e:
+        return f"✗ 복사 실패: {e}"
+
+
+@tool
+def move_file(file_path: str, destination: str) -> str:
+    """파일을 다른 폴더로 옮깁니다(원본 자리에서 사라집니다). 되돌리기 어려운
+    동작이라 반드시 사용자 승인을 받은 뒤 실행됩니다.
+
+    file_path: 파일 경로 또는 상대경로(바탕화면/문서/다운로드).
+    destination: 옮겨 넣을 폴더. '바탕화면' 같은 위치 이름도 됩니다.
+    """
+    # 🚨 탐색하지 않는다 — 위 절의 비대칭 참조. 준 자리에 없으면 그렇게 말한다.
+    resolved = _resolve_location_in_path(file_path)
+    blocked = _guard_source(resolved, "옮길")
+    if blocked:
+        return blocked
+    if os.path.isdir(resolved):
+        return f"✗ '{os.path.basename(resolved)}' 은(는) 폴더예요. 지금은 파일만 옮길 수 있어요."
+
+    dest_dir = _dest_dir(destination)
+    if not dest_dir:
+        return f"✗ '{destination}' 이(가) 어디인지 모르겠어요."
+    if _is_protected_path(dest_dir):
+        return "✗ 시스템/보호 경로로는 옮길 수 없어요."
+    if not os.path.isdir(dest_dir):
+        return f"✗ '{destination}' 폴더가 없어요."
+
+    name = os.path.basename(resolved)
+    target = os.path.join(dest_dir, name)
+    if os.path.normcase(os.path.abspath(target)) == os.path.normcase(os.path.abspath(resolved)):
+        return f"✓ '{name}' 은(는) 이미 {destination} 에 있어요. 아무것도 안 옮겼어요."
+    if os.path.exists(target):
+        return _COLLIDE.format(name=name)
+
+    try:
+        import shutil
+        shutil.move(resolved, target)
+        return f"✓ '{name}' 을(를) {destination}(으)로 옮겼어요."
+    except Exception as e:
+        return f"✗ 옮기기 실패: {e}"
+
+
+@tool
+def rename_file(file_path: str, new_name: str) -> str:
+    """파일 이름을 바꿉니다(같은 폴더 안에서). 되돌리기 어려운 동작이라 반드시
+    사용자 승인을 받은 뒤 실행됩니다.
+
+    file_path: 파일 경로 또는 상대경로(바탕화면/문서/다운로드).
+    new_name: 새 이름. 확장자를 안 적으면 원래 확장자를 그대로 씁니다.
+    """
+    # 🚨 여기도 탐색하지 않는다 — move_file 과 같은 이유다.
+    resolved = _resolve_location_in_path(file_path)
+    blocked = _guard_source(resolved, "이름을 바꿀")
+    if blocked:
+        return blocked
+
+    new_name = (new_name or "").strip().replace("\\", "/")
+    if not new_name:
+        return "✗ 새 이름을 못 받았어요."
+    if "/" in new_name:
+        # 🔑 이름 바꾸기는 **같은 폴더 안**의 일이다. 경로가 오면 move_file 의 일이라
+        #   조용히 옮기지 않고 갈라 준다 — 승인 문구가 «이름 변경»이라 사용자가
+        #   «옮긴다»는 것을 모른 채 승인하게 된다.
+        return "✗ 이름에 경로가 들어 있어요. 다른 폴더로 옮기는 거라면 move_file 을 쓰세요."
+
+    # 확장자를 안 적었으면 원래 것을 이어 붙인다 — 확장자가 날아가면 파일이 안 열린다
+    if not os.path.splitext(new_name)[1]:
+        new_name += os.path.splitext(resolved)[1]
+
+    target = os.path.join(os.path.dirname(resolved), new_name)
+    if _is_secret_path(target):
+        return _SECRET_REFUSE
+    if os.path.normcase(os.path.abspath(target)) == os.path.normcase(os.path.abspath(resolved)):
+        return f"✓ 이미 '{new_name}' 이에요. 아무것도 안 바꿨어요."
+    if os.path.exists(target):
+        return _COLLIDE.format(name=new_name)
+
+    old = os.path.basename(resolved)
+    try:
+        os.rename(resolved, target)
+        return f"✓ '{old}' 을(를) '{new_name}' 으로 바꿨어요."
+    except Exception as e:
+        return f"✗ 이름 변경 실패: {e}"

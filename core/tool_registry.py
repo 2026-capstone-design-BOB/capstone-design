@@ -18,6 +18,7 @@ def get_all_tools() -> List[BaseTool]:
         maximize_window,
         minimize_window,
         show_desktop,
+        switch_window,
     )
     from tools.web import (
         open_url,
@@ -41,6 +42,9 @@ def get_all_tools() -> List[BaseTool]:
         overwrite_file,
         delete_file,
         delete_folder,
+        copy_file,
+        move_file,
+        rename_file,
     )
     from tools.system import (
         volume_up,
@@ -57,15 +61,22 @@ def get_all_tools() -> List[BaseTool]:
         get_battery_status,
         get_current_time,
         get_running_apps,
+        notifications_off,
+        notifications_on,
+        get_notifications_status,
+        keep_awake,
+        allow_sleep,
     )
     from tools.input_control import (
         type_text,
         press_key,
         get_clipboard_text,
         click_ui_element,
+        scan_sensitive,
     )
     from tools.calendar import (
         create_calendar_event,
+        list_calendar_events,
     )
     from tools.vision import (
         describe_screen,
@@ -82,6 +93,10 @@ def get_all_tools() -> List[BaseTool]:
         maximize_window,
         minimize_window,
         show_desktop,
+        # 🔑 **여는 것과 «가는 것»은 다르다.** 이미 켜져 있는 창으로 옮기는 것이라
+        #   꺼져 있으면 열지 않고 물어본다 — 안 그러면 사용자가 다른 창을 보고
+        #   있다고 착각한 채 다음 말을 한다.
+        switch_window,
         # 웹
         open_url,
         web_search,
@@ -99,6 +114,10 @@ def get_all_tools() -> List[BaseTool]:
         open_recent_file,
         open_file,
         write_excel,
+        # 🔑 **복사는 되돌릴 수 있어서 승인이 없다.** 원본이 그대로 남으므로
+        #   최악이 «엉뚱한 사본 하나»다. 옮기기·이름변경은 아래 승인 묶음에 있다
+        #   — 가른 기준은 «사용자가 되돌릴 수 있나» 한 줄이다.
+        copy_file,
         # 시스템
         volume_up,
         volume_down,
@@ -119,12 +138,25 @@ def get_all_tools() -> List[BaseTool]:
         get_battery_status,
         get_current_time,
         get_running_apps,
+        # 업무 환경 — 회의·화면 공유 전에 쓰는 것들.
+        # 🔑 **방향을 가진 둘 + 읽는 하나.** 토글 하나로 두면 이미 꺼져 있을 때
+        #   *"알림 꺼줘"* 가 알림을 켠다(`mute_toggle` 이 그렇게 깨졌다).
+        notifications_off,
+        notifications_on,
+        get_notifications_status,
+        keep_awake,
+        allow_sleep,
         # 키보드/클립보드 입력
         type_text,
         press_key,
         get_clipboard_text,
-        # 캘린더
+        # 보내기 전 개인정보 검사 — 마스킹 패턴을 «가리기»가 아니라 «찾기»로
+        # 돌려 쓴다. 새 표면이 아니라서 위험이 늘지 않는다.
+        scan_sensitive,
+        # 캘린더 — 🔑 **읽기·쓰기 한 쌍.** 읽기가 없으면 *"오늘 일정 뭐야"* 가
+        # LLM 잡담으로 끝나고, 그러다 없는 일정을 지어낸다(BL-60·61 과 같은 모양).
         create_calendar_event,
+        list_calendar_events,
         # 화면 이해 (Vision) — 화면 내용을 외부 LLM에 전송한다. tools/vision.py 주의사항 참조
         describe_screen,
         find_ui_element,
@@ -160,5 +192,11 @@ def get_all_tools() -> List[BaseTool]:
     #   도구로 나눈 것이 `close_app`/`force_close_app` 과 같은 규칙이다.
     #   → docs/design/G-05-19_승인의_경계.md §4-1
     tools += [overwrite_file]
+
+    # 옮기기·이름변경(위험 동작 — 어디로 갔는지·옛 이름을 모르면 못 되돌린다).
+    # 🚨 **둘 다 재귀 탐색을 안 한다.** 승인 질문은 이름만 보여주므로, 하위 폴더에서
+    #   우연히 이름이 맞은 다른 파일이 잡히면 사용자가 그것을 알 수 없다.
+    #   `_locate_for_open` 이 삭제에 대해 못 박아 둔 비대칭과 같은 자리다.
+    tools += [move_file, rename_file]
 
     return tools

@@ -155,11 +155,13 @@ else:
 
 # ⚠️ click_ui_element가 늘면서 4개가 됐는데 이 검사는 3에 고정돼 있었다.
 # 개수를 세는 검사는 도구가 늘 때마다 낡는다 — **이름으로** 본다.
+# 🆕 2026-09-24: scan_sensitive 추가(페르소나 §3-K — 보내기 전 개인정보 검사)
 _ic_tools = ("def type_text(", "def get_clipboard_text(", "def press_key(",
-             "def click_ui_element(")
+             "def click_ui_element(", "def scan_sensitive(")
 _missing_ic = [t for t in _ic_tools if t not in src_ic]
 if not _missing_ic and src_ic.count("@tool") == len(_ic_tools):
-    ok(f"@tool {len(_ic_tools)}개 · 이름까지 일치 (type_text/clipboard/press_key/click_ui)")
+    ok(f"@tool {len(_ic_tools)}개 · 이름까지 일치 "
+           f"(type_text/clipboard/press_key/click_ui/scan_sensitive)")
 else:
     fail(f"input_control 도구 불일치: 없는 것={_missing_ic} "
          f"@tool={src_ic.count('@tool')}개 (기대 {len(_ic_tools)})")

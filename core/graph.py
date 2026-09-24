@@ -64,7 +64,14 @@ _NL = chr(10)
 # 🔑 앞의 셋은 «(A) 대상 확인»이고 `force_close_app`은 «(B) 손실 고지»다.
 #   → docs/design/G-05-19_승인의_경계.md §2·§4-2
 DANGEROUS_TOOLS = {"delete_file", "delete_folder", "click_ui_element",
-                   "force_close_app", "overwrite_file"}
+                   "force_close_app", "overwrite_file",
+                   # 🆕 2026-09-24 — 파일 옮기기·이름변경.
+                   # 🔑 **«만들 때» 넣는다.** 나중에 넣기로 하면 안 넣게 되고,
+                   #   빠지면 승인 없이 실행된다([페르소나 §4-②](
+                   #   ../docs/planning/페르소나_직장인.md)).
+                   # 🚨 `copy_file` 은 **일부러 뺐다** — 원본이 그대로 남아
+                   #   사용자가 되돌릴 수 있다. 판별은 그 한 줄이다.
+                   "move_file", "rename_file"}
 
 # ── 덮어쓰기는 **이름이 다른 도구**가 맡는다 (G-05 · 2026-09-23 개정) ──
 #
