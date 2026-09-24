@@ -46,11 +46,11 @@
       }
     ],
     "response_template": "✓ 메모장을 종료했어요.",
-    "hit_count": 12,
+    "hit_count": 13,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-19T20:01:12",
+    "last_used": "2026-09-24T16:33:15",
     "imported": false
   },
   "계산기 열어줘": {
@@ -336,11 +336,11 @@
       }
     ],
     "response_template": "✓ 음소거했어요.",
-    "hit_count": 21,
+    "hit_count": 22,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "2026-09-23T21:04:38",
+    "last_used": "2026-09-24T16:33:19",
     "imported": false
   },
   "음소거 해줘": {
