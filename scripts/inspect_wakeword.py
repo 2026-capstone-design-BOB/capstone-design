@@ -81,7 +81,7 @@ def table(sessions):
     print("─" * 78)
     for meta, pcm in sessions:
         first = True
-        for lab in ("positive", "negative", "freetalk"):
+        for lab in ("positive", "negative", "command", "freetalk"):
             segs = [s for s in meta.get("segments", []) if s["label"] == lab]
             if not segs:
                 continue
@@ -140,7 +140,7 @@ def main():
     ap = argparse.ArgumentParser(description="받은 녹음을 재 보고 들어 본다")
     ap.add_argument("--play", metavar="화자", help="그 사람 구간을 이어 붙여 재생한다")
     ap.add_argument("--label", default="positive",
-                    choices=["positive", "negative", "freetalk", "all"],
+                    choices=["positive", "negative", "command", "freetalk", "all"],
                     help="어떤 구간을 들을지 (기본: positive)")
     ap.add_argument("--gain", type=float, default=1.0, help="듣기용 증폭 배수 (원본 불변)")
     ap.add_argument("--no-open", action="store_true", help="파일만 만들고 열지 않는다")

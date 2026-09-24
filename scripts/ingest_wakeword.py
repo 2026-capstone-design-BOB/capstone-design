@@ -172,7 +172,11 @@ def main():
             continue
         who = meta.get("speaker", "?")
         held = who in holdout
-        counts = {"positive": 0, "negative": 0, "freetalk": 0, "quiet": 0}
+        # 🚨 **새 라벨을 여기 안 넣으면 매니페스트가 거짓이 된다.** 아래에서
+        #   `counts[lab if lab in counts else "negative"]` 로 떨어지므로 **소리는
+        #   제대로 실리는데 기록만 «negative» 로 적힌다** — 나중에 «명령 구간이 몇 개
+        #   들어갔나»를 물으면 답할 수가 없다.
+        counts = {"positive": 0, "negative": 0, "command": 0, "freetalk": 0, "quiet": 0}
 
         for seg in meta.get("segments", []):
             lab = seg.get("label")

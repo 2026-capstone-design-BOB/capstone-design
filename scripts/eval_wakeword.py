@@ -83,7 +83,16 @@ RAW_DIR  = os.path.join(ROOT, "data", "wakeword_raw")
 MANIFEST = os.path.join(ROOT, "data", "wakeword", "manifest.json")
 
 # 양성으로 세지 않는 라벨 — 이 구간에서 깨면 오탐이다
-NEGATIVE_LABELS = ("negative", "freetalk", "quiet")
+#
+# 🚨 **새 라벨을 여기 안 넣으면 조용히 사라진다.** 이 튜플은 오탐의 **분자와 분모를
+#   동시에** 정한다(`fa_by` · `sec_by`). 빠진 라벨의 구간에서 깨면 그 오탐은 **세지
+#   않고**, 그 초도 분모에 **안 들어간다** — 즉 성적이 **좋아 보인다.**
+#   2026-09-23 에 «녹음 6명을 통째로 안 읽은» 사고와 같은 모양이다(기본이 «안 넣는 쪽»).
+#
+# 🆕 `command`(2026-09-24 신설) — «컴퓨터에게 시키는 말». 호출어가 아니므로 음성이다.
+#   전시 부스에서 **사람이 프로그램에게 말하는 동안 깨는 것**이 정확히 이 자리라
+#   오히려 가장 값이 나가는 음성 구간이다.
+NEGATIVE_LABELS = ("negative", "command", "freetalk", "quiet")
 
 #: 에너지 관문 후보 ([BL-23](../docs/BACKLOG.md) 완화책 ① — «관문을 올리면 오탐이 주는가»)
 #:
@@ -607,7 +616,8 @@ def main():
     # 🚨 라벨을 안 쪼개고 이 숫자 하나만 적으면 그게 «숫자가 거짓말하는» 자리다.
     #    negative 는 «블루투스»·«플루트»처럼 **일부러 헷갈리게 만든 말**이고,
     #    freetalk 는 그냥 자유 발화다. 둘을 섞으면 어느 쪽도 아닌 값이 나온다.
-    lbl_ko = {"negative": "헷갈리는 말", "freetalk": "자유 발화", "quiet": "무음"}
+    lbl_ko = {"negative": "헷갈리는 말", "command": "컴퓨터에게",
+              "freetalk": "자유 발화", "quiet": "무음"}
     print(f"\n  ── 오탐을 라벨별로 쪼갠다 ──────────────────")
     print(f"  {'구간':<12} {'길이(초)':>9} {'오탐':>5} {'FA/시간':>9}")
     for k in NEGATIVE_LABELS:

@@ -308,7 +308,7 @@
 
     <h1>Pluiz 목소리 녹음</h1>
     <p class="sub">졸업작품 «Pluiz» 가 <b>"플루이즈"</b> 라는 부름을 알아듣게 학습시키는 녹음입니다.
-      약 <b>3분</b>이면 끝납니다.</p>
+      약 <b>4분</b>이면 끝납니다.</p>
 
     <!-- ───────── 1. 시작 ───────── -->
     <div id="s-intro">
@@ -317,7 +317,7 @@
         <ul>
           <li>화면에 <b>말할 내용</b>이 뜹니다. 초록 숫자가 세는 동안 말하면 됩니다.</li>
           <li><b>더듬거나 틀려도 괜찮습니다.</b> 그 항목만 바로 다시 할 수 있어요 — 처음부터 안 합니다.</li>
-          <li>«플루이즈» 부르기 말고 <b>비슷한 다른 말</b>과 <b>평범한 잡담</b>도 받습니다. (이유는 맨 아래)</li>
+          <li>«플루이즈» 부르기 말고 <b>비슷한 다른 말</b>, <b>컴퓨터에게 시키는 말</b>, <b>평범한 잡담</b>도 받습니다. (이유는 맨 아래)</li>
         </ul>
       </div>
 
@@ -422,6 +422,11 @@
         <b>«기계음이냐 사람이냐»만 구분</b>해 버리거든요. 그래서 같은 마이크로
         <b>«플루이즈가 아닌 말»</b> 도 받아야 합니다.
       </p>
+      <p class="note">③ <b>«컴퓨터에게»</b> 는 이유가 하나 더 있습니다 — 프로그램이
+        <b>명령을 얼마나 정확히 알아듣는지</b> 를 재려면, 사람이 실제로 마이크에 말한
+        명령과 <b>그 사람이 무슨 말을 했는지</b> 가 짝으로 있어야 합니다.
+        지금은 그 짝이 <b>네 문장</b>밖에 없어서 «인식률»을 제대로 말할 수가 없습니다.
+      </p>
     </div>
 
   </div>
@@ -472,6 +477,31 @@
       '이름이 뭐라고 하셨죠',
     ];
 
+    /* 🆕 **PC 제어 명령 — 2026-09-24 신설.** 웨이크워드용이 아니라 «인식률»용이다.
+     *
+     * 🚨 **이 슬롯이 없어서 못 잰 것이 있었다.** 실측([음성인식률 §7](
+     * ../docs/research/2026-09_음성인식률.md))에서 글자 오류율은 냈지만, 그 표본은
+     * 전부 잡담이라 **«명령을 얼마나 알아듣나»에는 아무 답도 못 했다.** 위 NEG_LINES 는
+     * 애초에 «호출어와 헷갈리라고» 고른 말이라 제품 발화가 아니다.
+     *
+     * 🔑 **웨이크워드 학습에는 그냥 음성(negative)으로 들어간다** — 호출어가 아니니까.
+     *   `ingest_wakeword.py` 가 모르는 라벨을 음성으로 보내므로 **새로 받는 분들의
+     *   자료는 학습에도 그대로 쓰인다.** 슬롯을 «추가»만 하므로 이미 받은 6명의
+     *   자료도 그대로 유효하다(새로 오는 분들이 상위집합이 된다).
+     *
+     * 갈래를 먼저 정하고 채웠다 — 숫자 · 외래어 · 고유명사 · 맥락처럼 **STT 가 실제로
+     * 미끄러지는 자리**가 하나씩 들어가야 한다. 유리한 것만 고르면 재는 게 아니다. */
+    const CMD_LINES = [
+      '메모장 열어줘',                  // 앱 이름
+      '볼륨 30으로 맞춰줘',             // 숫자
+      '화면 밝기 좀 올려줘',            // 군말(«좀»)이 붙은 자연 발화
+      '크롬 최소화해줘',                // 외래어 + 한자어
+      '바탕화면에 새 폴더 만들어줘',      // 긴 문장 · 교정 사전이 겨냥하는 자리
+      '지금 켜져 있는 앱 목록 알려줘',    // 질문형
+      '유튜브에서 아이유 노래 틀어줘',    // 고유명사
+      '아까 만든 파일 다시 열어줘',       // 맥락 지시
+    ];
+
     // 🚨 «아무 말이나 하세요»는 사람을 얼어붙게 만든다. **대답할 수 있는 것**을 준다.
     const FREE_TOPICS = [
       '오늘 아침(점심)에 뭐 드셨어요?',
@@ -516,11 +546,19 @@
       const t = [];
       POS_STYLES.concat(POS_STYLES).forEach(([text, how]) =>
         t.push({ group: '① 호출어', label: 'positive', text, how, dur: SLOT }));
+      /* 🚨 **«한 번만» 이 빠져 있어서 정답표가 깨졌다** (2026-09-24 실측에서 발견).
+       *    슬롯이 4초인데 짧은 문장은 1.5초면 끝난다. 화면이 *"세는 동안 말하면
+       *    됩니다"* 라고만 하니 **남는 시간을 한 번 더 말해서 채운** 분들이 있었고,
+       *    그 녹음은 «문장이 한 번 들어 있다»는 라벨과 어긋났다.
+       *    🔑 웨이크워드 학습에는 손해가 없었다(무음이 늘 뿐) — 그래서 여섯 명을
+       *    받는 동안 아무도 몰랐다. STT 를 재려고 «정답표»로 쓴 순간 드러났다. */
       NEG_LINES.forEach(text =>
-        t.push({ group: '② 다른 말', label: 'negative', text, how: '평소 말하듯', dur: SLOT }));
+        t.push({ group: '② 다른 말', label: 'negative', text, how: '평소 말하듯 — 한 번만', dur: SLOT }));
+      CMD_LINES.forEach(text =>
+        t.push({ group: '③ 컴퓨터에게', label: 'command', text, how: '시키듯이 — 한 번만', dur: SLOT }));
       pick(FREE_TOPICS, FREE_N).forEach(topic =>
         t.push({
-          group: '③ 자유 발화', label: 'freetalk', text: topic,
+          group: '④ 자유 발화', label: 'freetalk', text: topic,
           how: '생각나는 대로 편하게, 끊겨도 괜찮아요', dur: FREE
         }));
       return t;
@@ -765,7 +803,7 @@
         o += t.pcm.length + gap;
       }
 
-      const seen = { positive: 0, negative: 0, freetalk: 0 };
+      const seen = { positive: 0, negative: 0, command: 0, freetalk: 0 };
       segs.forEach(s => seen[s.label]++);
       const want = {};
       for (const k in seen) want[k] = takes.filter(t => t.label === k).length;
@@ -783,7 +821,8 @@
       $('report').innerHTML =
         '<tr><td>① 호출어</td><td>' + seen.positive + ' / ' + want.positive + '</td></tr>'
         + '<tr><td>② 다른 말</td><td>' + seen.negative + ' / ' + want.negative + '</td></tr>'
-        + '<tr><td>③ 자유 발화</td><td>' + seen.freetalk + ' / ' + want.freetalk + '</td></tr>'
+        + '<tr><td>③ 컴퓨터에게</td><td>' + seen.command + ' / ' + want.command + '</td></tr>'
+        + '<tr><td>④ 자유 발화</td><td>' + seen.freetalk + ' / ' + want.freetalk + '</td></tr>'
         + '<tr><td>길이</td><td>' + (all.length / TARGET_SR / 60).toFixed(1) + '분</td></tr>';
 
       if (sender()) {
@@ -809,7 +848,7 @@
         $('sendCard').innerHTML = '<div class="big ok">보냈습니다. 정말 감사합니다 🙏</div>'
           + '<p class="note">이 창은 닫으셔도 됩니다.</p>';
       } catch (e) {
-        // ⚠️ **실패를 조용히 삼키지 않는다.** 여기서 막히면 그 사람의 3분이 그냥 날아간다.
+        // ⚠️ **실패를 조용히 삼키지 않는다.** 여기서 막히면 그 사람의 4분이 그냥 날아간다.
         //    그래서 «파일로 받기» 를 항상 남겨 둔다 — 최후의 경로가 있어야 한다.
         $('send').disabled = false; $('send').textContent = '다시 보내기';
         $('sendBody').innerHTML += '<p class="note bad">보내지 못했습니다 (' + (e.message || e) + ').<br>'
