@@ -238,6 +238,44 @@ def run():
     check("🔑 전환 로직을 복사하지 않고 _focus_window 를 쓴다",
           "_focus_window(app_key)" in sw)
 
+    print(f"{NL}=== ⑩ 🚨 페르소나 표의 합계가 표 자신과 맞는가 (2026-09-25 신설) ===")
+    # 🚨 **여기가 실제로 틀려 있었다.** §4 요약이 «✅26 / 🟡16 / ⛔17» 이라고 적혀
+    #   있었는데 §3 의 행을 세면 «24 / 16 / 19» 였다 — ✅ 를 둘 많게, ⛔ 를 둘 적게.
+    #   **좋아 보이는 쪽으로** 틀렸다.
+    #
+    # 🔑 이 표는 «무엇을 만들지»를 고르는 자다. 자가 좋아 보이는 쪽으로 틀어져 있으면
+    #   **덜 만들고 다 됐다고 여기게 된다.** 그래서 숫자가 아니라 세는 코드를 둔다.
+    _PERSONA = _src("docs/planning/페르소나_직장인.md")
+    _sec = _PERSONA[_PERSONA.index("## 3"):_PERSONA.index("## 4")]
+    counts = {"✅": 0, "🟡": 0, "⛔": 0}
+    for line in _sec.split(NL):
+        if not (line.startswith("| *") or line.startswith("| (")):
+            continue
+        cells = [c.strip() for c in line.split("|")]
+        if len(cells) < 4:
+            continue
+        mark = cells[2][:1]
+        if mark in counts:
+            counts[mark] += 1
+
+    total_rows = sum(counts.values())
+    check("작업 수가 59개 그대로다 (제목이 «하루 59»다)",
+          total_rows == 59, f"{total_rows}개")
+
+    # §4 요약표의 **마지막 숫자 열**(가장 최근 날짜)을 읽는다.
+    summary = {}
+    for mark, key in (("✅", "✅ 된다"), ("🟡", "🟡 반쪽"), ("⛔", "⛔ 부를 게 없다")):
+        row = re.search(r"^\|\s*" + re.escape(key) + r"\s*\|(.+)$",
+                        _PERSONA, re.M)
+        nums = re.findall(r"(\d+)", row.group(1)) if row else []
+        # 마지막 둘은 «최신 개수»와 «비율(%)» 이다. 개수는 뒤에서 둘째.
+        summary[mark] = int(nums[-2]) if len(nums) >= 2 else -1
+
+    for mark in ("✅", "🟡", "⛔"):
+        check(f"§4 요약의 {mark} 개수가 §3 의 행과 같다",
+              summary[mark] == counts[mark],
+              f"요약 {summary[mark]} · 실제 {counts[mark]}")
+
     print(f"{NL}결과: {passed}/{total} 통과")
     return passed == total
 
