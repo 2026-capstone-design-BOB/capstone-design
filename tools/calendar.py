@@ -50,37 +50,18 @@ def _create_via_url(title: str, start_dt: datetime, end_dt: datetime, descriptio
 
 
 def _create_via_api(title: str, start_dt: datetime, end_dt: datetime, description: str, location: str) -> str:
-    """방법 2: Google Calendar API로 직접 일정 등록 (token.json 필요)."""
-    token_path = os.path.join(os.path.dirname(__file__), "..", "calendar_token.json")
-    creds_path = os.path.join(os.path.dirname(__file__), "..", "calendar_credentials.json")
+    """방법 2: Google Calendar API로 직접 일정 등록.
 
-    token_path  = os.path.abspath(token_path)
-    creds_path  = os.path.abspath(creds_path)
+    🚨 **2026-09-24 — 여기에 인증 코드의 «두 번째 사본»이 있었다.** 자기 범위
+      (`calendar.events` 하나)를 들고 있어서, 사용자가 *"회의 잡아줘"* 를 **먼저** 하면
+      토큰이 **캘린더 전용으로 굳고** 그 뒤 메일을 부르면 401 이 난다. 토큰 파일은
+      «있으므로» 다시 묻지도 않는다.
 
-    if not os.path.exists(creds_path):
-        raise FileNotFoundError("calendar_credentials.json 없음")
-
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    from googleapiclient.discovery import build
-
-    SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
-    creds = None
-
-    if os.path.exists(token_path):
-        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(token_path, "w") as f:
-            f.write(creds.to_json())
-
-    service = build("calendar", "v3", credentials=creds)
+    🔑 `_calendar_service` 를 고칠 때 이 사본은 안 고쳐졌다 — **한쪽만 갱신되는**
+      바로 그 모양이고, `tests/test_gmail.py` ⑨ 가 잡았다.
+    """
+    from tools.google_auth import get_service
+    service = get_service("calendar", "v3")
 
     tz = "Asia/Seoul"
     event = {
@@ -153,40 +134,23 @@ def create_calendar_event(
 #   없으면 **모른다고 말한다** — 브라우저를 열어 놓고 «확인했어요»라고 하지 않는다.
 # ══════════════════════════════════════════════════════════════════════
 
-#: 읽기 전용 권한. 🔑 쓰기 scope(`calendar.events`)와 **다르다** — 읽기만 필요한 곳에
-#  쓰기 권한을 달지 않는다. 다만 이미 쓰기 토큰이 있으면 그것으로도 읽힌다.
-_READ_SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
-
 _NO_CREDS = ("✗ 캘린더를 읽으려면 Google 계정 연결이 한 번 필요해요. "
              "지금은 일정을 확인할 수 없어요 — 캘린더를 직접 열어 보시겠어요?")
 
 
 def _calendar_service():
-    """인증된 Calendar 서비스. 자격증명이 없으면 FileNotFoundError."""
-    token_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
-                                              "calendar_token.json"))
-    creds_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
-                                              "calendar_credentials.json"))
-    if not os.path.exists(creds_path):
-        raise FileNotFoundError("calendar_credentials.json 없음")
+    """인증된 Calendar 서비스. 자격증명이 없으면 `NotConnected`.
 
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    from googleapiclient.discovery import build
+    🚨 **권한 범위를 여기서 정하지 않는다.** 예전에는 이 함수가 자기 범위
+      (`calendar.events` 하나)를 들고 있었는데, 그러면 캘린더를 먼저 쓴 사용자의
+      토큰에 **메일 권한이 없는 채로 굳는다** — 그 뒤 메일을 부르면 401 이 나고,
+      토큰 파일은 «있으므로» 다시 묻지도 않는다.
 
-    creds = None
-    if os.path.exists(token_path):
-        creds = Credentials.from_authorized_user_file(token_path, _READ_SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(creds_path, _READ_SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(token_path, "w") as f:
-            f.write(creds.to_json())
-    return build("calendar", "v3", credentials=creds)
+    🔑 같은 사실(요청할 권한)이 두 파일에 흩어지면 한쪽만 갱신된다.
+      그래서 `tools/google_auth.py` 한 곳에만 둔다. (2026-09-24)
+    """
+    from tools.google_auth import get_service
+    return get_service("calendar", "v3")
 
 
 def _fmt_when(ev: dict) -> str:
@@ -218,10 +182,11 @@ def list_calendar_events(date: str = "", days: int = 1) -> str:
 
     try:
         service = _calendar_service()
-    except FileNotFoundError:
-        return _NO_CREDS
-    except ImportError:
-        return _NO_CREDS
+    except Exception as e:                                    # noqa: BLE001
+        from tools.google_auth import NotConnected
+        if isinstance(e, (NotConnected, FileNotFoundError, ImportError)):
+            return _NO_CREDS
+        raise
     except Exception as e:
         # 🚨 조용히 «일정이 없어요»로 떨어지지 않는다 — «못 읽었다»와 «없다»는
         #   완전히 다른 말이고, 뒤엣말이 나가면 사용자가 회의를 놓친다.

@@ -312,7 +312,9 @@ check("get_weather가 등록돼 있다", "get_weather" in names, f"→ {len(name
 #      지연의 주 요인은 입력 크기가 아니라 LLM 왕복 횟수였다(로그 174턴).
 # 🆕 2026-09-24: 58 → 60 (`split_screen` · `minimize_others` — 사용자 제안.
 #   "엑셀이랑 크롬 같이 보여줘" · "이거 빼고 다 내려")
-check("도구가 60개다", len(names) == 60, f"→ {len(names)}개")
+# 🆕 2026-09-24: 60 → 62 (`list_emails` · `read_email` — 페르소나 §3-D.
+#   🚨 `gmail_send` 는 **일부러 없다** — 권한(readonly)과 도구 목록이 둘 다 경계를 진다)
+check("도구가 62개다", len(names) == 62, f"→ {len(names)}개")
 
 doc = (get_weather.description or "")
 check("설명이 «날씨는 항상 이 도구»라고 못박는다", "항상 이 도구" in doc, f"→ {doc[:80]}")

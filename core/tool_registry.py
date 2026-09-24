@@ -80,6 +80,10 @@ def get_all_tools() -> List[BaseTool]:
         create_calendar_event,
         list_calendar_events,
     )
+    from tools.gmail import (
+        list_emails,
+        read_email,
+    )
     from tools.vision import (
         describe_screen,
         find_ui_element,
@@ -164,6 +168,11 @@ def get_all_tools() -> List[BaseTool]:
         # LLM 잡담으로 끝나고, 그러다 없는 일정을 지어낸다(BL-60·61 과 같은 모양).
         create_calendar_event,
         list_calendar_events,
+        # 📧 메일 — **읽기만 한다.** 권한(`gmail.readonly`)과 도구 목록이 **둘 다**
+        #   그 경계를 진다. 🚨 `gmail_send` 는 **아예 만들지 않았다** — 권한만 조이면
+        #   나중에 범위를 넓히는 순간 도구가 생기고, 도구만 없애면 권한이 남는다.
+        list_emails,
+        read_email,
         # 화면 이해 (Vision) — 화면 내용을 외부 LLM에 전송한다. tools/vision.py 주의사항 참조
         describe_screen,
         find_ui_element,
