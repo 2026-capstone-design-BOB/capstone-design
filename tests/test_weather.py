@@ -310,7 +310,9 @@ check("get_weather가 등록돼 있다", "get_weather" in names, f"→ {len(name
 #   알림 끄기/켜기/상태(3) · 화면 유지/해제(2) · 보내기 전 검사(1)
 #   🔑 늘린 근거는 «도구가 많아 느려진다»가 **실측으로 부정됐기 때문**이다 —
 #      지연의 주 요인은 입력 크기가 아니라 LLM 왕복 횟수였다(로그 174턴).
-check("도구가 58개다", len(names) == 58, f"→ {len(names)}개")
+# 🆕 2026-09-24: 58 → 60 (`split_screen` · `minimize_others` — 사용자 제안.
+#   "엑셀이랑 크롬 같이 보여줘" · "이거 빼고 다 내려")
+check("도구가 60개다", len(names) == 60, f"→ {len(names)}개")
 
 doc = (get_weather.description or "")
 check("설명이 «날씨는 항상 이 도구»라고 못박는다", "항상 이 도구" in doc, f"→ {doc[:80]}")

@@ -19,6 +19,8 @@ def get_all_tools() -> List[BaseTool]:
         minimize_window,
         show_desktop,
         switch_window,
+        split_screen,
+        minimize_others,
     )
     from tools.web import (
         open_url,
@@ -97,6 +99,11 @@ def get_all_tools() -> List[BaseTool]:
         #   꺼져 있으면 열지 않고 물어본다 — 안 그러면 사용자가 다른 창을 보고
         #   있다고 착각한 채 다음 말을 한다.
         switch_window,
+        # 🎯 **창을 둘 띄워 놓고 사는 사람의 기본 동작.** Windows 가 이미 하는 일
+        #   (Win+←/→ · Win+Home)에 «그 창을 앞으로 가져와 확인한 뒤 누르기»를 이었다.
+        #   🚨 좌표를 쓰지 않는다 — 작업 표시줄·DPI·다중 모니터를 떠안지 않으려고.
+        split_screen,
+        minimize_others,
         # 웹
         open_url,
         web_search,

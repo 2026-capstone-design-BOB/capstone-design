@@ -1027,3 +1027,112 @@ def switch_window(app_name: str) -> str:
     eul = _korean_particle(display, "을", "를")
     return (f"✗ {display}{eul} 앞으로 가져오지 못했어요. "
             f"작업 표시줄에서 직접 눌러 주시겠어요?")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 화면 나눠 쓰기 — 2026-09-24 신설 (사용자 제안 · 페르소나 §3-A)
+#
+# 🎯 *"엑셀이랑 크롬 같이 보여줘"* — 창을 두 개 띄워 놓고 사는 사람의 기본 동작인데,
+#   표에서는 *"이 창 왼쪽에 붙여줘"* 로만 적혀 있었다. 사용자가 실제로 하는 말은
+#   «어느 창을 어디에»가 아니라 **«둘을 같이»** 다.
+#
+# 🔑 **새로 만드는 것이 거의 없다.** Windows 가 `Win+←`/`Win+→` 로 이미 반씩 붙여 주고,
+#   우리에겐 «그 창을 앞으로 가져와 확인한 뒤에만 키를 누르는» 길이 이미 있다
+#   (`press_key(target=…)` · BL-12 에서 만든 `_ensure_target_focused`).
+#   여기서는 그 둘을 **잇기만** 한다.
+#
+# 🚨 **좌표를 쓰지 않는다.** 창 위치를 직접 계산해 `MoveWindow` 로 옮길 수도 있지만,
+#   그러면 작업 표시줄·DPI·다중 모니터를 전부 우리가 떠안는다. Windows 가 이미
+#   정확히 하는 일을 다시 구현하지 않는다([절대 규칙 9](../CLAUDE.md)와 같은 정신 —
+#   좌표는 지어낼 수 있고 틀리면 되돌릴 수 없다).
+#
+# ⚠️ **모니터가 둘이면 «반쪽»의 뜻이 달라진다.** `Win+←` 는 **현재 모니터**를 반으로
+#   가르므로, 두 창이 서로 다른 모니터에 있으면 나란히 안 온다. 그래서 결과를
+#   확인해서 말하고, 장담하지 않는다([BL-18](../docs/BACKLOG.md) 과 이웃한 자리).
+# ══════════════════════════════════════════════════════════════════════
+
+def _snap_one(app_key: str, display: str, arrow: str) -> tuple[bool, str]:
+    """한 창을 한쪽에 붙인다. (성공, 할 말)"""
+    if not _is_running(app_key):
+        eul = _korean_particle(display, "은", "는")
+        return False, f"'{display}'{eul} 켜져 있지 않아요"
+    if not _focus_window(app_key):
+        eul = _korean_particle(display, "을", "를")
+        return False, f"'{display}'{eul} 앞으로 가져오지 못했어요"
+    try:
+        import pyautogui
+        pyautogui.hotkey("win", arrow)
+    except Exception as e:                                   # noqa: BLE001
+        log.warning("[창배치] %s 실패 | %s: %s", display, type(e).__name__, e)
+        return False, f"'{display}' 을(를) 붙이지 못했어요"
+    time.sleep(0.35)     # 스냅 애니메이션이 끝나기를 기다린다(다음 창을 잡기 전에)
+    return True, display
+
+
+@tool
+def split_screen(left_app: str, right_app: str) -> str:
+    """두 앱 창을 화면 좌우로 반씩 나눠 붙입니다.
+    "엑셀이랑 크롬 같이 보여줘", "메모장이랑 한글 반씩 놓아줘" 처럼
+    **둘을 같이 보고 싶을 때** 씁니다. 둘 다 이미 켜져 있어야 합니다.
+
+    left_app: 왼쪽에 놓을 앱 이름
+    right_app: 오른쪽에 놓을 앱 이름
+    """
+    lk, rk = _normalize(left_app), _normalize(right_app)
+    ld, rd = _display_name(lk, left_app), _display_name(rk, right_app)
+
+    if lk == rk:
+        return f"✗ 같은 앱('{ld}')을 두 번 주셨어요. 다른 앱 두 개를 알려 주시겠어요?"
+
+    # 🚨 **먼저 둘 다 켜져 있는지 본다.** 하나만 붙여 놓고 실패하면 화면이 어중간하게
+    #   바뀐 채로 끝난다 — 되돌리라고 말하기도 어렵다.
+    missing = [d for k, d in ((lk, ld), (rk, rd)) if not _is_running(k)]
+    if missing:
+        names = "'" + "' · '".join(missing) + "'"
+        eul = "들을" if len(missing) > 1 else _korean_particle(missing[0], "을", "를")
+        return f"✗ {names}{'' if len(missing) > 1 else ''} 켜져 있지 않아요. 먼저 열어 드릴까요?"
+
+    ok_l, msg_l = _snap_one(lk, ld, "left")
+    if not ok_l:
+        return f"✗ {msg_l}. 화면은 그대로 뒀어요."
+
+    ok_r, msg_r = _snap_one(rk, rd, "right")
+    if not ok_r:
+        # 🚨 **왼쪽은 이미 붙었다.** 안 그런 척하지 않는다 — 사용자가 화면을 보면
+        #   바뀌어 있는데 «아무것도 안 했어요»라고 하면 그게 거짓말이다.
+        return (f"⚠️ '{ld}' 은(는) 왼쪽에 붙였는데 {msg_r}. "
+                f"오른쪽은 직접 놓아 주시겠어요?")
+
+    return (f"✓ '{ld}' 을(를) 왼쪽에, '{rd}' 을(를) 오른쪽에 놓았어요. "
+            f"모니터가 두 대면 한쪽 화면 안에서만 나뉘어요.")
+
+
+@tool
+def minimize_others(keep_app: str) -> str:
+    """지정한 앱만 남기고 나머지 창을 전부 내립니다.
+    "이거 빼고 다 내려", "메모장만 남기고 정리해줘" 처럼 하나에 집중할 때 씁니다.
+
+    keep_app: 남길 앱 이름
+    """
+    app_key = _normalize(keep_app)
+    display = _display_name(app_key, keep_app)
+
+    if not _is_running(app_key):
+        eul = _korean_particle(display, "은", "는")
+        return f"✗ '{display}'{eul} 켜져 있지 않아요. 먼저 열어 드릴까요?"
+    if not _focus_window(app_key):
+        eul = _korean_particle(display, "을", "를")
+        return f"✗ '{display}'{eul} 앞으로 가져오지 못했어요. 화면은 그대로 뒀어요."
+
+    # 🔑 Windows 의 «다른 창 최소화»(Win+Home). 직접 창을 열거해 하나씩 내리면
+    #   우리 오버레이나 시스템 창까지 건드리게 된다 — OS 가 아는 것을 쓴다.
+    try:
+        import pyautogui
+        pyautogui.hotkey("win", "home")
+        time.sleep(0.3)
+    except Exception as e:                                   # noqa: BLE001
+        log.warning("[창정리] 실패 | %s: %s", type(e).__name__, e)
+        return "✗ 다른 창을 내리지 못했어요."
+
+    eu_man = _korean_particle(display, "만", "만")
+    return f"✓ '{display}'{eu_man} 남기고 나머지를 내렸어요. 다시 올리려면 한 번 더 말씀해 주세요."

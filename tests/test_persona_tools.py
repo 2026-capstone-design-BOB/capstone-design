@@ -77,7 +77,9 @@ def run():
     print("=== ① 열한 개가 실제로 등록됐는가 ===")
     added = ["copy_file", "move_file", "rename_file", "switch_window",
              "list_calendar_events", "notifications_off", "notifications_on",
-             "get_notifications_status", "keep_awake", "allow_sleep", "scan_sensitive"]
+             "get_notifications_status", "keep_awake", "allow_sleep", "scan_sensitive",
+             # 🆕 사용자 제안 — "엑셀이랑 크롬 같이 보여줘" · "이거 빼고 다 내려"
+             "split_screen", "minimize_others"]
     for n in added:
         check(f"{n} 등록", n in names)
     check("이름이 겹치지 않는다", len(names) == len({t.name for t in get_all_tools()}))
@@ -202,7 +204,29 @@ def run():
           "제가 아는 패턴" in IC and "회사 고유 번호 형식은 아직 못 봐요" in IC)
     check("걸리면 경고 마커를 쓴다", "⚠️ 보내기 전에 확인하세요" in IC)
 
-    print(f"{NL}=== ⑧ 🚨 안 한 일을 했다고 말하지 않는가 ===")
+    print(f"{NL}=== ⑧ 🚨 창 배치 — OS 가 하는 일을 다시 구현하지 않았는가 ===")
+    APP0 = _src("tools/app_control.py")
+    sp = APP0[APP0.index("def split_screen("):APP0.index("def minimize_others(")]
+    check("🚨 좌표를 계산하지 않는다 (MoveWindow·SetWindowPos 가 없다)",
+          "MoveWindow" not in sp and "SetWindowPos" not in sp)
+    check("   Windows 의 Win+←/→ 를 쓴다",
+          'hotkey("win", arrow)' in APP0 and '"left"' in sp and '"right"' in sp)
+    check("   창 정리는 Win+Home 을 쓴다 (창을 하나씩 내리지 않는다)",
+          'hotkey("win", "home")' in APP0)
+    check("   왜 좌표를 안 쓰는지 적혀 있다 (작업표시줄·DPI·다중 모니터)",
+          "작업 표시줄·DPI·다중 모니터" in APP0)
+    check("🚨 붙이기 전에 **둘 다** 켜져 있는지 본다 (반만 붙고 끝나지 않게)",
+          "먼저 둘 다 켜져 있는지 본다" in sp)
+    check("🚨 왼쪽만 붙고 오른쪽이 실패하면 **그 사실을 말한다**",
+          "은(는) 왼쪽에 붙였는데" in sp and "⚠️" in sp)
+    check("   화면이 안 바뀐 경우와 반만 바뀐 경우를 다르게 말한다",
+          "화면은 그대로 뒀어요" in sp)
+    check("같은 앱을 두 번 주면 되묻는다", "두 번 주셨어요" in sp)
+    check("🔑 모니터가 둘이면 뜻이 달라진다는 것을 장담하지 않고 말한다",
+          "모니터가 두 대면" in sp)
+    check("전환 로직을 복사하지 않고 _focus_window 를 쓴다", "_focus_window(app_key)" in APP0)
+
+    print(f"{NL}=== ⑨ 🚨 안 한 일을 했다고 말하지 않는가 ===")
     APP = _src("tools/app_control.py")
     sw = APP[APP.index("def switch_window("):]
     check("🚨 꺼져 있으면 실패 마커를 붙인다 (tool_failed 가 봐야 한다)",
