@@ -116,3 +116,8 @@ cache/vision_baseline_fixture.txt
 calendar_credentials.json
 calendar_token.json
 gmail_token.json
+
+# 화면 조작 성공률 측정 출력 — 화면에서 읽은 **컨트롤 이름**이 들어간다.
+# 사용자가 열어 둔 창의 내용이 섞일 수 있으므로 공개 저장소에 올리지 않는다.
+# (logs/vision_baseline/ 을 막아 둔 것과 같은 이유)
+logs/ui_ops/
