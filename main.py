@@ -72,11 +72,14 @@ async def lifespan(_app: FastAPI):
     # 밖에 있으므로, 여기서 잡아 둔 루프로 run_coroutine_threadsafe 해서 건너온다.
     global _main_loop
     _main_loop = asyncio.get_running_loop()
-    from core import screen_monitor, pointer
+    from core import screen_monitor, pointer, worker
     screen_monitor.set_notifier(_push_from_monitor)
     # 포인팅 표시(M4)도 **같은 통로**로 나간다. 두 번째 채널을 만들면 토큰·수명
     # 관리가 두 벌이 된다. → docs/design/M4_포인팅_확대.md §3-2
     pointer.set_notifier(_push_from_monitor)
+    # 백그라운드 약속(*"30분 뒤에 알려줘"*)도 **같은 통로**다. 마스킹·TTS·
+    # «UI 가 없으면 보관»이 이미 이 길에 걸려 있다 → docs/design/M9_백그라운드_작업자.md
+    worker.set_notifier(_push_from_monitor)
 
     try:
         yield
@@ -88,6 +91,10 @@ async def lifespan(_app: FastAPI):
         # 기다리는 상태가 되고, 정작 지울 UI는 없다.
         pointer.set_notifier(None)
         pointer.reset()
+        # 🚨 약속은 **여기서 알리지 못한다** — 알림을 받을 UI 가 같이 내려간다.
+        #   그래서 약속을 잡을 때 «Pluiz 를 닫으면 사라져요»를 미리 말해 둔다.
+        worker.set_notifier(None)
+        worker.reset_worker()
         # 내 토큰일 때만 지운다 (위와 같은 이유의 2차 방어)
         auth.clear_token(expected=_AUTH_TOKEN)
 

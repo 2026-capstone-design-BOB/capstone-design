@@ -83,6 +83,13 @@ def get_all_tools() -> List[BaseTool]:
     from tools.gmail import (
         list_emails,
         read_email,
+        watch_inbox,
+    )
+    from tools.background import (
+        remind_me,
+        list_reminders,
+        cancel_reminder,
+        do_in_background,
     )
     from tools.vision import (
         describe_screen,
@@ -173,6 +180,18 @@ def get_all_tools() -> List[BaseTool]:
         #   나중에 범위를 넓히는 순간 도구가 생기고, 도구만 없애면 권한이 남는다.
         list_emails,
         read_email,
+        # 📬 **화면 밖 사건**을 보는 유일한 길(페르소나 §3-J). `watch_screen` 은
+        #   화면에 보이는 것만 볼 수 있어서 *"메일 오면 알려줘"* 를 못 메웠다.
+        #   엔진은 그래프 **밖**이다 → core/worker.py
+        watch_inbox,
+        # ⏳ 백그라운드 약속 — *"30분 뒤에"* · *"끝나면 알려줘"*.
+        # 🚨 **그래프 밖이다.** 도구는 약속을 얹고 sync 인 채로 즉시 끝난다.
+        #   그래서 승인 노드를 한 줄도 안 건드린다(절대규칙 1).
+        #   → docs/design/M9_백그라운드_작업자.md
+        remind_me,
+        list_reminders,
+        cancel_reminder,
+        do_in_background,
         # 화면 이해 (Vision) — 화면 내용을 외부 LLM에 전송한다. tools/vision.py 주의사항 참조
         describe_screen,
         find_ui_element,
@@ -216,3 +235,51 @@ def get_all_tools() -> List[BaseTool]:
     tools += [move_file, rename_file]
 
     return tools
+
+
+# ── ⏳ 백그라운드 전용 도구 묶음 (2026-09-25) ──────────────────────
+#
+# *"끝나면 알려줘"* 로 맡긴 일이 **뒤에서 도는 동안** 쓸 수 있는 것들이다.
+# → docs/design/M9_백그라운드_작업자.md
+#
+# ## 🚨 가른 기준은 «위험한가»가 아니라 **«사용자의 손과 눈을 뺏는가»** 다
+#
+# 맡긴 일이 도는 동안 사용자는 **다른 창에서 자기 일을 하고 있다.** 그런데
+# `type_text` 는 **지금 포커스된 창**에 글자를 넣고, `open_app` 은 창을 앞으로
+# 꺼내고, `set_volume` 은 듣고 있던 소리를 바꾼다. 하나도 «위험 도구»가 아닌데
+# 전부 **사용자가 하던 일을 망친다.** 그래서 목록을 «되돌릴 수 있나»가 아니라
+# **«내 손이 지금 거기 있나»** 로 갈랐다.
+#
+# ## 🔒 그리고 승인 대상은 **여기 있을 수가 없다**
+#
+# 뒤에서 도는 턴이 `interrupt` 를 걸면 물어볼 사람이 그 자리에 없다 —
+# **영영 안 끝난다.** 도구를 안 주는 것이 «안 부르기로 약속»보다 강하다
+# (`gmail_send` 를 아예 안 만든 것과 같은 규칙).
+#
+# ## 🔑 **허용목록이다 — 새 도구는 기본으로 «안 준다»**
+#
+# 금지목록이면 다음에 누가 도구를 더할 때 **가만히 있어도 백그라운드에 들어간다.**
+# 여기 이름을 적지 않으면 안 들어간다. 빠뜨리는 쪽이 안전한 방향이다.
+BACKGROUND_TOOL_NAMES = {
+    # 찾아보기
+    "web_search", "fetch_web_info", "crawl_page", "map_search", "youtube_search",
+    "get_weather",
+    # 읽기 — 화면도 입력도 안 건드린다
+    "find_file", "list_directory", "get_current_time",
+    "list_calendar_events", "list_emails", "read_email",
+    # 남기기 — 🔑 **덮어쓰지 않는 것만.** `create_file` 은 이름이 겹치면 안 쓰고
+    #   말한다(G-05). `overwrite_file`·`move_file`·`rename_file` 은 승인 대상이라
+    #   애초에 여기 올 수 없다.
+    "create_file", "create_folder", "write_excel",
+}
+
+
+def get_background_tools() -> List[BaseTool]:
+    """백그라운드 작업자가 쓸 도구들. `BACKGROUND_TOOL_NAMES` 에 적힌 것만.
+
+    🚨 **이름이 안 맞으면 조용히 빠진다.** 그래서 `tests/test_worker.py` 가
+      «적어 둔 이름이 전부 실재하는가»를 따로 지킨다 — 오타 하나가
+      «도구가 있는 줄 알고 맡겼는데 못 하는» 상태를 만든다.
+    """
+    return [t for t in get_all_tools()
+            if getattr(t, "name", None) in BACKGROUND_TOOL_NAMES]

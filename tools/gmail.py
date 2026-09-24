@@ -272,3 +272,138 @@ def _decode(data: str) -> str:
         return base64.urlsafe_b64decode(data.encode()).decode("utf-8", "replace")
     except Exception:
         return ""
+
+
+# ── 📬 메일 기다리기 (백그라운드 · 2026-09-25) ─────────────────────
+#
+# *"메일 오면 알려줘"* — 페르소나 §3-J 의 마지막 빈칸이다. 화면 감시(`watch_screen`)
+# 는 **화면에 보이는 것**만 볼 수 있어서 이 자리를 못 메운다.
+#
+# 🚨 **엔진은 `core/worker.py` 다 — 그래프 밖이다.** 노드를 async 로 만들면 승인이
+#   깨진다(절대규칙 1). 여기 도구는 약속을 «얹고» 즉시 끝난다.
+#
+# 🔑 **지금 있는 메일은 안 알린다.** 처음 확인할 때 본 것을 «기준»으로 잡고,
+#   그 뒤에 새로 생긴 것만 알린다. *"오면"* 은 미래를 가리키는 말이다 —
+#   쌓여 있던 메일을 새 메일이라고 하면 그게 거짓말이다.
+
+#: 한 번 확인할 때 몇 통까지 보나. 기다리기는 **몇 통 왔나**가 아니라
+#: **왔나 안 왔나**를 보는 일이라 작게 잡는다(할당량·토큰 둘 다).
+WATCH_PEEK = 5
+
+
+class _InboxWatch:
+    """받은 메일함을 되풀이해서 들여다보는 «확인 한 번». 워커가 주기적으로 부른다.
+
+    반환은 `core/worker.py` 의 계약이다 —
+    `{"done": False}` 면 «아직», `{"done": True, "text": …}` 면 «찾았다».
+    """
+
+    def __init__(self, sender: str = "", keyword: str = ""):
+        self.sender = sender.strip()
+        self.keyword = keyword.strip()
+        self.query = _build_query(self.sender, self.keyword, False, 0)
+        self.seen: set = set()
+        self.baseline_done = False
+        self.failures = 0
+
+    #: 연속으로 이만큼 실패하면 **포기하고 알린다.** 계속 실패하면서 조용히
+    #: 도는 것이 «기다리는 줄 알았는데 안 보고 있었다»가 된다.
+    MAX_FAILURES = 3
+
+    def __call__(self) -> dict:
+        from tools.google_auth import NotConnected, get_service, message_for
+
+        try:
+            service = get_service("gmail", "v1")
+            msgs = _fetch(service, self.query, WATCH_PEEK)
+        except NotConnected as e:
+            # 🔑 연결이 안 된 것은 **재시도해도 안 풀린다.** 바로 접고 이유를 말한다.
+            return {"done": True,
+                    "text": "📬 메일을 기다리려 했는데 막혔어요.\n"
+                            + message_for(e)}
+        except Exception as e:                                # noqa: BLE001
+            self.failures += 1
+            log.warning("[메일] 확인 실패 %d/%d | %s",
+                        self.failures, self.MAX_FAILURES, type(e).__name__)
+            if self.failures >= self.MAX_FAILURES:
+                return {"done": True,
+                        "text": f"⚠️ 메일을 {self.MAX_FAILURES}번 연속으로 확인하지 못해서 "
+                                "기다리기를 멈췄어요. 직접 확인해 보시겠어요?"}
+            return {"done": False}
+
+        self.failures = 0
+        ids = [m.get("id") for m in msgs if m.get("id")]
+
+        if not self.baseline_done:
+            # 첫 확인은 **기준을 잡는 것**이다. 알리지 않는다.
+            self.seen = set(ids)
+            self.baseline_done = True
+            log.info("[메일] 기다리기 시작 | 조건=%r | 기준 %d통", self.query, len(ids))
+            return {"done": False}
+
+        fresh = [m for m in msgs if m.get("id") not in self.seen]
+        self.seen.update(ids)
+        if not fresh:
+            return {"done": False}
+
+        log.info("[메일] 새 메일 %d통", len(fresh))
+        return {"done": True, "text": self._announce(fresh)}
+
+    def _announce(self, msgs: list) -> str:
+        lines = []
+        for m in msgs:
+            who = _pretty_sender(_header(m, "From"))
+            subj = _header(m, "Subject") or "(제목 없음)"
+            lines.append(f"  · {who} — {subj}")
+        head = (f"📬 새 메일 {len(msgs)}통이 왔어요:" if len(msgs) > 1
+                else "📬 새 메일이 왔어요:")
+        # 🚨 본문은 안 싣는다. 이 문장은 **소리로도 읽힌다** — 알림은 «왔다»까지다.
+        return _mask(head + "\n" + "\n".join(lines)
+                     + '\n\n읽어 드릴까요? ("그 메일 읽어줘")')
+
+
+@tool
+def watch_inbox(sender: str = "", keyword: str = "", minutes: int = 60) -> str:
+    """새 메일이 오면 먼저 알려줍니다. 지금 있는 메일은 알리지 않고,
+    이제부터 새로 오는 것만 봅니다.
+    "메일 오면 알려줘", "김 팀장한테 답장 오면 알려줘" 에 사용하세요.
+
+    sender: 특정 사람이 보낸 것만 기다릴 때 (이름이나 메일 주소 일부)
+    keyword: 제목·본문에 이 말이 든 것만 기다릴 때
+    minutes: 몇 분까지 기다릴지 (기본 60분, 최대 60분)
+
+    정해진 시간이 지나면 스스로 멈추고, 멈췄다고 알려줍니다.
+    """
+    from core.worker import KIND_POLL, get_worker
+    from config.settings import get_settings
+
+    s = get_settings()
+    interval = int(getattr(s, "inbox_watch_interval", 120) or 120)
+    cap = int(getattr(s, "inbox_watch_max_minutes", 60) or 60)
+    minutes = max(1, min(int(minutes or cap), cap))
+
+    what = "메일"
+    if sender.strip():
+        what = f"{sender.strip()}님 메일"
+    if keyword.strip():
+        what += f" ('{keyword.strip()}')"
+
+    res = get_worker().add(
+        kind=KIND_POLL,
+        what=what,
+        run=_InboxWatch(sender, keyword),
+        delay=0.0,
+        interval=interval,
+        max_minutes=minutes,
+        detail="메일 기다리기",
+    )
+
+    if res.get("added"):
+        return (f"✓ {what}이(가) 오면 알려드릴게요.\n"
+                f"{interval // 60}분마다 확인하고, {minutes}분 뒤에는 스스로 멈춰요. "
+                "지금 와 있는 메일은 세지 않아요.\n"
+                "⚠️ Pluiz 를 닫으면 기다리기도 멈춰요.\n"
+                '그만두려면 "메일 기다리지 마" 라고 말씀해 주세요.')
+
+    from tools.background import _add_failed
+    return _add_failed(res)

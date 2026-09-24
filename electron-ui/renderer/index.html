@@ -1364,6 +1364,7 @@
           Pluiz
           <span class="sdot spin" id="sdot2"></span>
           <span class="watch-badge" id="watch-badge" title="화면 감시 중">👁</span>
+          <span class="watch-badge" id="worker-badge" title="알려주기로 한 것">⏳ 0</span>
         </div>
         <button class="hbtn" id="fav-btn" onclick="event.stopPropagation(); toggleFavorites()" ondblclick="event.stopPropagation()"
           title="즐겨찾기">⭐</button>
@@ -1781,11 +1782,14 @@
           addMsg('a', '⚠️ ' + m.message);
           setBusy(false); setState('ready'); setWf('');
         } else if (m.type === 'notify') {
-          // 화면 감시 알림. 사용자가 시킨 턴이 아니라 **서버가 먼저 거는 말**이라
+          // 먼저 거는 말. 사용자가 시킨 턴이 아니라 **서버가 먼저 거는 말**이라
           // start/chunk/end 흐름과 독립적이다. streamEl·busy를 건드리지 않는다.
+          // 화면 감시(screen_monitor)와 백그라운드 약속(worker)이 같은 길을 쓴다.
           onWatchNotify(m);
         } else if (m.type === 'watch_state') {
           setWatchBadge(m.active);
+        } else if (m.type === 'worker_state') {
+          setWorkerBadge(m.count);
         } else if (m.type === 'point') {
           // 포인팅 표시(M4). 감시 알림과 같은 이유로 start/chunk/end와 독립이고,
           // 창을 앞으로 꺼내지 **않는다** — 사용자가 보던 화면을 가리키는 것이라
@@ -2486,11 +2490,22 @@
     // 감시는 사용자가 화면을 안 보고 있을 때 쓰는 기능이다. 그래서 조용히
     // 채팅에만 적으면 전달되지 않는다 — 창을 앞으로 꺼내고 소리로도 알린다.
     function onWatchNotify(m) {
-      setWatchBadge(false);
+      // 🚨 **감시 배지를 아무 알림에나 끄지 않는다.** 백그라운드 약속(worker)이
+      //   말을 걸면 «돌고 있는 화면 감시»가 꺼진 것처럼 보인다 —
+      //   그러면 사용자는 안 보고 있는 줄 알고 다시 시킨다.
+      if (m.source !== 'worker') setWatchBadge(false);
       window.pluiz.showWindow();
       activate(false);
       addMsg('a', m.text || '');
       if (m.audio_base64) playAudio(m.audio_base64, m.audio_mime);
+    }
+
+    // 잡아 둔 약속 개수. 0이면 숨긴다. (감시 배지와 **별개다** — 둘은 동시에 돈다)
+    function setWorkerBadge(count) {
+      const el = document.getElementById('worker-badge');
+      if (!el) return;
+      el.textContent = '⏳ ' + count;
+      el.className = 'watch-badge' + (count > 0 ? ' show' : '');
     }
 
     function setWatchBadge(active) {

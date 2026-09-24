@@ -82,6 +82,19 @@ class Settings(BaseSettings):
     screen_watch_max_minutes: int = 10
     screen_watch_max_vision_calls: int = 20  # ← 실질적인 외부 전송량 상한
 
+    # ── ⏳ 백그라운드 작업자 (2026-09-25) ──────────────────────────
+    #
+    # *"30분 뒤에 알려줘"* · *"메일 오면 알려줘"* · *"끝나면 알려줘"*.
+    # 🚨 **그래프 «밖»에서 돈다** — 노드를 async 로 만들면 승인(HITL)이 깨진다
+    #   (절대규칙 1). → core/worker.py · docs/design/M9_백그라운드_작업자.md
+    worker_enabled: bool = True
+    worker_max_jobs: int = 5          # 동시에 잡아 둘 약속 수 = 스레드 수 상한
+
+    # 메일 기다리기 — 되풀이 확인이라 **간격이 곧 API 호출량**이다.
+    # ⚠️ 모델이 더 짧게 불러도 core/worker.py 의 바닥(60초)까지만 내려간다.
+    inbox_watch_interval: int = 120   # 초
+    inbox_watch_max_minutes: int = 60 # 이 시간이 지나면 스스로 멈추고 **알린다**
+
     # 커맨드 캐시 (P4)
     cache_learning: bool = True      # 동적 학습 on/off 스위치
     cache_max_dynamic: int = 200     # 동적 학습 상한(초과 시 LRU 정리)
