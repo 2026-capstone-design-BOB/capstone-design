@@ -546,11 +546,11 @@
       }
     ],
     "response_template": "✓ Google을 열었어요.",
-    "hit_count": 0,
+    "hit_count": 2,
     "is_seed": true,
     "source": "seed",
     "learned_at": "",
-    "last_used": "",
+    "last_used": "2026-09-24T17:15:59",
     "imported": false
   },
   "유튜브 열어줘": {

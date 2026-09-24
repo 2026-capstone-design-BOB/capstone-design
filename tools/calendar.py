@@ -183,8 +183,11 @@ def list_calendar_events(date: str = "", days: int = 1) -> str:
     try:
         service = _calendar_service()
     except Exception as e:                                    # noqa: BLE001
-        from tools.google_auth import NotConnected
-        if isinstance(e, (NotConnected, FileNotFoundError, ImportError)):
+        # 🚨 막힌 이유마다 할 일이 다르다 — 자격증명 없음 · 패키지 없음 · 로그인 안 됨.
+        from tools.google_auth import NotConnected, message_for
+        if isinstance(e, NotConnected):
+            return message_for(e)
+        if isinstance(e, (FileNotFoundError, ImportError)):
             return _NO_CREDS
         raise
     except Exception as e:

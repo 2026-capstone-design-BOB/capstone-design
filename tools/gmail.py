@@ -128,13 +128,15 @@ def list_emails(sender: str = "", keyword: str = "", unread_only: bool = False,
     days: 며칠 이내 것만 볼지 (0이면 제한 없음. "밤새"는 1)
     limit: 몇 통까지 (최대 15)
     """
-    from tools.google_auth import NOT_CONNECTED, NotConnected, get_service
+    from tools.google_auth import NotConnected, get_service, message_for
 
     query = _build_query(sender, keyword, unread_only, days)
     try:
         service = get_service("gmail", "v1")
-    except NotConnected:
-        return NOT_CONNECTED
+    except NotConnected as e:
+        # 🚨 **막힌 이유마다 할 일이 다르므로 문장도 다르다.** 뭉뚱그리면
+        #   설정을 제대로 끝낸 사람에게 «다시 하세요»라고 하게 된다(2026-09-24).
+        return message_for(e)
     except Exception as e:                                    # noqa: BLE001
         return f"✗ 메일에 연결하지 못했어요 ({type(e).__name__}). 직접 확인해 보시겠어요?"
 
@@ -183,15 +185,15 @@ def read_email(sender: str = "", keyword: str = "") -> str:
     sender: 보낸 사람 이름이나 메일 주소 일부
     keyword: 제목·본문에 들어간 말
     """
-    from tools.google_auth import NOT_CONNECTED, NotConnected, get_service
+    from tools.google_auth import NotConnected, get_service, message_for
 
     if not (sender.strip() or keyword.strip()):
         return "✗ 어느 메일인지 알려 주시겠어요? 보낸 사람이나 제목의 한 부분이면 돼요."
 
     try:
         service = get_service("gmail", "v1")
-    except NotConnected:
-        return NOT_CONNECTED
+    except NotConnected as e:
+        return message_for(e)
     except Exception as e:                                    # noqa: BLE001
         return f"✗ 메일에 연결하지 못했어요 ({type(e).__name__})."
 

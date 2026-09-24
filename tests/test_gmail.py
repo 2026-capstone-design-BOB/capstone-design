@@ -160,7 +160,52 @@ def run():
     check("토큰 파일 이름이 왜 calendar_ 인지 적혀 있다",
           "캘린더가 먼저 생겼기 때문" in _AUTH)
 
-    print(f"{NL}=== ⑩ 사람 이름 다듬기 ===")
+    print(f"{NL}=== ⑩ 🚨 막힌 이유를 뭉뚱그리지 않는가 (2026-09-24 실기) ===")
+    # 🚨 사용자가 설정을 **제대로 끝냈는데** «다시 하세요»를 들었다. 없던 것은
+    #   패키지였고, 오류 문장이 셋을 한 덩어리로 묶고 있었다.
+    import tools.google_auth as A
+    check("자격증명 없음 · 패키지 없음 · 로그인 안 됨이 **다른 문장**이다",
+          len({A.NO_CREDENTIALS, A.NO_PACKAGES, A.NEED_LOGIN}) == 3)
+    check("🚨 패키지 문장이 «설정은 잘 하셨어요»라고 말한다",
+          "설정은 잘 하셨어요" in A.NO_PACKAGES)
+    check("   그리고 **무엇을 치면 되는지** 알려준다",
+          "pip install" in A.NO_PACKAGES)
+    check("로그인 문장이 터미널 명령을 알려준다",
+          "connect_google.py" in A.NEED_LOGIN)
+    check("message_for 가 이유별로 갈라 준다",
+          A.message_for(A.MissingPackages()) == A.NO_PACKAGES
+          and A.message_for(A.NeedLogin()) == A.NEED_LOGIN
+          and A.message_for(A.NotConnected()) == A.NO_CREDENTIALS)
+    check("세 예외가 모두 NotConnected 로 잡힌다 (기존 호출부가 안 깨진다)",
+          issubclass(A.MissingPackages, A.NotConnected)
+          and issubclass(A.NeedLogin, A.NotConnected))
+    # gmail 의 도구 둘 + calendar 의 읽기 하나 = 셋이 이유별 문장을 쓴다
+    check("도구가 message_for 를 쓴다 (한 문장으로 안 묶는다)",
+          _SRC.count("message_for(e)") == 2 and "message_for(e)" in _CAL,
+          f"gmail {_SRC.count('message_for(e)')}곳")
+
+    print(f"{NL}=== ⑪ 🚨 대화 턴 안에서 브라우저를 안 연다 ===")
+    _AUTH2 = io.open(os.path.join(_ROOT, "tools", "google_auth.py"),
+                     encoding="utf-8").read()
+    _CONN = io.open(os.path.join(_ROOT, "scripts", "connect_google.py"),
+                    encoding="utf-8").read()
+    check("🚨 기본이 interactive=False 다",
+          "interactive: bool = False" in _AUTH2)
+    check("🚨 브라우저를 여는 곳이 interactive 안에만 있다",
+          _AUTH2.count("run_local_server") == 1
+          and "elif interactive:" in _AUTH2)
+    check("도구는 interactive 를 안 켠다",
+          "interactive=True" not in _SRC and "interactive=True" not in _CAL)
+    check("연결 스크립트만 켠다", "interactive=True" in _CONN)
+    check("토큰이 없으면 **멈추지 않고** NeedLogin 을 던진다",
+          "raise NeedLogin" in _AUTH2)
+    check("갱신(refresh)은 대화 중에도 된다 (브라우저가 필요 없다)",
+          "creds.refresh(Request())" in _AUTH2)
+    check("왜 그런지 BL-69 를 근거로 적어 뒀다", "BL-69" in _AUTH2)
+    check("🚨 연결 스크립트가 «토큰 받음»에서 끝내지 않고 **실제로 읽어 본다**",
+          "실제로 읽히는지 확인" in _CONN and "getProfile" in _CONN)
+
+    print(f"{NL}=== ⑫ 사람 이름 다듬기 ===")
     check("'홍길동 <a@b.com>' → '홍길동'",
           G._pretty_sender('홍길동 <a@b.com>') == "홍길동")
     check('따옴표를 벗긴다', G._pretty_sender('"김 팀장" <x@y.z>') == "김 팀장")

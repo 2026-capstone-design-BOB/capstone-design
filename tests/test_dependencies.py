@@ -50,6 +50,11 @@ _IMPORT_NAME = {
     #    학습 전용 의존성이다 — 추론은 numpy로 하므로 배포에는 불필요.
     #    → docs/design/M2_웨이크워드_전용모델.md
     "scikit-learn": "sklearn",
+    # ⚠️ 구글 API 도 규칙이 안 통한다 — 패키지명과 import 이름이 아예 다르다.
+    #    (2026-09-24 추가. 이 둘이 없어서 사용자가 첫 연결에서 막혔다)
+    "google-api-python-client": "googleapiclient",
+    "google-auth-oauthlib": "google_auth_oauthlib",
+    "uiautomation": "uiautomation",
 }
 
 # 이 도구가 죽으면 무엇이 안 되는지 — 실패 메시지에 같이 보여준다
@@ -58,6 +63,9 @@ _IMPACT = {
     "pyperclip":      "type_text(한글) · get_clipboard_text 동작 안 함",
     "send2trash":     "⚠️ delete_file/delete_folder 가 휴지통을 안 거치고 영구 삭제",
     "openpyxl":       "write_excel 동작 안 함",
+    "google-api-python-client": "일정 읽기·메일 읽기 동작 안 함 (조용히 URL 방식으로 빠진다)",
+    "google-auth-oauthlib":     "구글 로그인 자체가 안 됨",
+    "uiautomation":             "화면 짚기가 느린 옛 경로(Vision)로만 돈다",
     "beautifulsoup4": "crawl_page 동작 안 함",
     "ddgs":           "fetch_web_info 가 폴백 API로만 동작",
     "playwright":     "브라우저 자동화 미동작",
