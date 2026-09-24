@@ -253,7 +253,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 
 ---
 
-## 도구 (47개)
+## 도구 (67개)
 
 [`core/tool_registry.py`](../core/tool_registry.py)에 단일 등록.
 
@@ -280,19 +280,30 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 > 새 도구를 만들 때는 [WORKFLOW § 새 도구 추가](WORKFLOW.md#새-도구-추가)를 따른다.
 > 어기면 `tests/test_tool_result.py`가 **소스를 전수 스캔해 거기서 깨진다.**
 
+> 🚨 **이 표가 2026-09-25 에 «47개»인 채로 발견됐다.** 9/24 에 15개가 늘었는데
+> 따라오지 않았다 — 같은 사고가 [README 상태표](README.md)에서도 같은 날 났다
+> (거기는 «46개»였다). **합계는 README 한 곳에만** 적기로 한 규칙이 있는데,
+> 분류표는 규칙 밖에 있어서 조용히 낡았다.
+
 | 분류 | 개수 | 도구 |
 |---|---|---|
-| 앱 제어 | 5 | `open_app` `close_app` `maximize_window` `minimize_window` `show_desktop` |
+| 앱 제어 | 8 | `open_app` `close_app` `maximize_window` `minimize_window` `show_desktop` · 🆕 `switch_window`(켜져 있는 창으로 **가기** — 꺼져 있으면 열지 않고 묻는다) · 🆕 **`split_screen`** `minimize_others`(창 둘을 나눠 쓰기 — 좌표를 안 쓴다) |
 | 웹 | 6 | `open_url` `web_search` `youtube_search` `map_search` `fetch_web_info` `crawl_page` |
 | **날씨** | **1** | **`get_weather`** — 검색이 아니라 **실제 기상 자료**(open-meteo)로 답한다. 어제·오늘·내일 · **출처를 밝힌다** (BL-34) |
-| 파일 | 7 | `create_file` `create_folder` `find_file` **`list_directory`** `open_recent_file` `open_file` `write_excel` |
-| 시스템 | **13** | `volume_up/down/set` `mute` **`unmute`** `brightness_up/down` **`set_brightness`** · 🆕 **읽는 도구** `get_volume` `get_brightness` · `take_screenshot` `get_battery_status` `get_current_time` `get_running_apps`<br>🚨 **읽는 도구가 없던 것이 결함이었다** — *"지금 밝기 얼마야"* 가 갈 곳이 없어 LLM 의 **잡담**으로 끝났고, 그러다 «✓ 밝기: 40% → 80%» 를 **지어냈다**([BL-61](BACKLOG.md)). 지어내는 것은 그물로 막았지만 **답은 여전히 없었다**([BL-60](BACKLOG.md))<br>🔑 이 셋은 [캐시의 조회 게이트](#캐시--2단계-매칭)와 **한 쌍**이다. 게이트만 있으면 «안 바뀌지만 답도 못 하는» 상태가 되고, 도구만 있으면 캐시가 먼저 채 가서 여기까지 오지도 못한다 |
-| 입력 | 3 | `type_text` `press_key` `get_clipboard_text` |
-| 캘린더 | 1 | `create_calendar_event` |
+| 파일 | 8 | `create_file` `create_folder` `find_file` **`list_directory`** `open_recent_file` `open_file` `write_excel` · 🆕 **`copy_file`** — 🔑 원본이 남아 **승인이 없다**. 옮기기·이름변경은 아래 승인 묶음에 있다 |
+| 시스템 | **14** | `volume_up/down/set` `mute` **`unmute`** `brightness_up/down` **`set_brightness`** · 🆕 **읽는 도구** `get_volume` `get_brightness` · `take_screenshot` `get_battery_status` `get_current_time` `get_running_apps`<br>🚨 **읽는 도구가 없던 것이 결함이었다** — *"지금 밝기 얼마야"* 가 갈 곳이 없어 LLM 의 **잡담**으로 끝났고, 그러다 «✓ 밝기: 40% → 80%» 를 **지어냈다**([BL-61](BACKLOG.md)). 지어내는 것은 그물로 막았지만 **답은 여전히 없었다**([BL-60](BACKLOG.md))<br>🔑 이 셋은 [캐시의 조회 게이트](#캐시--2단계-매칭)와 **한 쌍**이다. 게이트만 있으면 «안 바뀌지만 답도 못 하는» 상태가 되고, 도구만 있으면 캐시가 먼저 채 가서 여기까지 오지도 못한다 |
+| **업무 환경** | **5** | 🆕 `notifications_off` `notifications_on` `get_notifications_status`(화면 공유 전에 — Focus Assist 는 공개 API 가 없어 **알림 전역 스위치**를 쓰고, **쓰고 나서 다시 읽어 확인한다**) · 🆕 `keep_awake` `allow_sleep`(프로세스가 사는 동안만 — 서버를 닫으면 **저절로 풀린다**)<br>🔑 **방향을 가진 쌍 + 읽는 도구.** 토글 하나로 두면 이미 꺼져 있을 때 *"알림 꺼줘"* 가 알림을 **켠다** |
+| 입력 | 4 | `type_text` `press_key` `get_clipboard_text` · 🆕 **`scan_sensitive`**(보내기 전 개인정보 검사 — 🚨 찾은 **값은 안 돌려준다**. 돌려주면 가리려고 만든 도구가 새는 구멍이 된다) |
+| 캘린더 | 2 | `create_calendar_event` · 🆕 **`list_calendar_events`** — 🔑 **읽기·쓰기 한 쌍.** 읽기가 없으면 *"오늘 일정 뭐야"* 가 LLM 잡담으로 끝나고, 그러다 없는 일정을 **지어낸다**(BL-60·61 과 같은 모양) |
+| **📧 메일** | **3** | 🆕 `list_emails` `read_email` — 🔒 **읽기만 한다.** 권한(`gmail.readonly`)과 도구 목록이 **둘 다** 경계를 진다. `gmail_send` 는 **아예 안 만들었다** · 🆕 **`watch_inbox`**(메일 오면 알려주기 — **화면 밖 사건**을 보는 유일한 길) |
+| **⏳ 백그라운드 약속** | **4** | 🆕 `remind_me`(*"30분 뒤에 알려줘"*) · `list_reminders` · `cancel_reminder` · **`do_in_background`**(*"끝나면 알려줘"*)<br>🚨 **엔진이 그래프 «밖»이다**([`core/worker.py`](../core/worker.py)) — 노드를 async 로 만들면 승인이 깨진다(절대규칙 1). 도구는 약속을 **얹고 sync 인 채로 즉시 끝난다**<br>🔒 `do_in_background` 는 **제한된 도구 15개**만 가진 별도 에이전트에게 시킨다. 가른 기준은 «위험한가»가 아니라 **«사용자의 손과 눈을 뺏는가»** → [M9 §7](design/M9_백그라운드_작업자.md) |
 | 화면 이해 | 3 | `describe_screen`(무엇이 보이나) · `find_ui_element`(어디에 있나 — **화면 좌표**) · **`point_at_element`**(그 자리를 **화면에 직접 표시**, `zoom=True`면 확대본도 — M4) — ⚠️ 셋 다 **화면 내용을 외부 LLM로 전송** (아래 참조) |
 | 화면 조작 | 1 | `click_ui_element` — ⚠️ **승인 필수.** 되돌릴 수 없고 좌표는 추정이다 (아래 참조) |
 | 화면 감시 | 2 | `watch_screen`(지켜보다 알려주기) · `stop_watching` — ⚠️ **지켜보는 동안 반복해서** 화면이 나간다. 승인 대신 **고지 + 상한** (아래 참조) |
 | **삭제** | **2** | `delete_file` `delete_folder` — **HITL 승인 필수** |
+| **강제 종료** | **1** | `force_close_app` — **승인 필수.** 🔑 `close_app` 은 `WM_CLOSE` 로 곱게 닫아 승인이 없다. **이름이 다른 도구로 나눈 것**이 설계의 핵심이다 — `force=True` 인자였다면 LLM 이 언젠가 지어낸다(절대규칙 9와 같은 모양) |
+| **덮어쓰기** | **1** | `overwrite_file` — **승인 필수.** `create_file` 은 이름이 겹치면 **안 쓰고 말한다** → [ADR](design/G-05-19_승인의_경계.md) |
+| **옮기기·이름변경** | **2** | `move_file` `rename_file` — **승인 필수.** 🚨 둘 다 **재귀 탐색을 안 한다** — 승인 질문은 이름만 보여주므로 하위 폴더의 동명 파일이 잡히면 사용자가 알 수 없다 |
 
 > **포인팅(M4)은 승인이 없다 — 아무것도 바꾸지 않기 때문이다.** 표시는 8초 뒤
 > 저절로 사라지고, 다음 턴이 시작될 때도 지워진다. ⚠️ 다만 **화면 한 장이 나가는
