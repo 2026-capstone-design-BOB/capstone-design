@@ -116,8 +116,20 @@ def run():
     check("🚨 읽기 실패가 «없어요»로 안 떨어진다",
           "메일을 읽지 못했어요" in _SRC and "메일에 연결하지 못했어요" in _SRC)
     check("진짜 없을 때만 «없어요»", "메일이 없어요" in _SRC)
-    check("연결 안 됐을 때 실제 응답이 그렇다",
-          G.list_emails.invoke({}).startswith("✗"))
+    # 🚨 **사용자 상태에 의존하지 않는다** (2026-09-24 에 여기서 깨졌다).
+    #   처음에는 그냥 `list_emails.invoke({})` 를 부르고 «✗ 로 시작한다»를 봤는데,
+    #   사용자가 **실제로 구글에 연결하자 진짜 메일이 와서** 테스트가 실패했다.
+    #   `_testenv.py` 가 못 박아 둔 규칙 그대로다 — «테스트는 사용자 상태에
+    #   의존하면 안 된다». 그래서 자격증명 경로를 없는 곳으로 돌려 **결정적으로** 본다.
+    import tools.google_auth as _A
+    _keep = _A.CREDS_PATH
+    try:
+        _A.CREDS_PATH = os.path.join(_ROOT, "__없는파일__.json")
+        r = G.list_emails.invoke({})
+        check("연결이 없으면 실제로 그 문장이 나간다",
+              r.startswith("✗") and "연결" in r, r[:50])
+    finally:
+        _A.CREDS_PATH = _keep
 
     print(f"{NL}=== ⑤ 🚨 여럿이면 고르지 않는가 ===")
     check("🚨 후보가 둘 이상이면 되묻는다", "어느 것인가요" in _SRC)
