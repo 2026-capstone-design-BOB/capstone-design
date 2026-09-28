@@ -1,0 +1,66 @@
+{
+  "threshold_default": 0.8,
+  "energy_gate": 0.0015,
+  "baseline": {
+    "threshold": 0.8,
+    "energy_floor": 0.0,
+    "pos_total": 79,
+    "pos_hit": 67,
+    "frr": 0.1518987341772152,
+    "fa": 7,
+    "neg_sec": 343.44100000000003,
+    "fa_per_hour": 73.37504840714998,
+    "fa_by_label": {
+      "negative": 6,
+      "command": 0,
+      "freetalk": 1,
+      "quiet": 0
+    },
+    "sec_by_label": {
+      "negative": 160.71999999999997,
+      "command": 0.0,
+      "freetalk": 182.721,
+      "quiet": 0.0
+    },
+    "fa_per_hour_by_label": {
+      "negative": 134.39522150323546,
+      "command": NaN,
+      "freetalk": 19.702168880424253,
+      "quiet": NaN
+    },
+    "per_session": [
+      {
+        "speaker": "녹음자1",
+        "holdout": true,
+        "pos_total": 20,
+        "pos_hit": 17,
+        "fa": 1,
+        "neg_sec": 84.77999999999999
+      },
+      {
+        "speaker": "녹음자3",
+        "holdout": true,
+        "pos_total": 20,
+        "pos_hit": 16,
+        "fa": 1,
+        "neg_sec": 84.95999999999998
+      },
+      {
+        "speaker": "녹음자5",
+        "holdout": true,
+        "pos_total": 20,
+        "pos_hit": 15,
+        "fa": 4,
+        "neg_sec": 88.92100000000005
+      },
+      {
+        "speaker": "녹음자9",
+        "holdout": true,
+        "pos_total": 19,
+        "pos_hit": 19,
+        "fa": 1,
+        "neg_sec": 84.78
+      }
+    ]
+  }
+}

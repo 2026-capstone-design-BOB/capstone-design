@@ -49,6 +49,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import sys
 import wave
 
@@ -108,6 +109,16 @@ def load_pairs():
     for f in lonely:
         print(f"  ⚠️  {f} — 짝이 되는 .wav 가 없습니다 (건너뜁니다)")
     return out
+
+
+def _speaker_key(name: str) -> str:
+    """홀드아웃에서 «같은 사람»을 가리는 열쇠. 뒤에 붙은 괄호를 뗀다.
+
+    `김예은` 과 `김예은(다시)` 는 **한 사람**이다(첫 녹음이 끊겨 다시 했다).
+    문자열 그대로 세면 두 사람이 되고, 한쪽이 학습·한쪽이 홀드아웃에 들어가면
+    검증이 **같은 편향의 거울**이 된다 → M7 §5-2.
+    """
+    return re.sub(r"\s*[（(].*?[)）]\s*$", "", name).strip() or name
 
 
 def _pull_note() -> str:
@@ -188,15 +199,44 @@ def main():
         return 0
 
     # ── 홀드아웃: 사람을 통째로 뗀다 ──────────────────────────
-    names = sorted(by_speaker)
+    #
+    # 🚨 **이름 문자열로 사람을 세면 같은 사람이 둘이 된다** (2026-09-28 에 실제로 났다).
+    #   26명 중에 `김예은` 과 `김예은(다시)` 가 있었다 — 첫 녹음이 중간에 끊겨 다시 한
+    #   것이다. 문자열로 보면 두 사람이라 **한쪽은 학습, 한쪽은 홀드아웃**에 들어갈 수
+    #   있었고, 그러면 M7 §5-2 가 막으려던 바로 그것이 된다 —
+    #   **«검증이 아니라 같은 편향의 거울».**
+    #   그래서 뒤에 붙은 괄호를 떼고 **같은 사람으로 묶는다.** 묶인 것은 말한다.
+    #
+    # 🚨 그리고 **구간이 0인 화자를 홀드아웃으로 뽑지 않는다.** `나나` 가 0구간인데
+    #   뽑히면 «4명 뗐다»고 적히고 실제로는 3명이다 — 분모가 조용히 줄어든다.
+    groups: dict[str, set] = {}
+    for nm in by_speaker:
+        groups.setdefault(_speaker_key(nm), set()).add(nm)
+    merged = {k: sorted(v) for k, v in groups.items() if len(v) > 1}
+    if merged:
+        print("\n🔗 같은 사람으로 묶었습니다(괄호를 뗀 이름이 같습니다):")
+        for k, v in sorted(merged.items()):
+            print(f"   · {k} ← {' · '.join(v)}")
+        print("   이렇게 안 묶으면 한 사람이 학습과 홀드아웃에 나뉘어 들어갑니다(M7 §5-2).")
+
+    n_segs = {k: sum(len(m.get("segments") or []) for nm in v for m, _ in by_speaker[nm])
+              for k, v in groups.items()}
+    empty = sorted(k for k, c in n_segs.items() if c == 0)
+    if empty:
+        print(f"\n⚠️ 구간이 0인 화자 {len(empty)}명 — 홀드아웃 후보에서 뺍니다: {', '.join(empty)}")
+
     holdout: set[str] = set()
     if args.holdout > 0:
-        if args.holdout >= len(names):
-            print(f"\n✗ 화자가 {len(names)}명인데 {args.holdout}명을 떼려 합니다.")
+        pool = sorted(k for k in groups if n_segs[k] > 0)
+        if args.holdout >= len(pool):
+            print(f"\n✗ 쓸 수 있는 화자가 {len(pool)}명인데 {args.holdout}명을 떼려 합니다.")
             return 1
         rng = np.random.default_rng(args.seed)
-        holdout = set(rng.choice(names, size=args.holdout, replace=False).tolist())
-        print(f"\n🔒 홀드아웃(미학습 화자): {', '.join(sorted(holdout))}")
+        keys = rng.choice(pool, size=args.holdout, replace=False).tolist()
+        holdout = {nm for k in keys for nm in groups[k]}
+        print(f"\n🔒 홀드아웃(미학습 화자) {len(keys)}명: {', '.join(sorted(keys))}")
+        if holdout != set(keys):
+            print(f"   ㄴ 실제로 떼는 세션 이름: {', '.join(sorted(holdout))}")
         print("   이 사람들은 학습에 **한 번도** 안 들어갑니다 (M7 §5-2)")
 
     # ── 자르기 ────────────────────────────────────────────────
