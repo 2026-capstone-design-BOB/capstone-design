@@ -1,0 +1,1242 @@
+{
+  "results": {
+    "gemini": {
+      "model": "gemini-2.5-flash",
+      "rows": [
+        {
+          "tools": [
+            "open_app"
+          ],
+          "say": "",
+          "args": {
+            "open_app": {
+              "app": "메모장"
+            }
+          },
+          "ms": 1255,
+          "in": 9178,
+          "out": 17,
+          "error": "",
+          "text": "메모장 켜 줘",
+          "expect": "open_app",
+          "group": "앱"
+        },
+        {
+          "tools": [
+            "close_app"
+          ],
+          "say": "",
+          "args": {
+            "close_app": {
+              "app": "그림판"
+            }
+          },
+          "ms": 1916,
+          "in": 9177,
+          "out": 17,
+          "error": "",
+          "text": "그림판 꺼 줘",
+          "expect": "close_app",
+          "group": "앱"
+        },
+        {
+          "tools": [
+            "force_close_app"
+          ],
+          "say": "",
+          "args": {
+            "force_close_app": {
+              "app": "그림판"
+            }
+          },
+          "ms": 1218,
+          "in": 9179,
+          "out": 19,
+          "error": "",
+          "text": "그림판 강제로 꺼 줘",
+          "expect": "force_close_app",
+          "group": "앱"
+        },
+        {
+          "tools": [
+            "get_running_apps"
+          ],
+          "say": "",
+          "args": {
+            "get_running_apps": {}
+          },
+          "ms": 1044,
+          "in": 9180,
+          "out": 12,
+          "error": "",
+          "text": "지금 켜져 있는 앱 목록 알려줘",
+          "expect": "get_running_apps",
+          "group": "앱"
+        },
+        {
+          "tools": [
+            "set_volume"
+          ],
+          "say": "",
+          "args": {
+            "set_volume": {
+              "level": 30
+            }
+          },
+          "ms": 1120,
+          "in": 9179,
+          "out": 16,
+          "error": "",
+          "text": "볼륨 30으로 맞춰줘",
+          "expect": "set_volume",
+          "group": "시스템"
+        },
+        {
+          "tools": [
+            "mute"
+          ],
+          "say": "",
+          "args": {
+            "mute": {}
+          },
+          "ms": 1046,
+          "in": 9175,
+          "out": 8,
+          "error": "",
+          "text": "소리 꺼줘",
+          "expect": "mute",
+          "group": "시스템"
+        },
+        {
+          "tools": [
+            "brightness_up"
+          ],
+          "say": "",
+          "args": {
+            "brightness_up": {}
+          },
+          "ms": 1139,
+          "in": 9178,
+          "out": 10,
+          "error": "",
+          "text": "화면 밝기 좀 올려줘",
+          "expect": "brightness_up",
+          "group": "시스템"
+        },
+        {
+          "tools": [
+            "maximize_window"
+          ],
+          "say": "",
+          "args": {
+            "maximize_window": {
+              "app": "메모장"
+            }
+          },
+          "ms": 1227,
+          "in": 9178,
+          "out": 17,
+          "error": "",
+          "text": "메모장 최대화해줘",
+          "expect": "maximize_window",
+          "group": "창"
+        },
+        {
+          "tools": [
+            "create_file"
+          ],
+          "say": "",
+          "args": {
+            "create_file": {
+              "location": "바탕화면",
+              "name": "회의록.txt"
+            }
+          },
+          "ms": 1311,
+          "in": 9182,
+          "out": 26,
+          "error": "",
+          "text": "바탕화면에 회의록.txt 만들어줘",
+          "expect": "create_file",
+          "group": "파일"
+        },
+        {
+          "tools": [
+            "delete_file"
+          ],
+          "say": "",
+          "args": {
+            "delete_file": {
+              "file_path": "a.txt"
+            }
+          },
+          "ms": 1139,
+          "in": 9181,
+          "out": 19,
+          "error": "",
+          "text": "에이점 티엑스티 지워 줘",
+          "expect": "delete_file",
+          "group": "파일"
+        },
+        {
+          "tools": [
+            "find_file"
+          ],
+          "say": "",
+          "args": {
+            "find_file": {
+              "name": "보고서"
+            }
+          },
+          "ms": 1045,
+          "in": 9177,
+          "out": 16,
+          "error": "",
+          "text": "보고서 어디 있는지 찾아줘",
+          "expect": "find_file",
+          "group": "파일"
+        },
+        {
+          "tools": [
+            "list_directory"
+          ],
+          "say": "",
+          "args": {
+            "list_directory": {
+              "location": "downloads"
+            }
+          },
+          "ms": 1398,
+          "in": 9180,
+          "out": 15,
+          "error": "",
+          "text": "다운로드 폴더에 뭐 있는지 알려줘",
+          "expect": "list_directory",
+          "group": "파일"
+        },
+        {
+          "tools": [
+            "describe_screen"
+          ],
+          "say": "",
+          "args": {
+            "describe_screen": {}
+          },
+          "ms": 1228,
+          "in": 9176,
+          "out": 10,
+          "error": "",
+          "text": "지금 화면에 뭐 보여",
+          "expect": "describe_screen",
+          "group": "화면"
+        },
+        {
+          "tools": [
+            "type_text"
+          ],
+          "say": "",
+          "args": {
+            "type_text": {
+              "text": "안녕하세요",
+              "target": "메모장"
+            }
+          },
+          "ms": 1133,
+          "in": 9179,
+          "out": 22,
+          "error": "",
+          "text": "메모장에 안녕하세요 라고 써 줘",
+          "expect": "type_text",
+          "group": "화면"
+        },
+        {
+          "tools": [
+            "watch_screen"
+          ],
+          "say": "",
+          "args": {
+            "watch_screen": {
+              "what": "오류 메시지",
+              "window": "메모장"
+            }
+          },
+          "ms": 1227,
+          "in": 9179,
+          "out": 25,
+          "error": "",
+          "text": "메모장에 오류 뜨면 알려줘",
+          "expect": "watch_screen",
+          "group": "화면"
+        },
+        {
+          "tools": [
+            "youtube_search"
+          ],
+          "say": "",
+          "args": {
+            "youtube_search": {
+              "query": "아이유 노래"
+            }
+          },
+          "ms": 1127,
+          "in": 9180,
+          "out": 17,
+          "error": "",
+          "text": "유튜브에서 아이유 노래 틀어줘",
+          "expect": "youtube_search",
+          "group": "온라인"
+        },
+        {
+          "tools": [
+            "web_search"
+          ],
+          "say": "",
+          "args": {
+            "web_search": {
+              "query": "파이썬 리스트 정렬하는 법"
+            }
+          },
+          "ms": 1314,
+          "in": 9183,
+          "out": 23,
+          "error": "",
+          "text": "파이썬 리스트 정렬하는 법 검색해줘",
+          "expect": "web_search",
+          "group": "온라인"
+        },
+        {
+          "tools": [
+            "get_weather"
+          ],
+          "say": "",
+          "args": {
+            "get_weather": {
+              "days": "today",
+              "location": "서울"
+            }
+          },
+          "ms": 1219,
+          "in": 9176,
+          "out": 20,
+          "error": "",
+          "text": "오늘 날씨 어때",
+          "expect": "get_weather",
+          "group": "온라인"
+        },
+        {
+          "tools": [
+            "get_current_time"
+          ],
+          "say": "",
+          "args": {
+            "get_current_time": {}
+          },
+          "ms": 1229,
+          "in": 9175,
+          "out": 12,
+          "error": "",
+          "text": "지금 몇 시야",
+          "expect": "get_current_time",
+          "group": "정보"
+        },
+        {
+          "tools": [],
+          "say": "음... 오늘은 뭘 드시고 싶으세요? 제가 메뉴를 추천해 드릴 수도 있고, 근처 맛집을 찾아드릴 수도 있어요!",
+          "args": {},
+          "ms": 1567,
+          "in": 9177,
+          "out": 29,
+          "error": "",
+          "text": "오늘 저녁 뭐 먹지",
+          "expect": "",
+          "group": "🚫 잡담"
+        },
+        {
+          "tools": [
+            "minimize_window"
+          ],
+          "say": "",
+          "args": {
+            "minimize_window": {
+              "app": "메모장"
+            }
+          },
+          "ms": 1317,
+          "in": 9178,
+          "out": 17,
+          "error": "",
+          "text": "메모장 창 내려 줘",
+          "expect": "minimize_window",
+          "group": "창"
+        },
+        {
+          "tools": [
+            "show_desktop"
+          ],
+          "say": "",
+          "args": {
+            "show_desktop": {}
+          },
+          "ms": 1214,
+          "in": 9180,
+          "out": 10,
+          "error": "",
+          "text": "창 다 내리고 바탕화면 보여줘",
+          "expect": "show_desktop",
+          "group": "창"
+        },
+        {
+          "tools": [
+            "switch_window"
+          ],
+          "say": "",
+          "args": {
+            "switch_window": {
+              "app_name": "엑셀"
+            }
+          },
+          "ms": 1217,
+          "in": 9177,
+          "out": 18,
+          "error": "",
+          "text": "엑셀 창으로 가줘",
+          "expect": "switch_window",
+          "group": "창"
+        },
+        {
+          "tools": [
+            "split_screen"
+          ],
+          "say": "",
+          "args": {
+            "split_screen": {
+              "right_app": "chrome",
+              "left_app": "excel"
+            }
+          },
+          "ms": 1224,
+          "in": 9181,
+          "out": 24,
+          "error": "",
+          "text": "엑셀이랑 크롬 반씩 같이 보여줘",
+          "expect": "split_screen",
+          "group": "창"
+        },
+        {
+          "tools": [
+            "minimize_others"
+          ],
+          "say": "",
+          "args": {
+            "minimize_others": {
+              "keep_app": "메모장"
+            }
+          },
+          "ms": 1152,
+          "in": 9182,
+          "out": 19,
+          "error": "",
+          "text": "메모장만 남기고 나머지 창 다 내려줘",
+          "expect": "minimize_others",
+          "group": "창"
+        },
+        {
+          "tools": [
+            "open_url"
+          ],
+          "say": "",
+          "args": {
+            "open_url": {
+              "url": "https://www.naver.com"
+            }
+          },
+          "ms": 3561,
+          "in": 9181,
+          "out": 21,
+          "error": "",
+          "text": "https://www.naver.com 열어줘",
+          "expect": "open_url",
+          "group": "온라인"
+        },
+        {
+          "tools": [
+            "map_search"
+          ],
+          "say": "",
+          "args": {
+            "map_search": {
+              "origin": "강남역",
+              "destination": "서울역"
+            }
+          },
+          "ms": 1312,
+          "in": 9182,
+          "out": 23,
+          "error": "",
+          "text": "강남역에서 서울역까지 가는 길 찾아줘",
+          "expect": "map_search",
+          "group": "온라인"
+        },
+        {
+          "tools": [
+            "fetch_web_info"
+          ],
+          "say": "",
+          "args": {
+            "fetch_web_info": {
+              "query": "2024 전기차 보조금"
+            }
+          },
+          "ms": 1040,
+          "in": 9183,
+          "out": 25,
+          "error": "",
+          "text": "전기차 보조금 얼마인지 찾아서 알려줘",
+          "expect": "fetch_web_info",
+          "group": "온라인"
+        },
+        {
+          "tools": [
+            "crawl_page"
+          ],
+          "say": "",
+          "args": {
+            "crawl_page": {
+              "url": "https://example.com"
+            }
+          },
+          "ms": 1130,
+          "in": 9182,
+          "out": 19,
+          "error": "",
+          "text": "https://example.com 이 페이지 내용 읽어줘",
+          "expect": "crawl_page",
+          "group": "온라인"
+        },
+        {
+          "tools": [
+            "create_folder"
+          ],
+          "say": "",
+          "args": {
+            "create_folder": {
+              "location": "desktop",
+              "name": "발표자료"
+            }
+          },
+          "ms": 1257,
+          "in": 9182,
+          "out": 23,
+          "error": "",
+          "text": "바탕화면에 발표자료 폴더 만들어줘",
+          "expect": "create_folder",
+          "group": "파일"
+        },
+        {
+          "tools": [
+            "open_recent_file"
+          ],
+          "say": "",
+          "args": {
+            "open_recent_file": {}
+          },
+          "ms": 1099,
+          "in": 9180,
+          "out": 12,
+          "error": "",
+          "text": "최근에 열었던 파일 목록 보여줘",
+          "expect": "open_recent_file",
+          "group": "파일"
+        },
+        {
+          "tools": [
+            "open_file"
+          ],
+          "say": "",
+          "args": {
+            "open_file": {
+              "file_path": "회의록.txt",
+              "app": "notepad"
+            }
+          },
+          "ms": 1121,
+          "in": 9184,
+          "out": 25,
+          "error": "",
+          "text": "바탕화면에 있는 회의록.txt 열어줘",
+          "expect": "open_file",
+          "group": "파일"
+        },
+        {
+          "tools": [
+            "write_excel"
+          ],
+          "say": "",
+          "args": {
+            "write_excel": {
+              "rows": "1월,10만원\n2월,12만원",
+              "headers": "월,지출",
+              "filename": "지출 내역.xlsx"
+            }
+          },
+          "ms": 1386,
+          "in": 9196,
+          "out": 46,
+          "error": "",
+          "text": "1월 10만원 2월 12만원 지출 내역을 엑셀로 저장해줘",
+          "expect": "write_excel",
+          "group": "파일"
+        },
+        {
+          "tools": [
+            "copy_file"
+          ],
+          "say": "",
+          "args": {
+            "copy_file": {
+              "file_path": "회의록.txt",
+              "destination": "백업 폴더"
+            }
+          },
+          "ms": 1224,
+          "in": 9185,
+          "out": 28,
+          "error": "",
+          "text": "회의록.txt 를 백업 폴더에 복사해둬",
+          "expect": "copy_file",
+          "group": "파일"
+        },
+        {
+          "tools": [
+            "move_file"
+          ],
+          "say": "",
+          "args": {
+            "move_file": {
+              "file_path": "회의록.txt",
+              "destination": "문서"
+            }
+          },
+          "ms": 1316,
+          "in": 9183,
+          "out": 26,
+          "error": "",
+          "text": "회의록.txt 를 문서 폴더로 옮겨줘",
+          "expect": "move_file",
+          "group": "파일"
+        },
+        {
+          "tools": [
+            "rename_file"
+          ],
+          "say": "",
+          "args": {
+            "rename_file": {
+              "file_path": "회의록.txt",
+              "new_name": "주간보고.txt"
+            }
+          },
+          "ms": 1211,
+          "in": 9184,
+          "out": 31,
+          "error": "",
+          "text": "회의록.txt 이름을 주간보고.txt 로 바꿔줘",
+          "expect": "rename_file",
+          "group": "파일"
+        },
+        {
+          "tools": [
+            "overwrite_file"
+          ],
+          "say": "",
+          "args": {
+            "overwrite_file": {
+              "name": "회의록.txt",
+              "content": "회의 취소"
+            }
+          },
+          "ms": 1134,
+          "in": 9187,
+          "out": 25,
+          "error": "",
+          "text": "회의록.txt 에 회의 취소라고 덮어써 줘",
+          "expect": "overwrite_file",
+          "group": "파일"
+        },
+        {
+          "tools": [
+            "delete_folder"
+          ],
+          "say": "",
+          "args": {
+            "delete_folder": {
+              "folder_path": "바탕화면/임시 폴더"
+            }
+          },
+          "ms": 1132,
+          "in": 9182,
+          "out": 25,
+          "error": "",
+          "text": "바탕화면 임시 폴더 지워줘",
+          "expect": "delete_folder",
+          "group": "파일"
+        },
+        {
+          "tools": [
+            "volume_up"
+          ],
+          "say": "",
+          "args": {
+            "volume_up": {}
+          },
+          "ms": 1146,
+          "in": 9177,
+          "out": 10,
+          "error": "",
+          "text": "소리 좀 키워줘",
+          "expect": "volume_up",
+          "group": "시스템"
+        },
+        {
+          "tools": [
+            "volume_down"
+          ],
+          "say": "",
+          "args": {
+            "volume_down": {}
+          },
+          "ms": 1144,
+          "in": 9177,
+          "out": 10,
+          "error": "",
+          "text": "소리 좀 줄여줘",
+          "expect": "volume_down",
+          "group": "시스템"
+        },
+        {
+          "tools": [
+            "unmute"
+          ],
+          "say": "",
+          "args": {
+            "unmute": {}
+          },
+          "ms": 1479,
+          "in": 9177,
+          "out": 9,
+          "error": "",
+          "text": "소리 다시 켜줘",
+          "expect": "unmute",
+          "group": "시스템"
+        },
+        {
+          "tools": [
+            "brightness_down"
+          ],
+          "say": "",
+          "args": {
+            "brightness_down": {}
+          },
+          "ms": 1223,
+          "in": 9179,
+          "out": 10,
+          "error": "",
+          "text": "화면 밝기 좀 낮춰줘",
+          "expect": "brightness_down",
+          "group": "시스템"
+        },
+        {
+          "tools": [
+            "set_brightness"
+          ],
+          "say": "",
+          "args": {
+            "set_brightness": {
+              "level": 50
+            }
+          },
+          "ms": 1047,
+          "in": 9179,
+          "out": 16,
+          "error": "",
+          "text": "밝기 50으로 맞춰줘",
+          "expect": "set_brightness",
+          "group": "시스템"
+        },
+        {
+          "tools": [
+            "get_volume"
+          ],
+          "say": "",
+          "args": {
+            "get_volume": {}
+          },
+          "ms": 1144,
+          "in": 9176,
+          "out": 10,
+          "error": "",
+          "text": "지금 볼륨 몇이야",
+          "expect": "get_volume",
+          "group": "시스템"
+        },
+        {
+          "tools": [
+            "get_brightness"
+          ],
+          "say": "",
+          "args": {
+            "get_brightness": {}
+          },
+          "ms": 1048,
+          "in": 9177,
+          "out": 10,
+          "error": "",
+          "text": "지금 화면 밝기 얼마야",
+          "expect": "get_brightness",
+          "group": "시스템"
+        },
+        {
+          "tools": [
+            "take_screenshot"
+          ],
+          "say": "",
+          "args": {
+            "take_screenshot": {}
+          },
+          "ms": 1217,
+          "in": 9178,
+          "out": 10,
+          "error": "",
+          "text": "화면 캡처해줘",
+          "expect": "take_screenshot",
+          "group": "시스템"
+        },
+        {
+          "tools": [
+            "get_battery_status"
+          ],
+          "say": "",
+          "args": {
+            "get_battery_status": {}
+          },
+          "ms": 1048,
+          "in": 9178,
+          "out": 12,
+          "error": "",
+          "text": "배터리 얼마나 남았어",
+          "expect": "get_battery_status",
+          "group": "시스템"
+        },
+        {
+          "tools": [
+            "notifications_off"
+          ],
+          "say": "",
+          "args": {
+            "notifications_off": {}
+          },
+          "ms": 1055,
+          "in": 9181,
+          "out": 10,
+          "error": "",
+          "text": "화면 공유할 건데 알림 꺼줘",
+          "expect": "notifications_off",
+          "group": "업무"
+        },
+        {
+          "tools": [
+            "notifications_on"
+          ],
+          "say": "",
+          "args": {
+            "notifications_on": {}
+          },
+          "ms": 975,
+          "in": 9177,
+          "out": 10,
+          "error": "",
+          "text": "알림 다시 켜줘",
+          "expect": "notifications_on",
+          "group": "업무"
+        },
+        {
+          "tools": [
+            "get_notifications_status"
+          ],
+          "say": "",
+          "args": {
+            "get_notifications_status": {}
+          },
+          "ms": 1133,
+          "in": 9179,
+          "out": 12,
+          "error": "",
+          "text": "지금 알림 켜져 있어?",
+          "expect": "get_notifications_status",
+          "group": "업무"
+        },
+        {
+          "tools": [
+            "keep_awake"
+          ],
+          "say": "",
+          "args": {
+            "keep_awake": {}
+          },
+          "ms": 1396,
+          "in": 9179,
+          "out": 10,
+          "error": "",
+          "text": "화면 안 꺼지게 해줘",
+          "expect": "keep_awake",
+          "group": "업무"
+        },
+        {
+          "tools": [
+            "allow_sleep"
+          ],
+          "say": "",
+          "args": {
+            "allow_sleep": {}
+          },
+          "ms": 1397,
+          "in": 9177,
+          "out": 10,
+          "error": "",
+          "text": "이제 화면 꺼져도 돼",
+          "expect": "allow_sleep",
+          "group": "업무"
+        },
+        {
+          "tools": [
+            "press_key"
+          ],
+          "say": "",
+          "args": {
+            "press_key": {
+              "key": "ctrl+s"
+            }
+          },
+          "ms": 1133,
+          "in": 9178,
+          "out": 17,
+          "error": "",
+          "text": "컨트롤 에스 눌러줘",
+          "expect": "press_key",
+          "group": "입력"
+        },
+        {
+          "tools": [
+            "get_clipboard_text"
+          ],
+          "say": "",
+          "args": {
+            "get_clipboard_text": {}
+          },
+          "ms": 1400,
+          "in": 9178,
+          "out": 12,
+          "error": "",
+          "text": "방금 복사한 거 뭐야",
+          "expect": "get_clipboard_text",
+          "group": "입력"
+        },
+        {
+          "tools": [
+            "scan_sensitive"
+          ],
+          "say": "",
+          "args": {
+            "scan_sensitive": {}
+          },
+          "ms": 1216,
+          "in": 9181,
+          "out": 10,
+          "error": "",
+          "text": "보내기 전에 개인정보 있나 봐줘",
+          "expect": "scan_sensitive",
+          "group": "입력"
+        },
+        {
+          "tools": [
+            "click_ui_element"
+          ],
+          "say": "",
+          "args": {
+            "click_ui_element": {
+              "target": "확인 버튼"
+            }
+          },
+          "ms": 1133,
+          "in": 9177,
+          "out": 19,
+          "error": "",
+          "text": "확인 버튼 눌러줘",
+          "expect": "click_ui_element",
+          "group": "입력"
+        },
+        {
+          "tools": [
+            "create_calendar_event"
+          ],
+          "say": "",
+          "args": {
+            "create_calendar_event": {
+              "time": "15:00",
+              "date": "2026-09-29",
+              "title": "팀 회의"
+            }
+          },
+          "ms": 1149,
+          "in": 9182,
+          "out": 42,
+          "error": "",
+          "text": "내일 오후 3시에 팀 회의 잡아줘",
+          "expect": "create_calendar_event",
+          "group": "일정"
+        },
+        {
+          "tools": [
+            "list_calendar_events"
+          ],
+          "say": "",
+          "args": {
+            "list_calendar_events": {
+              "date": "2026-09-28"
+            }
+          },
+          "ms": 1229,
+          "in": 9176,
+          "out": 26,
+          "error": "",
+          "text": "오늘 일정 뭐 있어?",
+          "expect": "list_calendar_events",
+          "group": "일정"
+        },
+        {
+          "tools": [
+            "list_emails"
+          ],
+          "say": "",
+          "args": {
+            "list_emails": {
+              "days": 1
+            }
+          },
+          "ms": 1146,
+          "in": 9178,
+          "out": 15,
+          "error": "",
+          "text": "밤새 온 메일 있어?",
+          "expect": "list_emails",
+          "group": "메일"
+        },
+        {
+          "tools": [
+            "read_email"
+          ],
+          "say": "",
+          "args": {
+            "read_email": {
+              "sender": "부장님"
+            }
+          },
+          "ms": 960,
+          "in": 9181,
+          "out": 17,
+          "error": "",
+          "text": "부장님이 보낸 메일 읽어줘",
+          "expect": "read_email",
+          "group": "메일"
+        },
+        {
+          "tools": [
+            "watch_inbox"
+          ],
+          "say": "",
+          "args": {
+            "watch_inbox": {}
+          },
+          "ms": 1133,
+          "in": 9177,
+          "out": 11,
+          "error": "",
+          "text": "메일 오면 알려줘",
+          "expect": "watch_inbox",
+          "group": "메일"
+        },
+        {
+          "tools": [
+            "remind_me"
+          ],
+          "say": "",
+          "args": {
+            "remind_me": {
+              "what": "약 먹기",
+              "minutes": 30
+            }
+          },
+          "ms": 1127,
+          "in": 9182,
+          "out": 24,
+          "error": "",
+          "text": "30분 뒤에 약 먹으라고 알려줘",
+          "expect": "remind_me",
+          "group": "약속"
+        },
+        {
+          "tools": [
+            "list_reminders"
+          ],
+          "say": "",
+          "args": {
+            "list_reminders": {}
+          },
+          "ms": 1052,
+          "in": 9180,
+          "out": 11,
+          "error": "",
+          "text": "알려주기로 한 거 뭐 있어?",
+          "expect": "list_reminders",
+          "group": "약속"
+        },
+        {
+          "tools": [
+            "cancel_reminder"
+          ],
+          "say": "",
+          "args": {
+            "cancel_reminder": {}
+          },
+          "ms": 1126,
+          "in": 9182,
+          "out": 10,
+          "error": "",
+          "text": "아까 알려달라고 한 거 취소해줘",
+          "expect": "cancel_reminder",
+          "group": "약속"
+        },
+        {
+          "tools": [
+            "do_in_background"
+          ],
+          "say": "",
+          "args": {
+            "do_in_background": {
+              "request": "전기차 보조금 세 군데 찾아서 엑셀로 정리"
+            }
+          },
+          "ms": 1393,
+          "in": 9196,
+          "out": 32,
+          "error": "",
+          "text": "전기차 보조금 세 군데 찾아서 정리해줘, 오래 걸려도 되니까 끝나면 알려줘",
+          "expect": "do_in_background",
+          "group": "약속"
+        },
+        {
+          "tools": [
+            "point_at_element"
+          ],
+          "say": "",
+          "args": {
+            "point_at_element": {
+              "zoom": true,
+              "target": "블루투스 켜기",
+              "window": "설정"
+            }
+          },
+          "ms": 1130,
+          "in": 9182,
+          "out": 33,
+          "error": "",
+          "text": "블루투스 켜는 데 어디 있어?",
+          "expect": "find_ui_element",
+          "group": "화면"
+        },
+        {
+          "tools": [
+            "point_at_element"
+          ],
+          "say": "",
+          "args": {
+            "point_at_element": {
+              "target": "설정 버튼"
+            }
+          },
+          "ms": 1217,
+          "in": 9180,
+          "out": 19,
+          "error": "",
+          "text": "설정 버튼 어디 있는지 짚어줘",
+          "expect": "point_at_element",
+          "group": "화면"
+        },
+        {
+          "tools": [
+            "stop_watching"
+          ],
+          "say": "",
+          "args": {
+            "stop_watching": {}
+          },
+          "ms": 1484,
+          "in": 9178,
+          "out": 10,
+          "error": "",
+          "text": "화면 그만 봐도 돼",
+          "expect": "stop_watching",
+          "group": "화면"
+        },
+        {
+          "tools": [],
+          "say": "별말씀을요! 또 필요하시면 언제든지 불러주세요. 😊",
+          "args": {},
+          "ms": 1225,
+          "in": 9178,
+          "out": 16,
+          "error": "",
+          "text": "고마워 수고했어",
+          "expect": "",
+          "group": "🚫 잡담"
+        },
+        {
+          "tools": [],
+          "say": "어떤 표를 엑셀로 저장해 드릴까요? 내용을 알려주시면 파일로 만들어 드릴게요.",
+          "args": {},
+          "ms": 1658,
+          "in": 9180,
+          "out": 23,
+          "error": "",
+          "text": "이 표 엑셀로 저장해줘",
+          "expect": "",
+          "group": "🚫 되묻기"
+        },
+        {
+          "tools": [],
+          "say": "어떤 내용으로 덮어쓸까요?",
+          "args": {},
+          "ms": 1135,
+          "in": 9181,
+          "out": 10,
+          "error": "",
+          "text": "회의록.txt 덮어써 줘",
+          "expect": "",
+          "group": "🚫 되묻기"
+        },
+        {
+          "tools": [],
+          "say": "무엇을 알려드릴까요?",
+          "args": {},
+          "ms": 1308,
+          "in": 9178,
+          "out": 7,
+          "error": "",
+          "text": "30분 뒤에 알려줘",
+          "expect": "",
+          "group": "🚫 되묻기"
+        }
+      ]
+    }
+  }
+}
