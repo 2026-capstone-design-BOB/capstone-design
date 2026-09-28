@@ -59,34 +59,13 @@ PROVIDERS = ("gemini", "claude", "openai")
 #   ⑭ target 없는 입력(BL-12).
 #
 # `expect` 는 **내가 붙인 라벨**이다. 보조 지표로만 쓴다(위 표 참조).
-CASES = [
-    # ① 앱
-    ("메모장 켜 줘",                          "open_app",         "앱"),
-    ("그림판 꺼 줘",                          "close_app",        "앱"),
-    ("그림판 강제로 꺼 줘",                   "force_close_app",  "앱"),
-    ("지금 켜져 있는 앱 목록 알려줘",         "get_running_apps", "앱"),
-    # ② 시스템 · 창
-    ("볼륨 30으로 맞춰줘",                    "set_volume",       "시스템"),
-    ("소리 꺼줘",                             "mute",             "시스템"),
-    ("화면 밝기 좀 올려줘",                   "brightness_up",    "시스템"),
-    ("메모장 최대화해줘",                     "maximize_window",  "창"),
-    # ③ 파일 — 승인이 필요한 것을 일부러 넣었다(실행은 안 한다)
-    ("바탕화면에 회의록.txt 만들어줘",        "create_file",      "파일"),
-    ("에이점 티엑스티 지워 줘",               "delete_file",      "파일"),
-    ("보고서 어디 있는지 찾아줘",             "find_file",        "파일"),
-    ("다운로드 폴더에 뭐 있는지 알려줘",      "list_directory",   "파일"),
-    # ④ 화면 · 입력
-    ("지금 화면에 뭐 보여",                   "describe_screen",  "화면"),
-    ("메모장에 안녕하세요 라고 써 줘",        "type_text",        "화면"),
-    ("메모장에 오류 뜨면 알려줘",             "watch_screen",     "화면"),
-    # ⑤ 온라인
-    ("유튜브에서 아이유 노래 틀어줘",         "youtube_search",   "온라인"),
-    ("파이썬 리스트 정렬하는 법 검색해줘",    "web_search",       "온라인"),
-    ("오늘 날씨 어때",                        "get_weather",      "온라인"),
-    # ⑥ 로컬 정보 · 도구 없음
-    ("지금 몇 시야",                          "get_current_time", "정보"),
-    ("오늘 저녁 뭐 먹지",                     "",                 "🚫 잡담"),
-]
+#
+# 📌 **2026-09-28 — 문장 자체는 `tool_eval_cases.py` 로 옮겼다.** 여기 그대로 두면
+#   표가 두 곳이 되고, 이 저장소가 반복해서 데인 결함이 정확히 그 모양이다
+#   («한 사실은 한 문서에만» — 한쪽만 갱신된다). 🔒 **스무 줄과 그 순서는 안 바뀌었다** —
+#   `2026-09_멀티API.json` 이 결과를 인덱스로 맞춰 놓아서 순서가 계약이다.
+#   `tests/test_tool_eval_cases.py` ④가 글자까지 지킨다.
+from tool_eval_cases import MULTI_CASES as CASES  # noqa: E402
 
 #: 인자까지 비교할 때 **무시하는** 키. provider마다 기본값을 채우는 습관이 달라
 #: 그대로 비교하면 «도구는 같은데 인자가 다르다»가 과하게 잡힌다.
@@ -144,8 +123,20 @@ def _ask(bound, text: str) -> dict:
 
     calls = getattr(resp, "tool_calls", None) or []
     usage = getattr(resp, "usage_metadata", None) or {}
+    # 🚨 **도구를 안 불렀을 때 무엇을 말했는지까지 남긴다**(2026-09-28 신설).
+    #   «도구 없음»에는 성질이 다른 둘이 섞여 있다 — **되묻는 것**(인자가 모자라면
+    #   옳은 행동이다)과 **안 했는데 했다고 말하는 것**(BL-12·15·61 계열의 결함).
+    #   글을 안 남기면 표에서 둘이 똑같이 «x» 로 보이고, 그러면 자가 **진짜 결함과
+    #   내 라벨 실수를 구별하지 못한다.** 실제로 2026-09-28 첫 측정의 «틀린 4건» 중
+    #   셋이 이것 때문에 판정 불가였다.
+    #   📌 열을 **더하기만** 했다 — 멀티 API JSON 은 인덱스로 맞춰 놓은 계약이라
+    #      기존 열을 건드리면 옛 결과가 어긋난다.
+    say = getattr(resp, "content", "")
+    if isinstance(say, list):                       # provider 마다 블록 리스트로 온다
+        say = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in say)
     return {
         "tools": sorted(c.get("name", "") for c in calls),
+        "say": (say or "").strip()[:300],
         "args": {c.get("name", ""): {k: v for k, v in (c.get("args") or {}).items()
                                      if k not in _ARG_IGNORE}
                  for c in calls},
@@ -163,7 +154,7 @@ def measure(provider: str, verbose: bool = False) -> dict:
             r = _ask(bound, text)
             r["error"] = ""
         except Exception as e:                      # 한 문장이 실패해도 나머지는 잰다
-            r = {"tools": [], "args": {}, "ms": 0, "in": 0, "out": 0,
+            r = {"tools": [], "say": "", "args": {}, "ms": 0, "in": 0, "out": 0,
                  "error": f"{type(e).__name__}: {e}"[:200]}
         r["text"] = text
         rows.append(r)
