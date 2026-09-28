@@ -15,7 +15,7 @@
    그래서 `tests/test_wakeword.py`와 **같은 방식**으로 소스에서 필요한 구간만 떼어내
    실행한다. CI(ubuntu, 오디오 패키지 없음)에서도 계약을 검증하기 위해서다.
 """
-import sys, os, re, types
+import sys, os, re, types, io
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
@@ -83,8 +83,15 @@ if _prev is None: os.environ.pop("WAKEWORD_BACKEND", None)
 else: os.environ["WAKEWORD_BACKEND"] = _prev
 
 print("=== ④ 임계값 설정 ===")
-check("기본 임계는 0.8 (학습 검증: 감지 95.0% · 오탐 1.82%)",
-      abs(_mod.kws_threshold() - 0.8) < 1e-9)
+# 🔑 **실측으로 고른 운용점이다** (2026-09-28). 처음 보는 화자 4명 기준으로
+#   놓침 12.7% · 오탐 25회/시간. 🚨 예전엔 0.8 이었고 근거로 «감지 95.0% 오탐 1.82%»
+#   를 적어 뒀는데, 그건 **옛 모델의 창 단위 내부 지표**라 제품 숫자가 아니었다.
+#   → docs/research/2026-09-28_웨이크워드_재학습.md
+check("기본 임계가 실측 운용점 0.62 (놓침 12.7% · 오탐 25회/시간)",
+      abs(_mod.kws_threshold() - 0.62) < 1e-9)
+check("   settings.py 가 그 근거를 숫자로 적어 뒀다",
+      "0.62 → 오탐 25회/시간" in io.open(
+          os.path.join(_ROOT, "config", "settings.py"), encoding="utf-8").read())
 _prev_t = os.environ.get("WAKEWORD_THRESHOLD")
 os.environ["WAKEWORD_THRESHOLD"] = "0.95"
 check("설정으로 임계를 올릴 수 있다", abs(_mod.kws_threshold() - 0.95) < 1e-9)
