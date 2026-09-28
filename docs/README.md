@@ -274,7 +274,7 @@ hwp 양식 8종(`D01`~`D08`)이 원본이고, **내용은 md 작업본으로 관
   ⚠️ **읽을 계획표가 9/16 승인본이라 넷이 빠져 있다** — §7에 그 넷이 있다
 - [REHEARSAL_2.md](testing/REHEARSAL_2.md) — 🎬 **2차 리허설 한 판의 기록(채워져 있다).** 여기서 BL-53·BL-54가 나왔다
 - [LAUNCH_CHECKLIST.md](testing/LAUNCH_CHECKLIST.md) — **37건.** `launch.bat` 띄우고 **지금 돌려볼 것만** · 1차 결과가 채워져 있다
-- [MANUAL_TESTS.md](testing/MANUAL_TESTS.md) — **77건.** 사람 눈·귀·손이 필요한 것 **전체 카탈로그**
+- [MANUAL_TESTS.md](testing/MANUAL_TESTS.md) — **97건**(🆕 2026-09-25 §16 신설 — 09-24·25 에 들어간 도구 20개, **전부 미검증**). 사람 눈·귀·손이 필요한 것 **전체 카탈로그**
 
 > **`REHEARSAL_2`·`REHEARSAL_3`은 «한 판»이고 나머지 둘은 «누적»이다.** 회차 문서는 돌고 나면
 > 답을 `LAUNCH_CHECKLIST`의 해당 줄로 **옮기고** DEVLOG에 기록한다 —
