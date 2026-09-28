@@ -46,6 +46,7 @@ M7 §5-2: *"홀드아웃은 학습과 «생성 과정»을 공유하지 않는�
 버린 양은 항상 출력한다 — 조용히 버리면 «왜 데이터가 줄었지»를 나중에 못 푼다.
 """
 import argparse
+import datetime
 import json
 import os
 import sys
@@ -109,6 +110,45 @@ def load_pairs():
     return out
 
 
+def _pull_note() -> str:
+    """🚨 **이 숫자는 로컬 폴더를 센 것이다** — 그 사실을 숫자 옆에 붙인다.
+
+    `pull.mjs` 가 남기는 `.last_pull` 을 읽어 «언제 가져온 것인가»를 같이 말한다.
+    없거나 오래됐으면 **먼저 가져오라고 말한다.**
+
+    ## 왜 있나 — 2026-09-28 에 이것 때문에 사고가 났다
+
+    서버(Blob)에 26명이 있는데 `--list` 가 **6명**을 찍었다. 틀린 게 아니라
+    «마지막으로 가져왔을 때 6명이었다»가 맞는 답이었는데, **출력이 그 둘을
+    구분해 주지 않았다.** 그 숫자로 «14명 더 필요»가 사용자 몫 1순위에 올라갔고
+    현황판 대문에 «D-8 녹음 마감»이 박혔다 — **이미 채워진 목표였다.**
+
+    🔑 이 저장소가 반복해서 배운 것과 같은 모양이다 — **재는 자가 무엇을 재는지
+    말하지 않으면, 읽는 사람이 다른 것을 잰 줄 안다.**
+    """
+    stamp = os.path.join(RAW, ".last_pull")
+    if not os.path.exists(stamp):
+        return ("\n  🚨 **아직 한 번도 서버에서 가져온 적이 없습니다**(또는 기록이 없습니다).\n"
+                "     이 숫자는 로컬 폴더만 센 것입니다 — 서버에 더 있을 수 있습니다.\n"
+                "     → cd scripts/collect-server && npm run pull")
+    try:
+        with open(stamp, encoding="utf-8") as f:
+            when = datetime.datetime.fromisoformat(f.read().strip().replace("Z", "+00:00"))
+    except Exception:                                   # noqa: BLE001
+        return "\n  ⚠️ .last_pull 을 읽지 못했습니다 — 서버에서 먼저 가져오세요."
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    hours = (now - when).total_seconds() / 3600
+    local = when.astimezone().strftime("%Y-%m-%d %H:%M")
+    if hours < 1:
+        return f"\n  (서버에서 가져온 때: {local} — 방금)"
+    if hours < 24:
+        return f"\n  (서버에서 가져온 때: {local} — {int(hours)}시간 전)"
+    return (f"\n  🚨 **마지막으로 가져온 때가 {local}({int(hours/24)}일 전)입니다.**\n"
+            f"     그 뒤에 들어온 녹음은 이 숫자에 **안 들어 있습니다.**\n"
+            f"     → cd scripts/collect-server && npm run pull")
+
+
 def main():
     ap = argparse.ArgumentParser(description="녹음본을 학습용 배열로 모은다")
     ap.add_argument("--list", action="store_true", help="누가 몇 개 보냈는지만 본다")
@@ -133,7 +173,7 @@ def main():
     for meta, wp in sessions:
         by_speaker.setdefault(meta.get("speaker", "?"), []).append((meta, wp))
 
-    print(f"\n받은 녹음 {len(sessions)}개 · 화자 {len(by_speaker)}명")
+    print(f"\n받은 녹음 {len(sessions)}개 · 화자 {len(by_speaker)}명{_pull_note()}")
     for name, items in sorted(by_speaker.items()):
         places = {m.get("place", "?") for m, _ in items}
         total = sum(m.get("durationSec", 0) for m, _ in items)

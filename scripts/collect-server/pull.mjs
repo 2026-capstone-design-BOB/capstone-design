@@ -68,4 +68,13 @@ if (lonely.length) {
   lonely.forEach(b => console.log('   · ' + b));
   console.log('   → 그 사람에게 다시 부탁해야 합니다. 라벨이 없으면 학습에 못 씁니다.');
 }
+// 🚨 **언제 가져왔는지를 남긴다** (2026-09-28 신설).
+//    `ingest_wakeword.py --list` 는 **로컬 폴더만** 센다. 그래서 pull 을 안 하고 세면
+//    «지금 몇 명인가»가 아니라 «마지막으로 가져왔을 때 몇 명이었나»가 나오는데,
+//    출력이 그 둘을 구분해 주지 않았다.
+//    2026-09-28 에 정확히 그 사고가 났다 — 서버에 26명이 있는데 **6명**이라고 보고했고,
+//    이미 채워진 목표를 «14명 더 필요»로 사용자 몫 1순위에 올려 뒀다.
+//    그래서 숫자가 아니라 **시각을 남기고**, 세는 쪽이 그 시각을 읽어 말하게 했다.
+await writeFile(join(DEST, '.last_pull'), new Date().toISOString() + '\n');
+
 console.log('\n다음: python scripts/ingest_wakeword.py --list');
