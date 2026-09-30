@@ -108,13 +108,15 @@ check("remind_me 가 what 을 required 로 받는다 — 없이 부르면 지어
 check("write_excel 이 headers·rows 를 required 로 받는다 — 같은 이유",
       {"headers", "rows"} <= set(_schema["write_excel"].get("required", [])))
 
-# 🔴 **셋 중 하나는 구조가 안 막고 있다.** `overwrite_file.content` 는 기본값이 ""
+# ✅ **2026-09-30 에 셋이 다 막혔다.** 아래 기록은 남긴다 — 왜 required 여야 하는지가
+#   여기 적혀 있고, 되돌리면 이 테스트가 깨진다.
+# (원래 기록) `overwrite_file.content` 는 기본값이 ""
 #   이라 내용 없이 불리면 **파일이 비워진다**(옛 내용은 휴지통). 2026-09-28 측정에서
 #   모델이 스스로 되물었지만 그건 **선의**지 보장이 아니다 → BL-76.
 #   이 줄은 «지금 상태»를 적어 둔 것이다. 고치면(required 로 바꾸면) 여기가 깨지고,
 #   그때는 **더 좋아진 것**이므로 위 두 줄 옆으로 옮기면 된다.
-check("🔴 overwrite_file.content 는 아직 required 가 아니다 (BL-76 이 열려 있다)",
-      "content" not in _schema["overwrite_file"].get("required", []))
+check("✅ overwrite_file.content 도 required 다 (BL-76 · 2026-09-30 닫힘)",
+      "content" in _schema["overwrite_file"].get("required", []))
 
 
 # ── ③ 새 도구 20개 — 이번에 갚은 빚 ──────────────────────────────
