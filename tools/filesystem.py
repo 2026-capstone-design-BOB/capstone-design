@@ -722,20 +722,33 @@ def write_excel(filename: str, headers: str, rows: str, location: str = "desktop
 
 
 @tool
-def overwrite_file(name: str, location: str = "desktop", content: str = "") -> str:
+def overwrite_file(name: str, content: str, location: str = "desktop") -> str:
     """이미 있는 파일을 **덮어씁니다**. 옛 내용은 사라지고 휴지통으로 갑니다.
     되돌리기 어려운 위험 동작이라 반드시 사용자 승인을 받은 뒤 실행됩니다.
 
     먼저 create_file 을 쓰세요. 그것이 "이미 있어요, 덮어쓰지 않았어요"라고 답했고
     사용자가 "덮어써 줘"처럼 **명시적으로** 덮어쓰기를 원할 때만 이 도구를 씁니다.
     name: 파일명 (확장자 포함)
+    content: 새로 쓸 내용 (**필수**)
     location: 위치 — 기본 바탕화면 (desktop/바탕화면, downloads, documents)
-    content: 새로 쓸 내용
+
+    ⚠️ 무엇으로 덮어쓸지 사용자가 말하지 않았으면 **이 도구를 부르지 말고 되물으세요.**
+    내용을 지어내면 안 됩니다.
     """
     # 🚨 **`create_file(overwrite=True)` 로 만들지 않았다.** 절대규칙 9와 같은 모양이다 —
     #   «LLM 이 넘길 수 있으면 언젠가 지어낸다.» 좌표가 그랬고 `force=True` 가 그랬다.
     #   **이름이 다른 도구**여야 `DANGEROUS_TOOLS` 가 그것만 걸 수 있다.
     #   → docs/design/G-05-19_승인의_경계.md §4-1 (2026-09-23 개정)
+    # 🚨 **내용이 없으면 안 쓴다** (BL-76 · 2026-09-30).
+    #   예전에는 `content: str = ""` 라 **부르기만 하면 파일이 비워졌다.**
+    #   2026-09-28 측정에서는 모델이 마침 되물어서 사고가 안 났는데,
+    #   🔑 **그건 선의지 구조가 아니다.** required 로 바꾸고 여기서 한 번 더 막는다.
+    #   (절대규칙 9와 같은 모양 — 「지어낼 수 있으면 언젠가 지어낸다」)
+    #   ⚠️ 빈 파일을 **일부러** 만들고 싶으면 `create_file` 이 그 일을 한다.
+    if not (content or "").strip():
+        return ("✗ 무슨 내용으로 덮어쓸까요? 내용을 알려주시면 덮어쓸게요.\n"
+                "(빈 파일로 만들려던 거라면 그렇게 말씀해 주세요 — 지금 내용이 다 사라져요.)")
+
     base = _resolve_location(location)
     if not base:
         return f"✗ '{location}'은(는) 지원하지 않는 위치예요."

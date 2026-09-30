@@ -87,6 +87,23 @@ DANGEROUS_TOOLS = {"delete_file", "delete_folder", "click_ui_element",
 #: 덮어쓰기 도구. 승인 문구가 «삭제»도 «클릭»도 아니라 따로 필요하다.
 OVERWRITE_TOOLS = {"overwrite_file"}
 
+# ── 승인 문구는 **도구마다 따로** 정한다 (BL-77 · 2026-09-30) ──────────
+#
+# 🚨 예전에는 `deletes` 가 **여집합**이었다 — 위험 도구 중 클릭·강제종료·덮어쓰기를
+#   뺀 «나머지 전부»가 «정말 삭제할까요? (휴지통으로 갑니다)» 로 떨어졌다.
+#   그래서 2026-09-24 에 `move_file`·`rename_file` 을 위험 목록에 넣자마자
+#   **이름만 바꾸는데 «정말 삭제할까요?»** 라고 묻게 됐다(2026-09-29 실기에서 잡힘).
+#
+# 🔑 동작은 맞았고 **문구만** 틀렸는데, 사용자는 문구를 보고 승인한다.
+#   이름을 바꾸려다 «삭제»를 보고 «응»이라고 답하게 된다.
+#
+# 🔒 그래서 **목록으로** 바꾼다. 이러면 다음에 위험 도구를 추가할 때
+#   문구 없는 도구가 조용히 «삭제»로 안 떨어지고 `_UNPHRASED` 로 드러난다
+#   (`tests/test_hitl_graph.py` 가 그것을 깨뜨린다).
+DELETE_TOOLS = {"delete_file", "delete_folder"}
+MOVE_TOOLS   = {"move_file"}
+RENAME_TOOLS = {"rename_file"}
+
 
 def dangerous_tools_now() -> set:
     """이 환경에서 승인을 받아야 하는 도구 이름.
@@ -358,15 +375,34 @@ def _confirm_question(dcalls: Any) -> str:
     # 결과가 다르면 문구도 달라야 한다 — "휴지통으로 갑니다"가 삭제 아닌 곳에선 **거짓**이 된다.
     # 클릭: 좌표는 아직 모른다(도구가 실행될 때 화면을 보고 정한다) → **무엇을 어디서**만 알린다.
     # 강제 종료·덮어쓰기: 잃는 것이 파일이 아니라 «저장 안 한 내용»·«옛 내용»이다.
-    clicks = [c for c in calls if c.get("name") == "click_ui_element"]
-    forces = [c for c in calls if c.get("name") == "force_close_app"]
-    writes = [c for c in calls if c.get("name") in OVERWRITE_TOOLS]
-    deletes = [c for c in calls
-               if c.get("name") not in ({"click_ui_element", "force_close_app"} | OVERWRITE_TOOLS)]
+    clicks  = [c for c in calls if c.get("name") == "click_ui_element"]
+    forces  = [c for c in calls if c.get("name") == "force_close_app"]
+    writes  = [c for c in calls if c.get("name") in OVERWRITE_TOOLS]
+    deletes = [c for c in calls if c.get("name") in DELETE_TOOLS]
+    moves   = [c for c in calls if c.get("name") in MOVE_TOOLS]
+    renames = [c for c in calls if c.get("name") in RENAME_TOOLS]
+    # 🚨 어디에도 안 들어간 위험 도구 — **«삭제»로 떨어뜨리지 않는다.**
+    #   이름을 말하고 «실행할까요»라고만 묻는다. 거짓말을 하느니 밋밋한 게 낫다.
+    known = ({"click_ui_element", "force_close_app"}
+             | OVERWRITE_TOOLS | DELETE_TOOLS | MOVE_TOOLS | RENAME_TOOLS)
+    others = [c for c in calls if c.get("name") not in known]
 
     parts = []
     if deletes:
         parts.append(f"{_join_targets(deletes)} 정말 삭제할까요? ({consequence})")
+    if moves:
+        # 🔑 옮기기는 **지우는 게 아니다.** 원래 자리에서 없어질 뿐이라
+        #   «휴지통»을 말하면 거짓이 된다.
+        parts.append(f"{_join_targets(moves)} 옮길까요? (원래 자리에서는 없어져요)")
+    if renames:
+        # ⚠️ `_join_targets` 는 목적격 조사(«…을»)를 붙인다. 뒤에 «이름을»이 또 오면
+        #   «파일을 이름을 바꿀까요»가 된다(2026-09-30 실기 1번). 이름만 잇는다.
+        rnames = " · ".join(_describe_call(c) for c in renames)
+        rmore = "" if len(renames) == 1 else f" 총 {len(renames)}개"
+        parts.append(f"{rnames}{rmore}의 이름을 바꿀까요? "
+                     "(파일은 그대로 있고 이름만 바뀌어요)")
+    if others:
+        parts.append(f"{_join_targets(others)} 실행할까요?")
     if clicks:
         parts.append(f"{_join_targets(clicks)}을(를) 찾아서 클릭할까요? "
                      "(클릭은 되돌릴 수 없어요)")
@@ -384,6 +420,40 @@ def _confirm_question(dcalls: Any) -> str:
                    else "⚠️ 휴지통을 못 써서 **되돌릴 수 없어요**")
         parts.append(f"{names}{more}의 지금 내용이 사라져요. {recover}. 덮어쓸까요?")
     return " 그리고 ".join(parts)
+
+
+def cancel_noun(calls) -> str:
+    """취소·보류를 말할 때 쓸 **명사**. (2026-09-30 실기 2번)
+
+    🚨 거부 경로가 통째로 «삭제»로 못 박혀 있었다. 승인 질문(`_confirm_question`)은
+      2026-09-30 에 도구별로 갈랐는데 **거부 응답은 안 갈랐다.** 그래서:
+
+          👤 주간보고.txt 를 문서 폴더로 옮겨줘
+          🤖 '주간보고.txt' 파일을 옮길까요? (원래 자리에서는 없어져요)   ← 맞다
+          👤 (거부)
+          🤖 네, 삭제를 취소했어요.                                    ← 🚨 거짓
+
+      사용자가 그 자리에서 *"내가 언제 삭제하라고 했어"* 라고 했다. 맞는 말이다 —
+      **하지도 않은 일을 취소했다고** 말한 것이다. BL-77 과 같은 결함의 반대쪽 면이다.
+
+    🔑 `_confirm_question` 과 **같은 분류**를 쓴다. 한쪽만 고치면 또 갈라진다.
+    """
+    names = {c.get("name") for c in (calls or []) if isinstance(c, dict)}
+    if not names:
+        return "실행"
+    if names & DELETE_TOOLS:
+        return "삭제"
+    if names & MOVE_TOOLS:
+        return "옮기기"
+    if names & RENAME_TOOLS:
+        return "이름 바꾸기"
+    if names & OVERWRITE_TOOLS:
+        return "덮어쓰기"
+    if "click_ui_element" in names:
+        return "클릭"
+    if "force_close_app" in names:
+        return "강제 종료"
+    return "실행"
 
 
 def _obj_particle(word: str) -> str:
@@ -574,6 +644,10 @@ class PluizState(MessagesState):
     # output_guard가 최종 응답 앞에 "삭제는 취소했어요"를 붙인다 — 이걸 안 알리면
     # 사용자는 삭제가 어떻게 됐는지 모른 채 새 명령의 결과만 보게 된다.
     deletion_cancelled: bool
+    # 무엇을 취소했는가 — «삭제»·«옮기기»·«이름 바꾸기»… (2026-09-30 실기 2번)
+    # 🚨 `deletion_cancelled` 만 있던 시절엔 **옮기기를 거부해도 «삭제를 취소했어요»**
+    #   라고 답했다. 플래그는 «취소됐다»만 알고 «무엇이»를 몰랐다.
+    cancelled_noun: str
     # BL-24 — 승인은 됐는데 **대상이 없어서 못 지운 것**의 이름.
     # ⚠️ `deletion_cancelled`(거부)와 다르다. 여기선 거부가 아니라 «없었다»이다.
     #   문구로 전하지 않고 플래그로 전한다 — 재발행 메시지 **뒤에** AIMessage를
@@ -884,6 +958,41 @@ def watch_notice_to_deliver(messages: list[AnyMessage]) -> Optional[str]:
     return None
 
 
+# ── 약속 고지도 **원문 그대로** 전한다 (2026-09-30 실기 · 7번) ────────────
+#
+# 🚨 `remind_me` 는 세 가지를 **이미 다 돌려주고 있었다** — ① 언제 ②「Pluiz 를 닫으면
+#   사라져요」 ③ 취소하는 법. 그런데 사용자에게 나간 답은 **매번 23자**였다.
+#   모델이 도구 결과를 자기 말로 요약하면서 **경고 두 줄을 버렸다.**
+#
+#   2026-09-29 실기에서 ③이 빠졌고, 2026-09-30 실기에서는 ②③이 **둘 다** 빠졌다.
+#   ②는 «이 약속은 앱이 꺼지면 사라진다»는 **한계 고지**다. 그게 안 나가면
+#   사용자는 없어질 약속을 믿고 컴퓨터를 끈다.
+#
+# 🔑 **이것은 감시 고지(`watch_notice_to_deliver`)와 완전히 같은 문제다.** 바로 위
+#   주석이 *"LLM이 요약하면 간격·상한·중단법이 사라지는데, 그 고지가 감시를 승인
+#   없이 허용한 근거다"* 라고 적어 뒀다. 그래서 **같은 기계에 태운다** —
+#   프롬프트로 «요약하지 마»라고 부탁하지 않는다(그건 확률을 올릴 뿐이다).
+_PROMISE_NOTICE_TOOLS = ("remind_me", "watch_inbox", "do_in_background")
+_PROMISE_NOTICE_MARK = "Pluiz 를 닫으면"   # 한계 고지에만 들어가는 문구
+
+
+def promise_notice_to_deliver(messages: list[AnyMessage]) -> Optional[str]:
+    """이번 턴에 약속이 **잡혔으면** 그 고지 원문을 반환한다. 아니면 None.
+
+    🔒 `watch_notice_to_deliver` 와 같은 규칙이다 — 도구가 만든 문장을 그대로 보낸다.
+      성공(`✓`)이고 한계 고지가 들어 있을 때만. 거절(`✗ 언제 알려드릴까요?`)은
+      **되묻는 말**이라 LLM이 전해도 되고, 그대로 내보내면 오히려 대화가 끊긴다.
+    """
+    turn = current_turn_messages(messages)
+    for m in reversed(turn):
+        if isinstance(m, ToolMessage) and getattr(m, "name", "") in _PROMISE_NOTICE_TOOLS:
+            c = _msg_text(m).strip()
+            if c.startswith("✓") and _PROMISE_NOTICE_MARK in c:
+                return c
+            return None
+    return None
+
+
 # 무엇을 보고 거짓말이라고 판단하는가.
 #
 # **판정은 상태가 한다** — 도구가 0개 돌았고 모니터가 꺼져 있다는 두 사실이 전부
@@ -995,12 +1104,42 @@ def needs_promise_retry(response: Any, *, in_plan: bool = False) -> bool:
     return bool(_PROMISE_NOW_RE.search(text))
 
 
-def needs_watch_retry(user_text: str, response: Any, *, watching: bool) -> bool:
+def _tools_ran_this_turn(messages: list[AnyMessage]) -> bool:
+    """이번 턴에 도구가 하나라도 실행됐나 (BL-78).
+
+    🔑 **`state["messages"]` 를 그냥 훑으면 안 된다** — 지난 턴의 도구 실행이
+      이번 턴의 판단을 오염시킨다(절대규칙 6). `current_turn_messages()` 를 거친다.
+    """
+    for m in current_turn_messages(messages):
+        if isinstance(m, ToolMessage):
+            return True
+        if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
+            return True
+    return False
+
+
+def needs_watch_retry(user_text: str, response: Any, *, watching: bool,
+                      acted_this_turn: bool = False) -> bool:
     """감시 요청인데 도구를 안 불렀는가 — 한 번 더 물어볼 자리인지 판단한다.
 
     `detect_watch_lie`와 같은 신호를 쓰지만 시점이 다르다. 이건 **agent 노드 안**
     에서 아직 되돌릴 수 있을 때 보고, 저건 다 끝난 뒤 마지막 그물이다.
+
+    ⚠️ `acted_this_turn` — **이번 턴에 도구가 하나라도 돌았으면 재시도하지 않는다**
+       (절대규칙 6 · BL-78 · 2026-09-30).
+
+       🚨 예전에는 **그 LLM 응답 하나**에만 `tool_calls` 가 있는지 봤다. 그래서
+       *"…찾아서 정리해줘, 끝나면 알려줘"* 처럼 앞 단계에서 `do_in_background` 가
+       이미 돈 턴에서도, 뒤따르는 «말로만 하는» 마무리 응답을 보고
+       *"감시 요청인데 도구 미호출"* 로 판정해 **`watch_screen` 을 강제로 덧붙였다.**
+
+       2026-09-29 실기에서 그 결과가 셋이었다 — ① 사용자에게 보이는 답이 감시
+       안내뿐이라 **맡긴 일이 시작된 걸 몰랐고**, ② **요청하지 않은 화면 감시**가
+       5초마다 돌았고, ③ 세 번째 화면 읽기에서 «찾았다»고 판정하고 **아무것도 안
+       끝났는데 종료**했다.
     """
+    if acted_this_turn:
+        return False
     if getattr(response, "tool_calls", None):
         return False
     if not user_text.strip():
@@ -1645,9 +1784,9 @@ def build_pluiz_graph(
         # (승인 질문 상태로 턴이 끝나면 output_guard를 거치지 않아 값이 살아남는다)
         if blocked:
             return {"messages": [AIMessage(content=reason)], "decision": "blocked",
-                    "deletion_cancelled": False, "visual_verified": False,
+                    "deletion_cancelled": False, "cancelled_noun": "", "visual_verified": False,
                     "missing_targets": [], "plan": [], "plan_cursor": 0}
-        return {"decision": "", "deletion_cancelled": False, "visual_verified": False,
+        return {"decision": "", "deletion_cancelled": False, "cancelled_noun": "", "visual_verified": False,
                 "missing_targets": [], "plan": [], "plan_cursor": 0}
 
     def fast_path(state: PluizState) -> dict:
@@ -1736,7 +1875,10 @@ def build_pluiz_graph(
         # BL-19: 감시 요청인데 도구를 안 불렀으면 **한 번만** 다시 묻는다.
         # 호출률이 회차마다 흔들려서(2026-09-04 실측) 프롬프트만으로는 부족하다.
         user_text = _last_human_text(state["messages"])
-        if needs_watch_retry(user_text, response, watching=is_watching()):
+        # BL-78: «이번 턴»에 이미 도구가 돌았는지 — 절대규칙 6 대로 이번 턴만 본다.
+        acted = _tools_ran_this_turn(state["messages"])
+        if needs_watch_retry(user_text, response, watching=is_watching(),
+                             acted_this_turn=acted):
             want = ("stop_watching" if _STOP_REQUEST_RE.search(user_text)
                     else "watch_screen")
             _log.info("[BL-19] 감시 요청인데 도구 미호출 → 1회 재시도(강제=%s) | 입력=%r",
@@ -1854,7 +1996,10 @@ def build_pluiz_graph(
             state["messages"])
         # BL-24 — 승인은 됐는데 없어서 못 지운 것. M3의 «못 한 단계»와 같은 자리의 접미다.
         base_tail = steps_notice(_rest) + missing_notice(state.get("missing_targets"))
-        note = "삭제는 취소했어요. " if state.get("deletion_cancelled") else ""
+        # 🔑 무엇을 취소했는지는 **상태가 나른다.** 문구에 «삭제»를 박아 두면
+        #   옮기기·이름변경을 거부했을 때 거짓말이 된다(2026-09-30 실기 2번).
+        _noun = str(state.get("cancelled_noun") or "삭제")
+        note = f"{_noun}은(는) 취소했어요. " if state.get("deletion_cancelled") else ""
 
         def _tail_for(body: str) -> str:
             """접미를 **최종 본문을 보고** 만든다. (BL-32의 가드 + BL-51)
@@ -1874,11 +2019,17 @@ def build_pluiz_graph(
         def _emit(body: str, *, strip: bool = False) -> dict:
             content = note + body + _tail_for(body)
             return {"messages": [AIMessage(content=content.strip() if strip else content)],
-                    "deletion_cancelled": False, "missing_targets": []}
+                    "deletion_cancelled": False, "cancelled_noun": "", "missing_targets": []}
 
         notice = watch_notice_to_deliver(state["messages"])
         if notice is not None:
             return _emit(notice)
+
+        # 약속 고지도 같은 규칙 (2026-09-30 실기 7번). 감시보다 **뒤에** 본다 —
+        # 한 턴에 둘 다 잡히면 감시 고지가 우선이다(중단법이 더 급하다).
+        promise = promise_notice_to_deliver(state["messages"])
+        if promise is not None:
+            return _emit(promise)
 
         # 도구를 안 부르고 "지켜볼게요"·"중단했어요"라고 말한 경우 (BL-19).
         # ⚠️ 캐시 히트는 제외한다. fast_path는 도구를 **실제로 실행하고도** messages에는
@@ -2039,9 +2190,9 @@ def build_pluiz_graph(
             if reissued is not None:
                 msgs.append(reissued)
                 return {"messages": msgs, "decision": "not_found_partial",
-                        "deletion_cancelled": False, "missing_targets": []}
+                        "deletion_cancelled": False, "cancelled_noun": "", "missing_targets": []}
             return {"messages": msgs, "decision": "not_found",
-                    "deletion_cancelled": False, "missing_targets": []}
+                    "deletion_cancelled": False, "cancelled_noun": "", "missing_targets": []}
 
         # 그래프를 멈추고 사용자에게 질문(오케스트레이터가 질문을 UI로 전달)
         question = _confirm_question(askable or dcall)
@@ -2081,7 +2232,7 @@ def build_pluiz_graph(
                 # 살릴 게 없으면(=위험도 안전도 없다) 오늘과 **글자 그대로 같다.**
                 # ⚠️ 반드시 끈다. 예전엔 앞 턴에서 켜진 값이 살아남아, **실제로
                 #    삭제해 놓고** "삭제는 취소했어요"라고 답했다(실기에서 확인).
-                return {"decision": "approved", "deletion_cancelled": False, "missing_targets": []}
+                return {"decision": "approved", "deletion_cancelled": False, "cancelled_noun": "", "missing_targets": []}
 
             # 원본은 **전부** 마감한다(짝 불변식, 절대규칙 3). 다만 사유는 다르다 —
             # 없어서 못 지운 것에 «이어서 실행됩니다»라고 적으면 거짓이 된다.
@@ -2097,7 +2248,7 @@ def build_pluiz_graph(
             #    그래서 «못 지운 것»은 문구가 아니라 **플래그**로 전한다(§6-4).
             msgs.append(approved)
             return {"messages": msgs, "decision": "approved",
-                    "deletion_cancelled": False,
+                    "deletion_cancelled": False, "cancelled_noun": "",
                     "missing_targets": [_target_name(c) for c in missing]}
 
         # ── 승인 대기 중에 들어온 **다른 명령** ────────────────────
@@ -2105,14 +2256,16 @@ def build_pluiz_graph(
         # 두 번 해야 한다(실기에서 실제로 겪었다). HumanMessage로 넣으므로
         # 여기서부터가 "이번 턴"이 된다 — 의미상 새 명령이 맞다(절대규칙 6).
         if verdict == "other_command":
-            msgs = _close_calls("사용자가 다른 명령을 내려 삭제를 취소했어요.")
+            noun = cancel_noun(risky_calls)
+            msgs = _close_calls(f"사용자가 다른 명령을 내려 {noun}을(를) 취소했어요.")
             msgs.append(HumanMessage(content=str(answer)))
             # ⚠️ **계획도 반드시 지운다**(M3). Command(resume)는 input_guard를 거치지
             #   않으므로, 안 지우면 새 명령을 처리할 agent가 "지금은 2단계: test.txt
             #   삭제" 지시를 받는다. 취소 플래그가 턴을 넘어 새어 실제로 삭제해 놓고
             #   "삭제는 취소했어요"라고 답한 사고와 **완전히 같은 모양**이다.
             return {"messages": msgs, "decision": "other_command",
-                    "deletion_cancelled": True, "plan": [], "plan_cursor": 0}
+                    "deletion_cancelled": True, "cancelled_noun": noun,
+                    "plan": [], "plan_cursor": 0}
 
         # 거부/애매: 취소 응답
         # BL-20 — 거부는 **위험한 호출 하나**에 대한 판단이다. 같이 온 안전한 호출은
@@ -2122,7 +2275,8 @@ def build_pluiz_graph(
         #   일은 «다시 말씀해 주세요»다. 되물으면서 도구까지 실행하면 사용자는 무엇이
         #   일어났는지 모른 채 결과만 보게 된다. 안전 기본값을 유지한다(ADR §4).
         reissued = reissue_message(safe_calls) if verdict == "reject" else None
-        cancel = _close_calls("사용자가 삭제를 취소했어요.",
+        noun = cancel_noun(askable or risky_calls)
+        cancel = _close_calls(f"사용자가 {noun}을(를) 취소했어요.",
                               hold_safe=reissued is not None)
         if reissued is not None:
             cancel.append(reissued)
@@ -2131,12 +2285,13 @@ def build_pluiz_graph(
             # 붙이고 곧바로 끈다(ADR §3-4). 켜 둔 채 새면 실제로 삭제해 놓고
             # "취소했어요"라고 답하는 그 사고와 같은 모양이 된다.
             return {"messages": cancel, "decision": "rejected_partial",
-                    "deletion_cancelled": True}
+                    "deletion_cancelled": True, "cancelled_noun": noun}
         cancel.append(AIMessage(content=(
-            "네, 삭제를 취소했어요." if verdict == "reject"
-            else "답을 알아듣지 못해서 삭제는 취소했어요. 방금 하신 말씀을 다시 한 번 말씀해 주세요."
+            f"네, {noun}은(는) 취소했어요." if verdict == "reject"
+            else f"답을 알아듣지 못해서 {noun}은(는) 취소했어요. "
+                 "방금 하신 말씀을 다시 한 번 말씀해 주세요."
         )))
-        return {"messages": cancel, "decision": "rejected", "deletion_cancelled": False, "missing_targets": []}
+        return {"messages": cancel, "decision": "rejected", "deletion_cancelled": False, "cancelled_noun": "", "missing_targets": []}
 
     # ── 라우팅 ─────────────────────────────────────────────────────
     def route_after_guard(state: PluizState) -> str:

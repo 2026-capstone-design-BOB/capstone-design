@@ -246,7 +246,7 @@ def read_email(sender: str = "", keyword: str = "") -> str:
 
 
 def _extract_body(msg: dict) -> str:
-    """본문 텍스트. HTML 만 있으면 태그를 걷어낸다."""
+    """본문 텍스트. HTML 만 있으면 사람이 읽을 부분만 남긴다."""
     def walk(part) -> str:
         mime = part.get("mimeType", "")
         data = part.get("body", {}).get("data")
@@ -257,13 +257,48 @@ def _extract_body(msg: dict) -> str:
             if got:
                 return got
         if data and mime == "text/html":
-            return re.sub(r"<[^>]+>", " ", _decode(data))
+            return _html_to_text(_decode(data))
         return ""
 
     text = walk(msg.get("payload", {}) or {})
     if not text:
         text = msg.get("snippet", "") or ""
     # 빈 줄이 줄줄이 오는 메일이 많다 — 읽어 주기 좋게 줄인다
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+# 🚨 **태그만 걷어내면 안 된다** (2026-09-30 실기 4번).
+#   예전에는 `re.sub(r"<[^>]+>", " ", html)` 한 줄이었다. 그러면 `<style>` 과
+#   `<script>` 의 **속 내용은 그대로 남는다.** 실제로 사용자에게 이렇게 나갔다:
+#
+#       🤖 변소윤 님이 보내신 '테스트다' 메일 내용은
+#          "p{margin-top:0px;margin-bottom:0px;}" 입니다.
+#
+#   🔑 그리고 이건 **소리로도 읽힌다.** 메일 읽기는 TTS 로 나가는 기능이라
+#   사용자가 CSS 를 귀로 듣게 된다.
+_DROP_BLOCKS = re.compile(
+    r"<(style|script|head|title)\b[^>]*>.*?</\1\s*>", re.I | re.S)
+#: 줄바꿈으로 살려야 읽힌다 — 안 그러면 문단이 한 줄로 붙는다.
+_BREAKS = re.compile(r"(?i)<\s*(br|/p|/div|/tr|/li|/h[1-6])\b[^>]*>")
+
+
+def _html_to_text(html: str) -> str:
+    """HTML 메일에서 **사람이 읽을 부분만** 남긴다.
+
+    순서가 중요하다 — ① 안 읽을 블록을 통째로 버리고 ② 줄바꿈을 살린 뒤
+    ③ 남은 태그를 걷어낸다. ①을 ③보다 먼저 하지 않으면 `<style>` 의 **속 내용**이
+    본문으로 남는다(그게 실기에서 나간 결함이다).
+    """
+    import html as _htmlmod
+
+    text = _DROP_BLOCKS.sub(" ", html or "")
+    text = _BREAKS.sub("\n", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = _htmlmod.unescape(text)            # &nbsp; &amp; &#39; …
+    text = text.replace(" ", " ")        # 깨지지 않는 공백
+    # 줄 안의 연속 공백만 줄인다(줄바꿈은 위에서 만든 문단 구분이라 살린다).
+    text = re.sub(r"[ \t\r\f\v]+", " ", text)
+    text = "\n".join(ln.strip() for ln in text.split("\n"))
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 

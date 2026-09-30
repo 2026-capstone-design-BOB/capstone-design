@@ -173,17 +173,77 @@ def _run_background_request(request: str) -> str:
       «안 하기로 약속»보다 강하다 — `gmail_send` 를 만들지 않은 것과 같은 규칙이다.
       → core/tool_registry.py `get_background_tools()`
     """
-    import asyncio
-
     agent = _background_agent()
+
+    out = _ask_background(agent, _BG_DIRECTIVE.format(request=request))
+
+    # 🚨 되물었으면 **성공으로 닫지 않는다** (BL-79 · 2026-09-30).
+    #   물어볼 사람이 그 자리에 없다는 것이 이 경로의 전제다. 그걸 어기면
+    #   사용자는 결과를 기다리다 **질문을 받고**, 그 질문에 답할 곳도 없다.
+    if _is_question(out):
+        log.warning("[백그라운드] 되물음 → 1회 재시도 | 요청=%r | 답=%r", request, out[:60])
+        out = _ask_background(agent, _BG_RETRY.format(request=request, asked=out.strip()))
+
+    if _is_question(out):
+        # 🔑 두 번째도 되물으면 **답인 척하지 않는다.** 못 했다고 말한다 —
+        #   이 저장소가 반복해서 데인 것이 «안 한 걸 했다고» 하는 쪽이다.
+        log.warning("[백그라운드] 재시도도 되물음 — 못 했다고 보고 | 요청=%r", request)
+        return ("✗ 맡기신 일을 끝내지 못했어요 — 제가 되묻게 돼서요.\n"
+                "뒤에서 도는 일은 중간에 여쭤볼 수가 없어요. "
+                "조금 더 자세히 말씀해 주시면 다시 해 볼게요.\n"
+                f"(제가 막힌 곳: {out.strip()[:120]})")
+    return out
+
+
+# ── 뒤에서 도는 턴에 주는 지시 (BL-79) ─────────────────────────────────
+#
+# 🚨 `_run_background_request` 주석이 *"승인이 필요한 도구는 아예 안 준다 — 물어볼
+#   사람이 그 자리에 없어서 영영 안 끝난다"* 라고 적어 뒀는데, **그냥 되묻는 것**은
+#   안 막혀 있었다. 2026-09-29 실기에서 *"전기차 보조금 세 군데 찾아서 정리해줘"* 가
+#   도구를 **하나도 안 부르고**(`요청=없음 | 사유=잡담 | 1.2초`)
+#   *"어떤 지역의 전기차 보조금을 찾아드릴까요?"* 로 **`done` 처럼 닫혔다.**
+#   `web_search` 를 가지고 있는데도 쓰지 않았다.
+#
+# 🔑 **지시만으로 막지 않는다.** 지시는 확률을 올릴 뿐이라, 되물으면 한 번 더
+#   밀어 보고(`_BG_RETRY`), 그래도 되물으면 **못 했다고 말한다.** 보장은 그쪽이 한다.
+_BG_DIRECTIVE = (
+    "아래 일을 **지금 끝까지 처리해서** 결과를 문장으로 돌려주세요.\n"
+    "🚨 되물을 수 없어요 — 사용자는 지금 이 자리에 없고, 당신의 질문을 볼 수도 "
+    "답할 수도 없어요. 모르는 것이 있으면 **합리적으로 가정하고 진행한 뒤, "
+    "무엇을 가정했는지 결과에 함께 적으세요.**\n"
+    "검색이 필요하면 도구를 쓰세요. 도구를 쓰지 않고 끝내지 마세요.\n\n"
+    "[맡은 일] {request}"
+)
+
+_BG_RETRY = (
+    "방금 당신은 되물었습니다: {asked}\n"
+    "🚨 **그 질문에 답할 사람이 없어요.** 되묻지 말고, 가장 그럴듯한 해석을 "
+    "하나 골라 **직접 가정하고 끝까지 처리하세요.** 가정한 내용은 결과 첫 줄에 "
+    "«가정: …» 으로 적으세요.\n\n"
+    "[맡은 일] {request}"
+)
+
+
+def _is_question(text: str) -> bool:
+    """되물었는가 — 🔑 **문장부호만 본다.** 무슨 말인지 해석하지 않는다.
+
+    손으로 쓴 정규식에 판단을 맡겨 이 저장소가 여러 번 무너졌다(BL-02 · BL-15).
+    여기서 틀렸을 때의 대가도 작다 — 재시도 한 번이다.
+    """
+    t = (text or "").strip()
+    return t.endswith("?") or t.endswith("？")
+
+
+def _ask_background(agent, prompt: str) -> str:
+    import asyncio
     try:
-        return asyncio.run(agent.run_async(request, thread_id=_next_thread_id()))
+        return asyncio.run(agent.run_async(prompt, thread_id=_next_thread_id()))
     except RuntimeError:
         # 이미 이벤트 루프가 도는 스레드였다면(프로덕션에선 안 그렇다) 새 루프를 판다.
         loop = asyncio.new_event_loop()
         try:
             return loop.run_until_complete(
-                agent.run_async(request, thread_id=_next_thread_id()))
+                agent.run_async(prompt, thread_id=_next_thread_id()))
         finally:
             loop.close()
 
