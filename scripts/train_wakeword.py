@@ -379,8 +379,29 @@ def check_recordings_fresh() -> None:
         pass
 
 
-def loud_segments(user_audio_path):
-    """실제 녹음에서 **발화 구간의 시작 위치**만 고른다 (창은 워커가 뜬다).
+#: 학습 창을 뜰 최소 세기. **양성과 음성이 다르다** — 아래 주석 참조.
+LOUD_RMS_POS = 0.006
+#: 🔴 음성은 **런타임 에너지 관문에 맞춘다** (2026-10-01).
+#:
+#: 🚨 **여기가 오탐의 뿌리였다.** 런타임은 RMS 0.0015 위를 **전부** 모델에 넣는데,
+#:   학습 창은 0.006 위에서만 떴다. 2026-10-01 실측으로 그 간극이 드러났다:
+#:
+#:       구간 RMS 분포        무음    ★중간대(0.0015~0.006)   학습대(0.006~)
+#:       학습 음성 풀        27%          19%                   54%
+#:       실제 사용 소크      32%          **63%**                5%
+#:
+#:   **실제로 듣는 소리의 3분의 2가 학습에서 5분의 1뿐인 구간**이었다. 모델은 그
+#:   구간을 거의 안 보고 자랐고, 그래서 거기서 아무 말에나 깼다(임계 0.62 에서
+#:   남의 말소리 144회/시간 · 혼잣말 312회/시간).
+#:
+#: 🔑 **양성은 안 내린다.** 양성 녹음의 조용한 창은 «플루이즈»가 아니라 그 앞뒤
+#:   정적이다. 그걸 양성으로 가르치면 **무음을 호출로 배운다** — 고치려다 더 큰
+#:   구멍을 내는 꼴이다. 음성 쪽은 반대다: 조용한 창도 «호출이 아닌 소리»가 맞다.
+LOUD_RMS_NEG = 0.0015
+
+
+def loud_segments(user_audio_path, min_rms=LOUD_RMS_POS):
+    """실제 녹음에서 **학습 창의 시작 위치**를 고른다 (창은 워커가 뜬다).
 
     계획을 세우려면 «몇 개인지»를 먼저 알아야 해서 여기만 부모가 한다.
     numpy 슬라이스 몇 번이라 싸다 — 143초에 수십 ms 다.
@@ -388,7 +409,7 @@ def loud_segments(user_audio_path):
     ua = np.load(user_audio_path)
     hop, win = int(SR * 0.25), int(SR * WIN_SEC)
     starts = [st for st in range(0, max(1, len(ua) - win), hop)
-              if float(np.sqrt(np.mean(ua[st:st + win] ** 2))) > 0.006]
+              if float(np.sqrt(np.mean(ua[st:st + win] ** 2))) > min_rms]
     return len(ua) / SR, starts
 
 
@@ -412,9 +433,9 @@ def build_dataset(user_audio_path=None, aug_per_clip=3, seed=0,
         who = describe_recordings()
         print(f"② 실제 녹음 — 양성 {secs:.1f}초 · 발화 구간 {len(loud_starts)}개{who}")
     if user_neg_path and os.path.exists(user_neg_path):
-        secs_n, loud_starts_neg = loud_segments(user_neg_path)
+        secs_n, loud_starts_neg = loud_segments(user_neg_path, LOUD_RMS_NEG)
         print(f"   🔴 같은 마이크의 «플루이즈가 아닌 말» — {secs_n:.1f}초 · "
-              f"구간 {len(loud_starts_neg)}개")
+              f"구간 {len(loud_starts_neg)}개 (최소 RMS {LOUD_RMS_NEG} — 런타임 관문과 같다)")
     elif loud_starts:
         # 🚨 양성만 들어가면 «마이크 소리 = 양성»이라는 지름길이 생긴다.
         #   조용히 넘어가면 2026-09-09 사고(검증 93.6% · 실기 86.7% 오탐)가 재현된다.
