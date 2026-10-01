@@ -415,8 +415,17 @@ def kws_energy_floor(default: float) -> float:
 SPEECH_FRAME = 512            # Silero 가 받는 16kHz 프레임 크기(32ms). 바꾸면 안 된다
 SPEECH_ON = 0.5               # 이 위면 «말»
 SPEECH_OFF = 0.35             # 이 아래면 «말 아님». 🔑 히스테리시스 — 하나면 떤다
+#: 🚨 **살아 있다는 신호(심장박동)를 주기적으로 보낸다.**
+#   처음엔 «상태가 바뀔 때만» 보냈는데, 그러면 **조용해진 뒤로는 바꿀 상태가 없어서
+#   신호가 끊긴다.** 렌더러는 그걸 «프로세스가 죽었다»로 읽고 말 판정을 꺼 버린다 —
+#   **정확히 필요한 순간에** 꺼진다. 2026-10-01 실기에서 그렇게 됐다:
+#       노래     끝낸것=speech   6.1초  ✅ (음악이 상태를 자꾸 뒤집어 신호가 계속 왔다)
+#       조용한 방 끝낸것=max    30.0초  🚨 (상태가 안 바뀌어 신호가 끊겼다)
+#   그래서 **상태 변화 + 주기 신호** 둘 다 보낸다.
+SPEECH_BEAT_SEC = 1.0
 _speech_model = None
-_speech_on = False            # 지금 상태. 바뀔 때만 출력한다
+_speech_on = False            # 지금 상태
+_speech_sent_at = 0.0         # 마지막으로 내보낸 시각
 
 
 def speech_enabled() -> bool:
@@ -466,23 +475,28 @@ def speech_prob(chunk) -> float:
 
 
 def _speech_tick(chunk):
-    """상태가 바뀌었을 때만 한 줄 내보낸다.
+    """상태가 바뀌었을 때 + **1초마다** 한 줄 내보낸다.
 
-    🔑 **상태 변화만 보낸다** — 매 프레임 찍으면 stdout 이 터지고, Electron 쪽
-      `on('data')` 가 조각을 뭉쳐 받아서 파싱이 지저분해진다.
+    🔑 매 프레임(32ms) 찍지 않는 이유 — stdout 이 터지고, Electron 쪽 `on('data')`
+      가 조각을 뭉쳐 받아서 파싱이 지저분해진다.
+    🚨 그렇다고 **상태 변화만** 보내면 안 된다 — 조용해진 뒤로는 바꿀 상태가 없어서
+      신호가 끊기고, 렌더러가 그걸 «죽었다»로 읽는다(위 `SPEECH_BEAT_SEC` 주석).
     """
-    global _speech_on
+    global _speech_on, _speech_sent_at
     if not speech_enabled():
         return
     p = speech_prob(chunk)
     if p < 0:
         return
+    changed = False
     if not _speech_on and p >= SPEECH_ON:
-        _speech_on = True
-        print("VAD_SPEECH 1", flush=True)
+        _speech_on, changed = True, True
     elif _speech_on and p < SPEECH_OFF:
-        _speech_on = False
-        print("VAD_SPEECH 0", flush=True)
+        _speech_on, changed = False, True
+    now = time.time()
+    if changed or now - _speech_sent_at >= SPEECH_BEAT_SEC:
+        _speech_sent_at = now
+        print(f"VAD_SPEECH {1 if _speech_on else 0}", flush=True)
 
 
 def kws_consecutive() -> int:

@@ -49,12 +49,42 @@ _PRE = _src("electron-ui", "preload.js")
 
 # ═══ ① 신호를 내보내는 쪽 ═════════════════════════════════════════
 print("=== ① 웨이크워드 프로세스가 말 판정을 내보낸다 ===")
-check("`VAD_SPEECH 1` / `VAD_SPEECH 0` 을 찍는다",
-      '"VAD_SPEECH 1"' in _WS and '"VAD_SPEECH 0"' in _WS)
+# ⚠️ 주기 신호가 생기면서 한 줄로 합쳐졌다 — 글자를 박지 말고 **실제로 찍히는지**를 본다.
+check("`VAD_SPEECH <0|1>` 을 찍는다", "VAD_SPEECH {" in _WS)
 check("🚨 신호 이름에 **`WAKE` 가 안 들어간다** — main.js 가 includes('WAKE') 로 본다",
       "WAKE" not in "VAD_SPEECH")
-check("🔑 **상태가 바뀔 때만** 보낸다 (매 프레임이면 stdout 이 터진다)",
-      "_speech_on" in _WS and "상태가 바뀌었을 때만" in _WS)
+# 🚨 **여기가 실기에서 깨진 자리다.** 처음엔 «상태 변화만» 보냈는데, 조용해진 뒤로는
+#   바꿀 상태가 없어서 신호가 끊겼다. 렌더러가 그걸 «죽었다»로 읽고 말 판정을 꺼서,
+#   **정확히 필요한 순간에** 꺼졌다 — 조용한 방에서 끝낸것=max 30초.
+check("🚨 **조용해도 신호가 끊기지 않는다** (주기 신호가 있다)",
+      "SPEECH_BEAT_SEC" in _WS)
+check("왜 주기 신호가 필요한지 실기 기록이 적혀 있다",
+      "끝낸것=max" in _WS and "30.0초" in _WS)
+check("매 프레임은 안 보낸다 (stdout 이 터진다)", "매 프레임(32ms) 찍지 않는" in _WS)
+
+try:
+    import time as _t, numpy as _np
+    import services.wakeword as _W
+    import builtins as _b
+    _out = []
+    _orig = _b.print
+    _b.print = lambda *a, **k: (_out.append(str(a[0]))
+                                if a and str(a[0]).startswith("VAD_SPEECH") else None)
+    _sil = _np.zeros(512, dtype=_np.float32)
+    _W._speech_sent_at = 0.0
+    for _ in range(100):
+        _W._speech_tick(_sil)
+        _t.sleep(0.032)
+    _b.print = _orig
+    check("🔒 **조용한 3초 동안에도 신호가 여러 번 나간다**",
+          len(_out) >= 2, f"→ {len(_out)}개")
+    check("그 신호가 «말 아님»이다", all(o.endswith("0") for o in _out))
+except Exception as e:                                        # noqa: BLE001
+    try:
+        _b.print = _orig
+    except Exception:
+        pass
+    check("주기 신호를 실제로 돌린다", False, f"{type(e).__name__}: {e}")
 check("히스테리시스가 있다 (하나면 임계 근처에서 떤다)",
       "SPEECH_ON = 0.5" in _WS and "SPEECH_OFF = 0.35" in _WS)
 check("🔑 **방금 들어온 조각**만 본다 (창 전체의 최댓값이 아니다)",
