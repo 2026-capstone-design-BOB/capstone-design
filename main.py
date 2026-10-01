@@ -168,6 +168,25 @@ class ConfigRequest(BaseModel):
     api_key: str
 
 
+class VadReport(BaseModel):
+    """렌더러가 녹음 한 번을 마치고 보내는 요약 (2026-10-01 · BL-81).
+
+    🔑 **왜 서버 로그로 보내나** — 지금까지 `[VAD]` 줄이 **브라우저 콘솔에만** 찍혔다.
+      그래서 2026-10-01 실기에서 «음악이 나오면 녹음이 30초를 꽉 채운다»를 사용자가
+      먼저 알아챘는데도, `logs/pluiz.log` 에는 **한 줄도 없어서** 왜인지 못 봤다.
+      2026-09-24 에 음성 인식 폴백 사유를 콘솔에서 로그로 옮긴 것과 같은 이유다.
+
+    🚨 **판정을 바꾸지 않는다.** 이건 «무슨 일이 있었나»를 남기는 것뿐이다.
+    """
+    reason: str = ""          # endpoint | max | nospeech
+    ms: int = 0               # 녹음 길이
+    floor: float = 0.0        # 처음 400ms 로 잰 잡음 바닥
+    start_rms: float = 0.0    # 그 바닥에서 정한 «말 시작» 기준
+    peak: float = 0.0         # 이번 녹음의 최대 RMS
+    auto: bool = False        # 웨이크워드가 연 것인가
+    mic: dict = {}            # 🔑 실제 마이크 설정 — AGC 가 켜져 있는지 **확인**한다
+
+
 class WakeWordRequest(BaseModel):
     """웨이크워드 설정. 사용자가 직접 정한다."""
     wake_words: str = ""      # 쉼표 구분. 빈 문자열이면 기본값("플루이즈") 사용
@@ -306,6 +325,28 @@ async def save_wakeword(req: WakeWordRequest):
         "enabled": req.enabled,
         "note": "웨이크워드 서비스가 10초 안에 자동 반영합니다.",
     }
+
+
+@app.post("/api/vad-report")
+async def vad_report(r: VadReport):
+    """녹음 한 번의 결말을 로그에 남긴다. 🚨 **아무것도 바꾸지 않는다.**
+
+    🔑 `사유=max` 가 보이면 **끝을 못 찾고 상한에 걸린 것**이다(BL-81).
+      그때 `바닥`·`시작임계`·`최대` 를 같이 보면 왜인지 알 수 있다 —
+      바닥이 높으면 환경이 시끄러웠던 것이고, 바닥이 낮은데도 안 끝났으면
+      **녹음 도중에 소리가 커진 것**이라 처음 400ms 측정으로는 못 잡는 경우다.
+    """
+    mic = r.mic or {}
+    # 🔑 AGC(자동 볼륨 조절)가 레벨 대비를 지워서 크기 기반 종료 판정을 무력화한다.
+    #   그래서 **무엇이 켜져 있었는지**를 추정이 아니라 기록으로 남긴다.
+    gains = " ".join(
+        f"{k}={mic.get(k)}" for k in ("autoGainControl", "noiseSuppression",
+                                      "echoCancellation") if k in mic)
+    _log.info(
+        "[VAD] 사유=%s | 길이 %.1fs | 바닥 %.4f → 시작임계 %.4f | 최대 %.4f | %s%s",
+        r.reason or "?", r.ms / 1000.0, r.floor, r.start_rms, r.peak,
+        "웨이크워드" if r.auto else "직접", f" | {gains}" if gains else "")
+    return {"status": "ok"}
 
 
 @app.get("/api/tts")
