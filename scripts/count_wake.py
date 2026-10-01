@@ -22,7 +22,11 @@ LOG = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                    "logs", "pluiz.log")
 
 _TS = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
-_WAKE = re.compile(r"prob=([0-9.]+) ≥ [0-9.]+ → WAKE")
+# 🚨 **로그 문구가 바뀌면 여기가 조용히 0 을 센다.** 2026-10-01 에 연속 조건이
+#   들어가며 «prob=… ≥ … (연속 2/2) → WAKE» 가 됐고, 사이에 낀 괄호 때문에 예전
+#   정규식이 한 건도 못 잡았다. 그래서 **가운데를 느슨하게** 둔다 — 고정해야 할 것은
+#   «확률»과 «WAKE» 두 가지뿐이다.
+_WAKE = re.compile(r"prob=([0-9.]+) ≥ [0-9.]+.*?→ WAKE")
 
 
 def _stamp(line):
