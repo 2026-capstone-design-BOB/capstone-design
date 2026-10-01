@@ -1518,6 +1518,14 @@
       START_RMS: 0.020,    // 이 위로 오르면 «말이 시작됐다»
       KEEP_RMS: 0.012,     // 이 아래로 내려가면 «무음»(히스테리시스)
       SILENCE_MS: 1200,    // 말 시작 후 이만큼 조용하면 종료
+      // 🗣 말 판정(M10) 쪽은 **더 참는다.** 크기 쪽(1200)과 따로 두는 이유:
+      //   크기가 「조용하다」고 할 땐 정말 조용한 것이지만, 말 판정은 숨 고르는
+      //   사이에도 「말 아님」이 된다. 실측(녹음 803건 · 말하는 도중 공백):
+      //       1.2초 → 12.3% 가 도중에 끊긴다
+      //       2.0초 →  4.5%          ← 이 값
+      //       3.0초 →  2.1%
+      //   🔑 늘려도 값이 싸다 — 음악 구간의 «말 없음»은 최장 111초였다. 넉넉하다.
+      SPEECH_SILENCE_MS: 2000,
       NOSPEECH_MS: 6000,   // 한 마디도 없으면 접는다 — STT를 부르지 않는다
       MAX_MS: 30000,       // ⚠️ 상한. 지우지 말 것
       FLOOR_MS: 400,       // 시작 직후 이 구간의 잡음을 «바닥»으로 잰다
@@ -1534,7 +1542,11 @@
     let vadTimer = null, vadMaxTimer = null, vadCtx = null, vadPeak = 0;
     // VAD 한 판의 요약을 서버 로그로 보내려고 모아 둔다 (BL-81).
     // 🚨 **판정에는 안 쓴다.** 기록 전용이다.
-    let micSettings = {}, vadFloor = 0, vadStartRms = 0, vadT0 = 0;
+    let micSettings = {}, vadFloor = 0, vadStartRms = 0, vadT0 = 0, vadEndBy = '';
+    // 🗣 말 판정 신호 (M10). 🔒 **신호가 없으면 지금과 완전히 같이 돈다.**
+    let speechOn = false, speechSeenAt = 0, speechQuietAt = 0;
+    const SPEECH_STALE_MS = 5000;   // 이만큼 소식이 없으면 «신호 없음»으로 친다
+    window.pluiz?.onVadSpeech?.((on) => { speechOn = !!on; speechSeenAt = Date.now(); });
 
     // ── 헛깨어남을 조용히 닫는다 (2026-09-11, BL-23 완화) ─────────
     // 웨이크워드 오탐은 **모델 문제**라 10월 재구축 전에는 못 줄인다
@@ -2243,7 +2255,8 @@
       const t0 = Date.now();
       let speechAt = 0, quietAt = 0, floorSum = 0, floorN = 0, startRms = 0;
       vadPeak = 0;
-      vadT0 = t0; vadFloor = 0; vadStartRms = 0;   // 끝날 때 서버 로그로 보낸다
+      vadT0 = t0; vadFloor = 0; vadStartRms = 0; vadEndBy = '';
+      speechQuietAt = 0;   // 🔑 지난 녹음의 «조용해진 시각»이 새어 들어오면 바로 끊긴다
 
       // ⚠️ 인터벌과 별개로 상한을 하나 더 건다. 인터벌이 throttle돼도 끊긴다.
       vadMaxTimer = setTimeout(() => endVad('max'), VAD.MAX_MS);
@@ -2272,14 +2285,35 @@
           return;
         }
 
+        // 🗣 **끝내는 두 번째 길** (M10). 크기 조건과 **OR** 다 — 더 일찍 끝낼 수만
+        //   있고, 더 끌거나 시작을 막지 못한다. 그래서 지금 되는 것은 그대로 된다.
+        //
+        // 🚨 왜 필요한가 — 노래가 나오면 크기가 안 떨어져서 「무음」이 영영 안 오고
+        //   상한(30초)까지 녹음했다(BL-81). 그런데 같은 소리를 말 판정기로 보면
+        //   **음악은 0.000** 이다. 크기는 음악을 말보다 위로 매긴다.
+        //
+        // 🔒 신호가 **안 오면 아무 일도 안 일어난다** — speechSeenAt 이 0 이거나
+        //   오래됐으면 이 블록을 통째로 건너뛴다. 웨이크워드를 꺼 뒀거나 그 프로세스가
+        //   죽었을 때, 마지막 상태가 「말하는 중」인 채로 굳어 녹음이 안 끝나는 것을 막는다.
+        if (speechSeenAt && now - speechSeenAt < SPEECH_STALE_MS) {
+          if (speechOn) speechQuietAt = 0;
+          else if (!speechQuietAt) speechQuietAt = now;
+          if (speechQuietAt && now - speechQuietAt >= VAD.SPEECH_SILENCE_MS) {
+            endVad('endpoint', 'speech');
+            return;
+          }
+        }
+
         if (rms >= VAD.KEEP_RMS) quietAt = 0;
         else if (!quietAt) quietAt = now;
-        if (quietAt && now - quietAt >= VAD.SILENCE_MS) endVad('endpoint');
+        if (quietAt && now - quietAt >= VAD.SILENCE_MS) endVad('endpoint', 'rms');
       }, VAD.TICK_MS);
     }
 
-    function endVad(reason) {
-      console.log('[VAD] 종료 사유=' + reason + ' 최대RMS=' + vadPeak.toFixed(4));
+    function endVad(reason, by) {
+      vadEndBy = by || reason;
+      console.log('[VAD] 종료 사유=' + reason + ' 끝낸것=' + vadEndBy
+                  + ' 최대RMS=' + vadPeak.toFixed(4));
       reportVad(reason);
       stopVad();
       if (reason === 'nospeech') {
@@ -2308,6 +2342,7 @@
             reason, ms: Date.now() - (vadT0 || Date.now()),
             floor: +vadFloor.toFixed(5), start_rms: +vadStartRms.toFixed(5),
             peak: +vadPeak.toFixed(5), auto: !!recAuto, mic: micSettings,
+            end_by: vadEndBy,
           }),
         }).catch(() => {});
       } catch (e) {}

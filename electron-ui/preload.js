@@ -13,4 +13,6 @@ contextBridge.exposeInMainWorld('pluiz', {
   onToggleActive:   (cb) => ipcRenderer.on('toggle-active',    () => cb()),
   onWakeDetected:   (cb) => ipcRenderer.on('wake-detected',    () => cb()),
   onWakewordStatus: (cb) => ipcRenderer.on('wakeword-status',  (_e, s) => cb(s)),
+  // 🗣 지금 사람 말이 나오고 있나 (M10) — 녹음을 끝내는 **두 번째** 조건이다.
+  onVadSpeech:      (cb) => ipcRenderer.on('vad-speech',       (_e, on) => cb(on)),
 });

@@ -175,7 +175,9 @@ check("stopVad가 AudioContext를 닫는다", "close()" in stop_vad,
 print("")
 print("[4] 종료 — 사유마다 하는 일이 다르다")
 
-endfn = between(ui, "function endVad(reason)", "function stopVad()")
+# ⚠️ 2026-10-01(M10) 에 서명이 `endVad(reason, by)` 로 늘었다 — 「무엇이 끝냈나」를
+#   같이 받는다. **이름으로** 잡아서 서명이 바뀌어도 안 깨지게 둔다.
+endfn = between(ui, "function endVad(", "function stopVad()")
 check("endVad가 있다", bool(endfn))
 check("말이 한 번도 없었으면 STT를 부르지 않는다",
       "nospeech" in endfn and "stopMic(false)" in endfn,
@@ -198,7 +200,10 @@ check("종료 사유를 콘솔에 남긴다(임계 조정의 유일한 근거다
       "[VAD]" in endfn and "사유=" in endfn)
 check("최대 RMS를 같이 남긴다", "vadPeak" in endfn)
 
-check("무음 종료 조건이 endpoint로 간다", "endVad('endpoint')" in ui_code)
+# 🔑 M10 이후 끝내는 길이 **둘**이다 — 크기(rms)와 말 판정(speech). 둘 다 endpoint 다.
+check("무음 종료 조건이 endpoint로 간다", "endVad('endpoint', 'rms')" in ui_code)
+check("🗣 말 판정도 endpoint 로 간다 (M10 — 끝내는 길이 하나 더 생겼다)",
+      "endVad('endpoint', 'speech')" in ui_code)
 check("발화가 없으면 nospeech로 간다", "endVad('nospeech')" in ui_code)
 # ① 인터벌과 **별개의** 상한. 인터벌이 멈춰도 이건 뜬다
 check("상한을 setTimeout으로 한 번 더 건다",

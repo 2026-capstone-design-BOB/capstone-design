@@ -399,6 +399,92 @@ def kws_energy_floor(default: float) -> float:
         return min(default, 0.0015)
 
 
+# ── 🗣 말 판정기 (M10 · 2026-10-01) ────────────────────────────────
+#
+# 🔑 **여기서 하는 일은 웨이크워드와 아무 상관이 없다.** 깨우는 판단에는 손대지
+#   않고, 「지금 사람 말이 나오고 있나」만 따로 보고 그 상태를 stdout 으로 알린다.
+#   렌더러가 그걸 **녹음을 끝내는 두 번째 조건**으로 쓴다.
+#
+# 🚨 왜 여기냐 — 이 프로세스가 이미 ① 가공 안 된 16kHz 마이크를 들고 있고
+#   (AGC 가 레벨 대비를 지우는 문제가 없다) ② `faster-whisper` 가 들고 온
+#   `silero_vad_v6.onnx` 를 쓸 수 있고 ③ Electron 으로 가는 stdout 이 있다.
+#   브라우저에 넣으면 ONNX 런타임·모델 파일·48kHz 리샘플링이 다 붙는다.
+#
+# 🚨 **이름에 `WAKE` 를 넣으면 안 된다** — `electron-ui/main.js` 가
+#   `out.includes('WAKE')` 로 보기 때문에 그때마다 창이 떠오른다.
+SPEECH_FRAME = 512            # Silero 가 받는 16kHz 프레임 크기(32ms). 바꾸면 안 된다
+SPEECH_ON = 0.5               # 이 위면 «말»
+SPEECH_OFF = 0.35             # 이 아래면 «말 아님». 🔑 히스테리시스 — 하나면 떤다
+_speech_model = None
+_speech_on = False            # 지금 상태. 바뀔 때만 출력한다
+
+
+def speech_enabled() -> bool:
+    try:
+        from config.settings import get_settings
+        get_settings.cache_clear()
+        return bool(get_settings().vad_speech_enabled)
+    except Exception:
+        return True
+
+
+def _load_speech_model():
+    """Silero VAD. 🔒 **없으면 조용히 포기한다** — 웨이크워드는 그대로 돌아야 한다."""
+    global _speech_model
+    if _speech_model is not None:
+        return _speech_model
+    try:
+        import os as _os
+        from faster_whisper.vad import SileroVADModel, get_assets_path
+        _speech_model = SileroVADModel(
+            _os.path.join(get_assets_path(), "silero_vad_v6.onnx"))
+        log.info("[말판정] silero_vad_v6 준비됨 (켜짐=%s)", speech_enabled())
+    except Exception as e:                                    # noqa: BLE001
+        _speech_model = False
+        log.warning("[말판정] 못 띄웠다(%s: %s) — 크기 판정만으로 돈다",
+                    type(e).__name__, e)
+    return _speech_model
+
+
+def speech_prob(chunk) -> float:
+    """**가장 최근 한 프레임(32ms)** 에 사람 말이 있을 확률. 못 재면 -1.
+
+    🚨 **창 전체의 최댓값을 쓰면 안 된다.** 처음에 2초 창에 `np.max` 를 썼더니
+      음악 5분에서 «말 시작»이 19번 떴다 — 2초 안에 한 프레임만 튀어도 «말»이 된다.
+      **지금 말이 나오는가**를 물어야 하므로 **방금 들어온 조각**만 본다.
+    """
+    m = _load_speech_model()
+    if not m:
+        return -1.0
+    if len(chunk) < SPEECH_FRAME:
+        return -1.0
+    try:
+        # 🔑 정확히 한 프레임. Silero 는 512 샘플(16kHz = 32ms)을 받는다.
+        return float(m(chunk[-SPEECH_FRAME:].astype(np.float32)).reshape(-1)[-1])
+    except Exception:                                         # noqa: BLE001
+        return -1.0
+
+
+def _speech_tick(chunk):
+    """상태가 바뀌었을 때만 한 줄 내보낸다.
+
+    🔑 **상태 변화만 보낸다** — 매 프레임 찍으면 stdout 이 터지고, Electron 쪽
+      `on('data')` 가 조각을 뭉쳐 받아서 파싱이 지저분해진다.
+    """
+    global _speech_on
+    if not speech_enabled():
+        return
+    p = speech_prob(chunk)
+    if p < 0:
+        return
+    if not _speech_on and p >= SPEECH_ON:
+        _speech_on = True
+        print("VAD_SPEECH 1", flush=True)
+    elif _speech_on and p < SPEECH_OFF:
+        _speech_on = False
+        print("VAD_SPEECH 0", flush=True)
+
+
 def kws_consecutive() -> int:
     """연속 몇 창이 임계를 넘어야 깨우나 (2026-10-01).
 
@@ -602,6 +688,14 @@ def main():
         else:
             window[:-n] = window[n:]
             window[-n:] = audio
+
+        # 🗣 말 판정은 **깨우는 판단과 따로** 돈다 — 홉·에너지 관문·쿨다운에
+        #   걸리지 않는다. 녹음을 끝낼지는 「깰 때가 됐나」와 무관하기 때문이다.
+        #   비용은 프레임당 0.05ms(실시간의 0.2%)라 매 조각 돌려도 된다.
+        try:
+            _speech_tick(audio)       # 🔑 창이 아니라 **방금 들어온 조각**이다
+        except Exception:                                     # noqa: BLE001
+            pass          # 🔒 말 판정이 깨져도 웨이크워드는 돌아야 한다
 
         since_hop += n
         if since_hop < HOP_SAMPLES:

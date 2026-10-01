@@ -184,6 +184,7 @@ class VadReport(BaseModel):
     start_rms: float = 0.0    # 그 바닥에서 정한 «말 시작» 기준
     peak: float = 0.0         # 이번 녹음의 최대 RMS
     auto: bool = False        # 웨이크워드가 연 것인가
+    end_by: str = ""          # 🗣 무엇이 끝냈나 — rms | speech | max | nospeech (M10)
     mic: dict = {}            # 🔑 실제 마이크 설정 — AGC 가 켜져 있는지 **확인**한다
 
 
@@ -342,9 +343,11 @@ async def vad_report(r: VadReport):
     gains = " ".join(
         f"{k}={mic.get(k)}" for k in ("autoGainControl", "noiseSuppression",
                                       "echoCancellation") if k in mic)
+    # 🔑 `끝낸것=speech` 가 보이면 **말 판정기가 실제로 일을 한 것**이다(M10).
+    #   `rms` 면 예전 길로 끝난 것이고, 둘 다 정상이다 — 어느 쪽이 끝냈는지만 남긴다.
     _log.info(
-        "[VAD] 사유=%s | 길이 %.1fs | 바닥 %.4f → 시작임계 %.4f | 최대 %.4f | %s%s",
-        r.reason or "?", r.ms / 1000.0, r.floor, r.start_rms, r.peak,
+        "[VAD] 사유=%s | 끝낸것=%s | 길이 %.1fs | 바닥 %.4f → 시작임계 %.4f | 최대 %.4f | %s%s",
+        r.reason or "?", r.end_by or "-", r.ms / 1000.0, r.floor, r.start_rms, r.peak,
         "웨이크워드" if r.auto else "직접", f" | {gains}" if gains else "")
     return {"status": "ok"}
 

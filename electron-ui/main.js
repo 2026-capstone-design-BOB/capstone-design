@@ -164,6 +164,14 @@ function startWakeword() {
       mainWindow?.webContents.send('wakeword-status', 'unavailable');
       return;
     }
+    // 🗣 말 판정 상태 (M10). 🚨 **`WAKE` 검사보다 먼저 본다** — 이 줄에는
+    //   `WAKE` 가 안 들어가지만, 순서를 지켜야 다음에 이름을 바꿔도 안 터진다.
+    //   🔑 한 번에 여러 줄이 뭉쳐 올 수 있어서 **마지막 상태만** 쓴다.
+    const sp = out.match(/VAD_SPEECH ([01])/g);
+    if (sp) {
+      const on = sp[sp.length - 1].endsWith('1');
+      mainWindow?.webContents.send('vad-speech', on);
+    }
     if (out.includes('WAKE')) {
       console.log('[wake] detected');
       mainWindow?.show();
