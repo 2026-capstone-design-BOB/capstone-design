@@ -399,6 +399,26 @@ def kws_energy_floor(default: float) -> float:
         return min(default, 0.0015)
 
 
+def kws_consecutive() -> int:
+    """연속 몇 창이 임계를 넘어야 깨우나 (2026-10-01).
+
+    🔑 **같은 모델·같은 확률을 어떻게 읽을지만 바꾼다.** 추론을 더 돌리지 않으므로
+      비용이 0 이다. Whisper 재확인(2단계)은 깰 때마다 받아적기를 한 번 더 돌려야
+      했고, 그래서 비싸고 **쓸 수도 없었다**(놓침이 12.7% → 73.4%).
+
+    실측 — 20분 소크 · 처음 보는 화자 79회 호출:
+        연속 1 · 0.62 →  264회/시간 · 놓침 12.7%
+        연속 2 · 0.80 →   15회/시간 · 놓침 15.2%   ← 채택
+        연속 3 · 0.80 →    0회/시간 · 놓침 36.7%   (너무 비싸다)
+    """
+    try:
+        from config.settings import get_settings
+        get_settings.cache_clear()
+        return max(1, int(get_settings().wakeword_consecutive))
+    except Exception:
+        return 2
+
+
 def kws_threshold() -> float:
     try:
         from config.settings import get_settings
@@ -476,29 +496,50 @@ def main():
         print(f"[wakeword] *** WAKE WORD DETECTED *** ({why})",
               file=sys.stderr, flush=True)
 
+    #: 연속으로 임계를 넘은 창 수. 🔑 **리스트가 아니라 수 하나다** — 끊기면 0 으로 돌아간다.
+    run_hits = 0
+
     def _detect_model(chunk, ts):
         """전용 KWS 모델 경로. 창 하나 → 확률 하나.
 
         Whisper 경로와 달리 **텍스트가 없다.** 그래서 매칭 실패를 진단할 때 볼 것은
         `heard=...`가 아니라 **확률**이다 — 임계에 못 미친 값도 로그에 남긴다.
         안 그러면 "안 깨어났다"만 남고 아까웠는지 한참 멀었는지를 알 수 없다.
+
+        🔑 **연속 N 창을 요구한다** (2026-10-01). 창이 2초고 0.6초마다 뜨므로 사람이
+          부르면 여러 창에 걸쳐 들어가는데, 스치는 잡음·말소리는 한 창만 건드리기 쉽다.
+          같은 확률을 **어떻게 읽을지**만 바꾸는 것이라 추론 비용이 0 이다.
+          실측 20분 소크에서 **264회/시간 → 15회/시간**(놓침 12.7% → 15.2%).
+          🚨 공짜가 아닌 것 하나 — N=2 면 **0.6초 늦게** 깨운다.
         """
-        nonlocal last_wake
+        nonlocal run_hits
         try:
             if not WAKE_WORDS:          # 감시 끔(WAKE_WORD_ENABLED=false) — 재시작 불필요
                 return
             pr = kws.probability(chunk)
             th = kws_threshold()
+            need = kws_consecutive()
             if pr >= th:
-                log.info("prob=%.3f ≥ %.2f → WAKE", pr, th)
-                _fire(ts, f"prob={pr:.3f}")
-            elif pr >= th * 0.5:          # 아깝게 놓친 것 — 임계만 낮추면 되는 경우다
-                log.info("prob=%.3f < %.2f (놓침)", pr, th)
+                run_hits += 1
+                if run_hits >= need:
+                    log.info("prob=%.3f ≥ %.2f (연속 %d/%d) → WAKE", pr, th, run_hits, need)
+                    run_hits = 0
+                    _fire(ts, f"prob={pr:.3f} 연속{need}")
+                else:
+                    # 🔑 **여기를 지우지 말 것.** 「한 창은 넘었는데 안 깼다」가
+                    #   안 보이면, 연속 조건이 너무 센지 아닌지를 로그로 못 판단한다.
+                    log.info("prob=%.3f ≥ %.2f (연속 %d/%d — 아직)", pr, th, run_hits, need)
             else:
-                # ⚠️ 낮은 확률도 **파일에는 남긴다.** 2026-09-08에 이걸 안 남겨서
-                #   "왜 안 깨어나나"를 확률로 답할 수 없었다(다행히 «무음 스킵»이
-                #   범인을 알려줬다). 콘솔은 INFO라 조용하고 파일만 DEBUG로 받는다.
-                log.debug("prob=%.3f < %.2f", pr, th)
+                # 🚨 **끊기면 처음부터다.** 띄엄띄엄 넘은 것을 연속으로 세면
+                #   연속 조건이 아무것도 안 막는다.
+                run_hits = 0
+                if pr >= th * 0.5:      # 아깝게 놓친 것 — 임계만 낮추면 되는 경우다
+                    log.info("prob=%.3f < %.2f (놓침)", pr, th)
+                else:
+                    # ⚠️ 낮은 확률도 **파일에는 남긴다.** 2026-09-08에 이걸 안 남겨서
+                    #   "왜 안 깨어나나"를 확률로 답할 수 없었다(다행히 «무음 스킵»이
+                    #   범인을 알려줬다). 콘솔은 INFO라 조용하고 파일만 DEBUG로 받는다.
+                    log.debug("prob=%.3f < %.2f", pr, th)
         except Exception as e:
             print(f"[wakeword] kws error: {e}", file=sys.stderr, flush=True)
             log.exception("KWS 추론 실패")

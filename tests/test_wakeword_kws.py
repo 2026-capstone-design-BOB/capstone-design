@@ -83,14 +83,21 @@ if _prev is None: os.environ.pop("WAKEWORD_BACKEND", None)
 else: os.environ["WAKEWORD_BACKEND"] = _prev
 
 print("=== ④ 임계값 설정 ===")
-# 🔑 **실측으로 고른 운용점이다** (2026-09-28). 처음 보는 화자 4명 기준으로
-#   놓침 12.7% · 오탐 25회/시간. 🚨 예전엔 0.8 이었고 근거로 «감지 95.0% 오탐 1.82%»
-#   를 적어 뒀는데, 그건 **옛 모델의 창 단위 내부 지표**라 제품 숫자가 아니었다.
-#   → docs/research/2026-09-28_웨이크워드_재학습.md
-check("기본 임계가 실측 운용점 0.62 (놓침 12.7% · 오탐 25회/시간)",
-      abs(_mod.kws_threshold() - 0.62) < 1e-9)
+# 🔑 **실측으로 고른 운용점이다** (2026-10-01). 놓침은 처음 보는 화자 4명 기준,
+#   오탐은 **이 노트북 마이크로 받은 20분**(학습에 안 쓴 것) 기준이다.
+#       연속 2 · 임계 0.80 → 오탐 15회/시간 · 놓침 15.2%
+#
+# 🚨 **2026-09-28 에 적어 둔 0.62 는 틀린 자 위에서 고른 값이었다.** 그때 오탐을
+#   「대선토론」으로 쟀는데 방송 마이크로 잡은 남의 목소리다. 같은 모델을 실제
+#   마이크 소리로 재니 25회/시간이 아니라 **264회/시간**이었다.
+#   → docs/research/2026-10-01_웨이크워드_오탐_진단.md
+#
+# ⚠️ 임계만 보면 안 된다 — **연속 조건과 짝**이다. 연속은
+#   `tests/test_wakeword_consecutive.py` 가 따로 지킨다.
+check("기본 임계가 실측 운용점 0.80 (연속 2 와 짝 — 오탐 15회/시간 · 놓침 15.2%)",
+      abs(_mod.kws_threshold() - 0.80) < 1e-9, f"→ {_mod.kws_threshold()}")
 check("   settings.py 가 그 근거를 숫자로 적어 뒀다",
-      "0.62 → 오탐 25회/시간" in io.open(
+      "연속 2 · 0.80" in io.open(
           os.path.join(_ROOT, "config", "settings.py"), encoding="utf-8").read())
 _prev_t = os.environ.get("WAKEWORD_THRESHOLD")
 os.environ["WAKEWORD_THRESHOLD"] = "0.95"
