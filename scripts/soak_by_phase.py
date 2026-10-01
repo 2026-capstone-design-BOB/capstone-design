@@ -7,10 +7,16 @@
    **무엇을 고쳐야 하는지 말해 주지 않는다.** 조용할 때도 깨는지, 내 목소리에 깨는지,
    음악에 깨는지, 남의 말소리에 깨는지는 손댈 곳이 **각각 다르다**:
 
-     조용히      에 깬다 → 말소리 문제가 아니라 **마이크 잡음**이다. 에너지 관문을 본다
+     조용히      에 깬다 → 말소리 문제가 아니다. **마이크 잡음**을 의심한다
      혼잣말      에 깬다 → 학습 음성에 **내 평소 말**이 모자라다
      음악        에 깬다 → 학습 음성에 **음악**이 모자라다
      남의 말소리  에 깬다 → 학습 음성이 **TTS 에 치우쳐** 있다(실제 사람 목소리 부족)
+
+🚨 **다만 「깬다」를 런타임 임계 하나로 판정하지 않는다.** 임계를 조금 올려 사라지는
+   것은 «아슬아슬한 반응»이고, **높은 임계에서도 남는 것**이 진짜 할 일이다.
+   2026-10-01 실측에서 「조용히」가 0.62 에 24회/시간이었는데 0.80 에서 **0** 이었다 —
+   그걸 «마이크 잡음»으로 읽을 뻔했다. 같은 표에서 「남의 말소리」는 0.99 에서도
+   24회/시간이 남았다. **거기가 진짜 자리다.**
 
 🚨 **임계를 하나 골라 비교하지 않는다.** 구간마다 임계 표를 같이 낸다 —
    한 임계에서만 보면 결론이 뒤집힌다(M7 §3 이 업계 표준으로 정한 방식이다).
@@ -107,21 +113,42 @@ def main(argv=None):
     print()
 
     # ── 읽는 법을 같이 찍는다. 표만 두면 다음 사람이 또 한 임계만 본다. ──
-    worst = max(rows, key=lambda r: r["fa"][runtime_th]["per_hour"]
-                if r["fa"][runtime_th]["per_hour"] == r["fa"][runtime_th]["per_hour"] else -1)
-    quiet = next((r for r in rows if "조용" in r["name"]), None)
+    #
+    # 🚨 **한 임계의 값만 보고 결론 내지 않는다.** 처음 이 자리를 「런타임 임계에서
+    #   조용히가 24/시간이면 마이크 잡음」으로 적었는데, 바로 옆 칸(0.80)이 0 이었다.
+    #   임계를 조금만 올려도 사라지는 것은 **잡음 문제가 아니라 아슬아슬한 반응**이다.
+    #   그래서 판단은 **곡선의 모양**으로 한다 — 높은 임계에서 뭐가 남는가.
+    hi = THRESHOLDS[-1]
+    def _ph(r, th):
+        v = r["fa"][th]["per_hour"]
+        return v if v == v else 0.0
+
     print("🔑 읽는 법")
-    print(f"   · 가장 심한 구간은 **{worst['name']}** "
-          f"({worst['fa'][runtime_th]['per_hour']:.1f}/시간 @ {runtime_th}) — 여기가 할 일이다")
-    if quiet is not None:
-        q = quiet["fa"][runtime_th]["per_hour"]
-        if q >= 1:
-            print(f"   · 🚨 **조용할 때도 {q:.1f}/시간 깬다** — 말소리 문제가 아니라 "
-                  "마이크 잡음이다. 에너지 관문부터 본다")
-        else:
-            print(f"   · 조용할 때는 {q:.1f}/시간 — 🔑 **잡음이 아니라 소리에 반응하는 것**이다")
-    print("   · 임계를 올려도 목표에 못 가면, 손댈 곳은 임계가 아니라 "
-          "**학습 음성** 또는 **2단계 확인**이다")
+
+    worst = max(rows, key=lambda r: _ph(r, runtime_th))
+    print(f"   · 지금 임계({runtime_th})에서 가장 심한 구간 — **{worst['name']}** "
+          f"{_ph(worst, runtime_th):.0f}/시간")
+
+    # 🔑 **진짜 할 일은 「임계를 올려도 안 죽는 것」이다.**
+    stubborn = max(rows, key=lambda r: _ph(r, hi))
+    if _ph(stubborn, hi) > 0:
+        base = _ph(stubborn, runtime_th)
+        drop = 100 * (1 - _ph(stubborn, hi) / base) if base > 0 else 0
+        print(f"   · 🚨 임계 {hi} 까지 올려도 남는 구간 — **{stubborn['name']}** "
+              f"{_ph(stubborn, hi):.0f}/시간 (지금보다 {drop:.0f}% 줄 뿐이다)")
+        print(f"        여기가 **임계로 못 푸는 자리**다. 학습 음성이나 2단계 확인이 할 일이다.")
+    else:
+        print(f"   · 임계 {hi} 에서는 모든 구간이 0 이다 — 임계만으로도 눌리긴 한다")
+
+    # 임계를 올려 사라지는 구간은 «아슬아슬»이지 «잡음»이 아니다.
+    gone = [r["name"] for r in rows
+            if _ph(r, runtime_th) > 0 and _ph(r, hi) == 0]
+    if gone:
+        print(f"   · 임계를 올리면 사라지는 구간 — {' · '.join(gone)} "
+              "(아슬아슬하게 반응한 것이지 깊은 문제가 아니다)")
+
+    print(f"   · 🚨 **임계는 공짜가 아니다.** 올리면 놓침이 같이 오른다 — "
+          "`eval_wakeword.py --sweep --holdout-only` 의 FRR 과 **같은 임계에서** 읽는다")
 
     if a.json:
         io.open(a.json, "w", encoding="utf-8").write(json.dumps(
