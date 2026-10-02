@@ -257,18 +257,35 @@ send_voice = between(ui, "async function sendVoice(blob)", "// ── 텍스트 
 wake_fn = between(ui, "window.pluiz.onWakeDetected", "window.pluiz.onWakewordStatus")
 toggle = between(ui, "function toggleMic()", "// 🚨 2026-09-09")
 close_fn = between(ui, "function closeIfSpurious()", "function stopVad()")
+wake_listen = between(ui, "function wakeListen(auto)", "/** 접힌 상태의")
 
-check("웨이크워드가 연 녹음을 표시해 둔다", "micAuto = true" in wake_fn)
-check("이미 떠 있었으면 닫지 않는다", "wakeOpened = !isActive" in wake_fn,
-      "사용자가 쓰던 중에 오탐이 나면 창을 닫아 버린다")
+# 🔑 **2026-10-02 재정의** — 웨이크 신호(호출어·단축키·🎙️)는 **창을 열지 않는다.**
+#   창을 펴는 것은 더블클릭 전용이다. 그래서 «열었으니 닫는다»가 **«접힌 표시를
+#   되돌린다»** 로 바뀌었고, 아래 셋이 그 모양을 고정한다.
+check("웨이크워드가 연 녹음을 **자동으로 표시해 둔다**", "wakeListen(true)" in wake_fn)
+check("출처가 한 길로 모인다 (호출어·단축키·🎙️)", "micAuto = auto;" in wake_listen)
+# ⚠️ **주석을 빼고 본다.** 「전에는 `activate(true)` 였다」 같은 설명이 코드로
+#   오해돼 이 줄이 헛되이 깨졌다 — 기록을 지우는 쪽으로 가면 안 되는 자리다.
+def _code_only(block):
+    return NL_.join(l for l in block.splitlines()
+                    if not l.strip().startswith("//"))
+
+
+NL_ = chr(10)
+check("🚨 웨이크 신호가 **창을 열지 않는다**",
+      "activate(" not in _code_only(wake_listen)
+      and "activate(" not in _code_only(wake_fn),
+      "열면 «말 안 했는데 음성 입력 모드»가 된다 — 2026-10-02 실기 지적")
 check("출처를 **이 녹음에** 고정한다", "recAuto = micAuto" in start_mic,
       "전역만 보면 다음 녹음이 이전 출처를 물려받는다")
 check("고정하면서 다음 것을 비운다", "micAuto = false" in start_mic)
 
 check("🚨 사람이 누른 마이크는 auto가 아니다", "micAuto = false" in toggle,
       "사람이 결과를 기다리는 턴에서 오류를 삼키면 그게 더 나쁘다")
-check("Alt+Space도 사람이다",
-      "micAuto = false" in between(ui, "onToggleActive", "document.addEventListener"))
+# 🔑 단축키는 **사람**이다 — `wakeListen(false)` 의 false 가 그 뜻이다.
+#   (전에는 핸들러 안에서 `micAuto = false` 를 직접 썼다. 이제 한 길로 모였다)
+check("단축키도 사람이다",
+      "wakeListen(false)" in between(ui, "onToggleActive", "document.addEventListener"))
 
 check("자동 녹음의 STT 실패는 조용히 닫는다",
       "if (recAuto) { closeIfSpurious(); }" in send_voice)
@@ -281,7 +298,12 @@ check("서버가 답하는 중이면 닫지 않는다", "busy) return" in close_
       "진짜 턴을 닫아 버린다")
 check("닫을 때 플래그를 되돌린다",
       "recAuto = false" in close_fn and "wakeOpened = false" in close_fn)
-check("실제로 오버레이를 닫는다", "deactivate()" in close_fn)
+# 🚨 **더 이상 닫지 않는다.** 창이 떠 있다면 그건 사람이 더블클릭으로 연 것이다 —
+#   헛깨어남이 그걸 닫으면 «쓰던 중에 창이 사라지는» 더 나쁜 일이 된다.
+check("🚨 헛깨어남이 **사람이 연 창을 닫지 않는다**",
+      "deactivate()" not in close_fn,
+      "창을 여는 길은 더블클릭 하나다 — 웨이크 신호는 창과 무관하다")
+check("대신 접힌 표시만 되돌린다", "setIdleBusy('')" in close_fn)
 
 # 헛깨어남이면 오버레이가 떠 있는 시간을 줄인다
 check("자동 녹음은 더 빨리 접는다",

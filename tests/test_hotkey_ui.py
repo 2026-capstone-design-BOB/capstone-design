@@ -1,31 +1,41 @@
 """
-말 거는 단축키 배선 검증 — mock (Electron·서버 없음)
+말 거는 법 배선 검증 — mock (Electron·서버 없음)
 실행: python tests/test_hotkey_ui.py
 
 ## 왜 이 테스트가 생겼나
 
-**버튼·더블클릭·`Alt+Space` 는 2026-09-02부터 전부 동작하고 있었다.**
-그런데 2026-10-02 에 열어 보니 **어디에도 적혀 있지 않았다** — 대기 화면 안내는
-`'더블클릭 · 🎙️'` 뿐이었고, 단축키는 `electron-ui/main.js` 에 **하드코딩**이라
-사용자가 알 길도, 바꿀 길도 없었다. 전시회에서 *"버튼으로도 됩니다"* 라고
-말하려면 **그게 화면에 있어야** 한다.
+**버튼·더블클릭·`Alt+Space` 는 2026-09-02부터 전부 동작하고 있었다.** 그런데
+어디에도 적혀 있지 않았고, 단축키는 `main.js` 하드코딩이라 바꿀 수도 없었다.
+2026-10-02 에 설정으로 빼고 **실기에서 네 개가 터졌다:**
 
-🚨 **고치면서 BL-13 의 자리로 다시 들어간다.** BL-13 은
-*"저장까지 했는데 아무 반응이 없는 최악의 모양"* 이었는데, 전역 단축키는
-**저장과 적용이 다른 일**이라 정확히 같은 함정이 있다:
+| | 증상 | 뿌리 |
+|---|---|---|
+| ① | 더블클릭이 안 먹힌다 | 단일 클릭이 **먼저** 창을 열어 레이아웃이 바뀌고, 두 번째 클릭의 `dblclick` 이 **다른 요소**로 갔다 |
+| ② | `Space`·`Backspace` 만 적용된다 | 키 캡처 가드가 틀렸고, **한글 IME** 가 켜져 있으면 `e.key` 가 엉뚱하게 온다 |
+| ③ | 🚨 **`Ctrl+C` 가 그대로 등록됐다** | 앱 내부 단축키는 `globalShortcut.register()` 가 **성공한다.** 「이미 쓰이는가」는 **알아낼 수 없다** |
+| ④ | 창 켜자마자 음성 입력 | 웨이크 신호가 `activate(true)` 로 **창을 펼쳤다** |
 
-  `.env` 에 적는 것 = 서버          ← 항상 성공한다
-  그 키를 실제로 잡는 것 = Electron ← **다른 프로그램이 쓰고 있으면 실패한다**
+## 🔑 그래서 모델을 다시 정의했다 (2026-10-02 · 사용자)
 
-`globalShortcut.register()` 가 `false` 를 돌려주는데 그걸 안 보면,
-«저장됐어요» 라고 말해 놓고 눌러도 아무 일이 없다. 그래서 다섯을 본다.
+| 입력 | 뜻 |
+|---|---|
+| **더블클릭** | 창 활성화 — 채팅·설정·즐겨찾기. **사람이 소프트웨어를 다루는 일** |
+| **단축키 · 🎙️** | 웨이크 신호 — 호출어를 대신해 **음성 인식을 깨운다. 창과 무관** |
+| **`−` 버튼** | 창 접기 (단일 클릭으로 열던 길을 없앴으니 닫는 길이 분명해야 한다) |
 
-  ① **필드 이름이 서버 모델과 같은가** — 다르면 422고 프런트는 조용히 실패한다
-  ② **토큰이 실리는 경로로 부르는가** — `API` 로 시작하는 URL 에만 헤더가 붙는다(BL-14)
-  ③ 🚨 **등록 실패를 말하는가** — 이게 BL-13 이다
-  ④ 🔑 **기본값의 주인이 하나인가** — `main.js`·UI·서버가 각자 들고 있으면
-     «설정은 바뀌었는데 실제로 듣는 키는 그대로» 가 된다
-  ⑤ **호출어를 끄지 않는가** — 둘 다 되게 두는 것이 이번 결정이다
+🔑 **①은 «고치는» 게 아니라 «단일 클릭 동작을 없애서» 사라졌다** — 원인 자체가
+단일 클릭이었기 때문이다. ②③은 **자유 입력을 버리고 목록 선택**으로 바뀌면서
+같이 사라졌다. **탐지로 풀 수 있는 문제가 아니었다.**
+
+## 여기서 고정하는 것
+
+| | 왜 |
+|---|---|
+| 🚨 **목록 밖은 서버가 거부한다** | UI 만 막으면 샌다. 막는 자리는 **저장하는 곳**이어야 한다(BL-27·BL-50 이 세 번 치른 값) |
+| 🔑 **기본값·목록의 주인이 하나다** | `main.js` 가 기본값을 들고 있으면 **잠깐이라도 틀린 키를 전역으로 가로챈다** |
+| 🚨 **웨이크 신호가 창을 안 연다** | ④ 가 되돌아오면 이 줄이 깨진다 |
+| **창 여는 길은 더블클릭 하나** | 단일 클릭이 돌아오면 ① 이 그대로 재발한다 |
+| **등록 실패를 말한다** | BL-13 의 *"저장했는데 아무 반응 없음"* |
 
 ⚠️ 브라우저를 띄우지 않는다. 소스를 읽어 대조할 뿐이다.
 """
@@ -37,7 +47,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-Q = chr(34)
 passed = total = 0
 
 
@@ -61,74 +70,104 @@ mainjs   = src("electron-ui", "main.js")
 server   = src("main.py")
 settings = src("config", "settings.py")
 
-print("=== ① 필드 이름이 서버 모델과 같은가 ===")
-check("서버에 `POST /api/hotkey` 가 있다", Q + "/api/hotkey" + Q in server)
-check("요청 모델이 `hotkey` 를 받는다",
-      "class HotkeyRequest" in server and "hotkey: str" in server)
-check("UI 가 보내는 키 이름이 같다", '"hotkey": want' in ui or "hotkey: want" in ui)
-check("서버가 `GET /api/config` 로 현재 값을 돌려준다",
-      '"hotkey": s.hotkey' in server)
+from config.settings import Settings  # noqa: E402
+
+print("=== ① 🚨 더블클릭이 창을 여는 **유일한** 길인가 ===")
+# 실기에서 더블클릭이 안 먹힌 원인은 **단일 클릭**이었다 — 첫 클릭이 창을 열며
+# 레이아웃을 바꿔, 두 번째 클릭의 dblclick 이 다른 요소로 갔다.
+# 🔑 그래서 «고치는» 게 아니라 **단일 클릭을 없애서** 사라진다. 돌아오면 재발한다.
+check("🚨 대기 화면에 `onclick` 으로 창을 여는 길이 없다",
+      'id="idle-view" onclick=' not in ui)
+check("더블클릭이 창을 연다", 'id="idle-view" ondblclick="activate(false)"' in ui)
+check("🔑 창을 **펼치면서 녹음**하는 길이 아예 없다 (④ 의 뿌리)",
+      "activate(true);" not in ui)
 
 print("")
-print("=== ② 토큰이 실리는 경로로 부르는가 (BL-14) ===")
-check("`${API}/api/hotkey` 템플릿을 쓴다 (절대 URL 이면 401)",
-      "${API}/api/hotkey" in ui)
+print("=== ② 창을 닫는 길이 **보이는가** ===")
+check("최소화 버튼이 있다", 'id="min-btn"' in ui and 'title="창 접기"' in ui)
+check("그 버튼이 창만 접는다 (종료가 아니다)",
+      'id="min-btn" onclick="event.stopPropagation(); deactivate()"' in ui)
+check("종료 버튼은 그대로 있다", "window.pluiz.quit()" in ui)
 
 print("")
-print("=== ③ 🚨 등록 실패를 **말하는가** (BL-13 의 자리) ===")
-check("main.js 가 register() 의 반환값을 본다",
-      "globalShortcut.register(want" in mainjs)
-check("실패를 렌더러에 돌려준다 (`ok` 를 담는다)",
-      "{ ok: false" in mainjs and "{ ok: true" in mainjs)
-check("🔑 실패하면 **쓰던 키로 되돌린다** (새 키도 옛 키도 없는 상태를 안 만든다)",
+print("=== ③ 🚨 웨이크 신호는 **창과 무관**한가 ===")
+check("단축키·호출어·🎙️ 가 **같은 길**을 탄다 (`wakeListen`)",
+      ui.count("wakeListen(") >= 4, f"→ {ui.count('wakeListen(')}곳")
+check("🚨 단축키가 창을 열지도 닫지도 않는다",
+      "window.pluiz.onToggleActive(() => wakeListen(false));" in ui)
+check("호출어도 접힌 채로 듣는다", "wakeListen(true);" in ui)
+check("🎙️ 버튼도 같다", 'wakeListen(false)"' in ui)
+check("🔑 접힌 상태에 «지금 무슨 일인지»가 보인다 (안 보이면 반응이 없어 보인다)",
+      "function setIdleBusy" in ui and "듣는 중" in ui and "생각하는 중" in ui)
+check("녹음/응답이 끝나면 안내문으로 되돌아온다",
+      ui.count("setIdleBusy('')") >= 2)
+check("헛깨어남이 **사람이 연 창을 닫지 않는다**",
+      "if (!isActive) setIdleBusy('');" in ui and "if (!recAuto || busy) return;" in ui)
+
+print("")
+print("=== ④ 🚨 고를 수 있는 키만 — **서버가 거부한다** ===")
+# 🔑 「이미 쓰이는 키인가」는 알아낼 수 없다. `Ctrl+C` 는 전역 단축키가 아니라
+#   앱 내부 단축키라 `globalShortcut.register()` 가 **성공한다.**
+#   탐지로 푸는 문제가 아니라 **고를 수 있는 것을 좁히는** 문제다.
+check("목록이 `config/settings.py` 에 있다", "hotkey_choices: ClassVar" in settings)
+check("🚨 서버가 목록 밖을 **거부한다** (UI 만 막으면 샌다)",
+      "if key not in Settings.hotkey_choices:" in server
+      and '"status": "rejected"' in server)
+check("기본값이 목록 안에 있다",
+      Settings.model_fields["hotkey"].default in Settings.hotkey_choices)
+check("🚨 `Ctrl+C` 는 고를 수 없다", "Ctrl+C" not in Settings.hotkey_choices)
+check("🚨 조합키 없는 키도 고를 수 없다",
+      all("+" in k for k in Settings.hotkey_choices))
+check("서버가 목록을 UI 에 내려준다",
+      '"hotkey_choices": list(Settings.hotkey_choices)' in server)
+check("UI 가 **자기 목록을 안 들고 있다** (서버가 준 것으로 채운다)",
+      "function fillHotkeyChoices" in ui and "Ctrl+Alt+P" not in ui)
+check("UI 가 자유 입력이 아니다 (키 캡처가 없다)",
+      'id="hotkey-select"' in ui and "hotkey-input" not in ui
+      and "accelFrom" not in ui)
+check("UI 가 서버의 거부를 **말한다**", "'rejected'" in ui and "고를 수 없는 키예요" in ui)
+check("⚠️ `Alt+Space` 는 겹친다고 **표시한다** (고를 수는 있다)",
+      "Windows 창 메뉴와 겹침" in ui and "Alt+Space" in Settings.hotkey_choices)
+check("⚠️ `.env` 에 개행이 끼어들지 못한다 (BL-14 ③ 과 같은 자리)",
+      "ch not in (chr(10), chr(13))" in server)
+
+print("")
+print("=== ⑤ 🔑 기본값의 주인이 **하나**인가 ===")
+# 🚨 `main.js` 가 기본값을 들고 있으면, 서버 값을 받기 전까지 **틀린 키를 전역으로
+#   가로챈다.** 그래서 이 프로세스는 **아무 것도 안 잡고** 렌더러가 알려 줄 때까지 기다린다.
+check("🚨 `main.js` 에 기본값이 없다", "DEFAULT_HOTKEY" not in mainjs)
+check("빈 값을 받으면 **아무 키도 안 잡는다**",
+      "if (!want) return { ok: false" in mainjs)
+check("UI 가 서버 기본값으로 덮어쓴다", "hotkeyDefault = data.hotkey_default" in ui)
+check("서버가 기본값을 알려 준다",
+      'Settings.model_fields["hotkey"].default' in server)
+check("🚨 설정을 **못 읽어도** 단축키는 잡힌다 (안 그러면 아예 못 부른다)",
+      "window.pluiz.setHotkey(hotkeyDefault)" in ui)
+
+print("")
+print("=== ⑥ 등록 실패를 **말하는가** (BL-13 의 자리) ===")
+check("main.js 가 register() 의 반환값을 본다", "globalShortcut.register(want" in mainjs)
+check("실패를 렌더러에 돌려준다", "{ ok: false" in mainjs and "{ ok: true" in mainjs)
+check("🔑 실패하면 **쓰던 키로 되돌린다**",
       "if (previous && globalShortcut.register(previous" in mainjs)
 check("preload 가 그 답을 건네준다",
       "setHotkey:" in preload and "invoke('set-hotkey'" in preload)
 check("main 이 그 채널을 받는다", "ipcMain.handle('set-hotkey'" in mainjs)
-check("🚨 UI 가 **실패를 사용자에게 말한다**",
-      "다른 프로그램이 쓰고 있어요" in ui)
-check("🚨 저장만으로 «된다»고 말하지 않는다 (적용 결과를 보고 말한다)",
+check("UI 가 실패를 사용자에게 말한다", "다른 프로그램이 쓰고 있어요" in ui)
+check("저장만으로 «된다»고 말하지 않는다",
       "await window.pluiz.setHotkey(data.hotkey)" in ui)
-check("서버도 «저장했을 뿐»이라고 적어 둔다",
-      "실제로 잡혔는지는" in server)
-check("창을 띄울 때 저장해 둔 키를 **실제로 잡는다** (읽고 끝내지 않는다)",
-      "window.pluiz.setHotkey(hk)" in ui)
+check("창을 띄울 때 저장해 둔 키를 **실제로 잡는다**", "window.pluiz.setHotkey(hk)" in ui)
 
 print("")
-print("=== ④ 🔑 기본값의 주인이 하나인가 ===")
-check("기본값이 `config/settings.py` 에 있다", 'hotkey: str = "Alt+Space"' in settings)
-check("서버가 그 기본값을 UI 에 알려 준다",
-      'Settings.model_fields["hotkey"].default' in server)
-check("UI 가 자기 기본값을 **고집하지 않는다** (서버 값으로 덮어쓴다)",
-      "hotkeyDefault = data.hotkey_default" in ui)
-# 🚨 2026-10-02 이전에는 이 문구가 하드코딩된 'Alt+Space' 였다 —
-#    키를 바꿀 수 있게 된 순간 **거짓말이 된다.**
-check("🚨 호출어를 껐을 때 문구가 **지금 잡힌 키**를 말한다",
-      "'✓ 껐어요. Alt+Space로" not in ui and "껐어요. ${hk}" in ui)
-
-print("")
-print("=== ⑤ 호출어를 끄지 않는다 (둘 다 쓴다) ===")
-check("단축키를 넣으면서 웨이크워드를 끄지 않았다",
-      "startWakeword();" in mainjs)
-check("설정에 «말 거는 방법» 이 보인다", "말 거는 방법" in ui)
-check("🚨 대기 화면이 **부르는 법을 적는다** (여기 말고는 적힌 데가 없다)",
-      "setIdleHint" in ui and "더블클릭 · 🎙️ · $" in ui)
-check("호출어 로딩 중에도 «버튼·단축키는 지금도 된다»고 말한다",
-      "는 지금도 돼요" in ui)
-
-print("")
-print("=== ⑥ 키 캡처가 발을 쏘지 않는가 ===")
-# 🔑 전역 단축키라 **다른 프로그램에서 타자 칠 때마다** 창이 뜨면 안 된다.
-check("🔑 조합키 없는 한 글자는 안 받는다",
-      "if (!mods.length && k.length <= 1) return null;" in ui)
-check("조합키만 눌렀을 때는 아직 확정하지 않는다",
-      "['Control', 'Alt', 'Shift', 'Meta'].includes(k)" in ui)
-check("설정창에서 누른 키가 밖으로 새지 않는다 (preventDefault)",
-      "e.preventDefault();" in ui)
-# 🚨 처음 쓴 코드가 소스에 **진짜 개행을 박아** main.py 를 깨뜨렸다 — 스위트가 잡았다.
-#    그래서 이스케이프 없이 **문자 코드**로 거른다. 같은 실수가 안 나는 모양이다.
-check("⚠️ `.env` 에 개행이 끼어들지 못한다 (BL-14 ③ 과 같은 자리)",
-      "ch not in (chr(10), chr(13))" in server)
+print("=== ⑦ 호출어를 끄지 않는다 · 안내가 한 곳에서 나온다 ===")
+check("웨이크워드는 그대로 돈다", "startWakeword();" in mainjs)
+check("설정에 «말 거는 방법» 이 있다", "말 거는 방법" in ui)
+# 🚨 안내문을 세 곳이 각자 쓰고 있어서, 어떤 경로로 들어오면 옛 문구가 남았다.
+check("🔑 안내문이 **한 함수**에서만 만들어진다",
+      "function setIdleHint" in ui and ui.count("'더블클릭 · 🎙️'") == 0)
+check("안내가 «말하기»와 «창 열기»를 갈라 말한다",
+      "말하기 ${" in ui and "창 더블클릭" in ui)
+check("호출어 로딩 중에도 «지금도 돼요»라고 말한다", "는 지금도 돼요" in ui)
 
 print("")
 print(chr(61) * 60)
