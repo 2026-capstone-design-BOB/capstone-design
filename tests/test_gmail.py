@@ -49,6 +49,7 @@ _SRC = io.open(os.path.join(_ROOT, "tools", "gmail.py"), encoding="utf-8").read(
 _AUTH = io.open(os.path.join(_ROOT, "tools", "google_auth.py"), encoding="utf-8").read()
 _CAL = io.open(os.path.join(_ROOT, "tools", "calendar.py"), encoding="utf-8").read()
 _REG = io.open(os.path.join(_ROOT, "core", "tool_registry.py"), encoding="utf-8").read()
+_GRAPH_SRC = io.open(os.path.join(_ROOT, "core", "graph.py"), encoding="utf-8").read()
 
 passed = total = 0
 
@@ -182,8 +183,23 @@ def run():
           "설정은 잘 하셨어요" in A.NO_PACKAGES)
     check("   그리고 **무엇을 치면 되는지** 알려준다",
           "pip install" in A.NO_PACKAGES)
-    check("로그인 문장이 터미널 명령을 알려준다",
-          "connect_google.py" in A.NEED_LOGIN)
+    # 🔄 **2026-10-02 에 계약이 뒤집혔다**(BL-84). 예전엔 이 줄이
+    #   *«터미널 명령을 알려준다»* 를 고정했다 — 그때는 **사용자가 직접 하는 것이
+    #   유일한 길**이었기 때문이다. 이제 `connect_google` 이 있으니, 도구 결과가
+    #   «직접 하세요»라고 말하면 **모델이 그걸 옮겨서** 도구를 만들어 놓고
+    #   안 쓰게 된다. 🔑 그래서 **상태만 말하고 할 일은 안 적는다.**
+    check("🚨 로그인 문장이 **«직접 하세요»라고 안 한다** (BL-84)",
+          "connect_google.py" not in A.NEED_LOGIN
+          and "터미널" not in A.NEED_LOGIN, A.NEED_LOGIN)
+    check("   그래도 **무슨 상태인지는** 말한다",
+          "로그인이 아직 안 됐어요" in A.NEED_LOGIN)
+    # ⚠️ **«열어 드릴게요»라고 쓰면 안 된다** — 모델이 도구를 안 부르면 그건
+    #   지키지 못한 약속이고, BL-19·35 가 정확히 그 모양이었다.
+    check("⚠️ **지키지 못할 약속을 안 한다**",
+          "열어 드릴게요" not in A.NEED_LOGIN and "열게요" not in A.NEED_LOGIN)
+    check("🔑 연결은 **도구가** 건다 — 시스템 프롬프트가 그렇게 지시한다",
+          "connect_google을 호출해" in _GRAPH_SRC
+          and "터미널에서 직접 실행하라고 하지 마세요" in _GRAPH_SRC)
     check("message_for 가 이유별로 갈라 준다",
           A.message_for(A.MissingPackages()) == A.NO_PACKAGES
           and A.message_for(A.NeedLogin()) == A.NEED_LOGIN
@@ -211,18 +227,181 @@ def run():
     check("🚨 기본이 interactive=False 다",
           "interactive: bool = False" in _AUTH2)
     check("🚨 브라우저를 여는 곳이 interactive 안에만 있다",
-          _AUTH2.count("run_local_server") == 1
-          and "elif interactive:" in _AUTH2)
+          _AUTH2.count("flow.run_local_server(") == 1   # 주석의 언급은 안 센다
+          and "if interactive:" in _AUTH2)
     check("도구는 interactive 를 안 켠다",
           "interactive=True" not in _SRC and "interactive=True" not in _CAL)
     check("연결 스크립트만 켠다", "interactive=True" in _CONN)
     check("토큰이 없으면 **멈추지 않고** NeedLogin 을 던진다",
           "raise NeedLogin" in _AUTH2)
     check("갱신(refresh)은 대화 중에도 된다 (브라우저가 필요 없다)",
-          "creds.refresh(Request())" in _AUTH2)
+          "_refresh(creds, Request())" in _AUTH2)
     check("왜 그런지 BL-69 를 근거로 적어 뒀다", "BL-69" in _AUTH2)
     check("🚨 연결 스크립트가 «토큰 받음»에서 끝내지 않고 **실제로 읽어 본다**",
           "실제로 읽히는지 확인" in _CONN and "getProfile" in _CONN)
+
+    print(f"{NL}=== ⑬ 🚨 토큰이 **만료됐을 때** 할 일을 말하는가 (BL-74) ===")
+    # 🚨 동의 화면이 «테스트» 라 갱신 토큰이 **7일**이다. 만료는 예외가 아니라
+    #   **매주 일어나는 일**인데, 2026-10-02 전까지 넷 중 **한 곳도**
+    #   «다시 로그인하세요»를 말하지 않았다:
+    #
+    #     일정      → RefreshError 가 도구 **밖으로 터졌다**
+    #     메일      → "✗ 메일에 연결하지 못했어요 (RefreshError)"
+    #     기다리기  → "3번 연속으로 확인하지 못해서 멈췄어요"
+    #     🚨 고치러 간 길(connect_google.py) → **브라우저를 못 열었다**
+    #
+    # 🔑 마지막 것이 제일 나빴다 — 안내가 가리키는 스크립트가 **그 상태에서
+    #   빠져나오지 못했다.** 즉 고치는 방법 자체가 막혀 있었다.
+    #
+    # 📌 **소스 대조가 아니라 실제로 밟아 본다**(BL-83) — «그렇게 적혀 있나»는
+    #   이번 ② 에서 결함 셋을 초록인 채로 통과시켰다.
+
+    class _Denied(Exception):
+        """구글이 갱신을 거부했다 (invalid_grant)."""
+
+    class _NetDown(Exception):
+        """인터넷이 끊겼다. **이건 다시 로그인할 일이 아니다.**"""
+
+    class _StaleCreds:
+        valid = False
+        expired = True
+        refresh_token = "stale"
+        def has_scopes(self, scopes): return True
+        def to_json(self): return "{}"
+        def refresh(self, request): raise _Denied("invalid_grant")
+
+    class _NetCreds(_StaleCreds):
+        def refresh(self, request): raise _NetDown("connection refused")
+
+    _orig_cls = A._refresh_error_class
+    A._refresh_error_class = lambda: _Denied
+    try:
+        try:
+            A._refresh(_StaleCreds(), None)
+            _got = None
+        except Exception as e:                                # noqa: BLE001
+            _got = e
+        check("🚨 갱신이 거부되면 NeedLogin 으로 바뀐다",
+              isinstance(_got, A.NeedLogin), f"{type(_got).__name__}")
+        check("   그래서 사용자가 듣는 말이 «다시 로그인하세요» 다",
+              _got is not None and A.message_for(_got) == A.NEED_LOGIN)
+
+        try:
+            A._refresh(_NetCreds(), None)
+            _net = None
+        except Exception as e:                                # noqa: BLE001
+            _net = e
+        check("🚨 인터넷이 끊긴 것은 **안 바꾼다** (설정을 다시 하라고 떠밀지 않는다)",
+              isinstance(_net, _NetDown), f"{type(_net).__name__}")
+    finally:
+        A._refresh_error_class = _orig_cls
+
+    check("패키지가 없으면 빈 튜플이라 아무것도 안 잡는다 (환경에 안 흔들린다)",
+          isinstance(A._refresh_error_class(), (type, tuple)))
+
+    # ── 도구 경로와 «고치러 가는 길»을 한 바퀴 밟는다 ──────────────
+    #   가짜 구글 모듈을 끼워 **설치 여부와 무관하게** 같은 수의 검사가 돈다.
+    import tempfile
+    import types
+
+    def _drive(interactive):
+        """만료된 토큰으로 get_service 를 한 번 돌린다. (결과, 브라우저 열림) 반환."""
+        opened = {"yes": False}
+
+        class _Flow:
+            @staticmethod
+            def from_client_secrets_file(path, scopes): return _Flow()
+            def run_local_server(self, port=0):
+                opened["yes"] = True
+                class _Fresh(_StaleCreds):
+                    valid = True
+                    expired = False
+                return _Fresh()
+
+        fakes = {
+            "google": types.ModuleType("google"),
+            "google.oauth2": types.ModuleType("google.oauth2"),
+            "google.oauth2.credentials": types.ModuleType("google.oauth2.credentials"),
+            "google.auth": types.ModuleType("google.auth"),
+            "google.auth.transport": types.ModuleType("google.auth.transport"),
+            "google.auth.transport.requests": types.ModuleType("google.auth.transport.requests"),
+            "google.auth.exceptions": types.ModuleType("google.auth.exceptions"),
+            "google_auth_oauthlib": types.ModuleType("google_auth_oauthlib"),
+            "google_auth_oauthlib.flow": types.ModuleType("google_auth_oauthlib.flow"),
+            "googleapiclient": types.ModuleType("googleapiclient"),
+            "googleapiclient.discovery": types.ModuleType("googleapiclient.discovery"),
+        }
+        fakes["google.oauth2.credentials"].Credentials = type(
+            "Credentials", (), {"from_authorized_user_file":
+                                staticmethod(lambda p, sc: _StaleCreds())})
+        fakes["google.auth.transport.requests"].Request = lambda *a, **k: None
+        fakes["google.auth.exceptions"].RefreshError = _Denied
+        fakes["google_auth_oauthlib.flow"].InstalledAppFlow = _Flow
+        fakes["googleapiclient.discovery"].build = lambda *a, **k: "SERVICE"
+
+        saved = {k: sys.modules.get(k) for k in fakes}
+        sys.modules.update(fakes)
+        _c, _t = A.CREDS_PATH, A.TOKEN_PATH
+        tmp = tempfile.mkdtemp()
+        A.CREDS_PATH = os.path.abspath(__file__)          # «있다»만 보면 된다
+        A.TOKEN_PATH = os.path.join(tmp, "token.json")
+        io.open(A.TOKEN_PATH, "w", encoding="utf-8").write("{}")
+        try:
+            return A.get_service("gmail", "v1", interactive=interactive), opened["yes"]
+        except Exception as e:                            # noqa: BLE001
+            return e, opened["yes"]
+        finally:
+            A.CREDS_PATH, A.TOKEN_PATH = _c, _t
+            for k, v in saved.items():
+                if v is None:
+                    sys.modules.pop(k, None)
+                else:
+                    sys.modules[k] = v
+
+    _tool, _tool_browser = _drive(interactive=False)
+    check("🚨 도구에서 오면 NeedLogin 이 된다 (예외가 밖으로 안 터진다)",
+          isinstance(_tool, A.NeedLogin), f"{type(_tool).__name__}")
+    check("   그리고 **브라우저를 안 연다** (턴이 거기서 멈추면 안 된다)",
+          _tool_browser is False)
+
+    _conn, _conn_browser = _drive(interactive=True)
+    check("🚨 고치러 간 길(connect_google.py)은 **브라우저를 연다** — "
+          "만료에서 빠져나올 길이 있다",
+          _conn_browser is True)
+    check("   그래서 안내가 **자기 자신을 가리키지 않는다**",
+          not isinstance(_conn, A.NeedLogin), f"{type(_conn).__name__}")
+
+    print(f"{NL}=== ⑭ 🚨 연결을 **LLM 이 건다** — 다만 기다리지 않는다 (BL-84) ===")
+    # 🙋 2026-10-02 실기 — *"오늘 일정 알려줘"* 에 «터미널에서 직접 돌리세요»가 나갔다.
+    #   브라우저의 «허용» 화면이 승인 그 자체라 LLM 이 열어도 된다는 것이 사용자 판단이다.
+    #
+    # 🚨 **그런데 기다리면 서버가 멈춘다** — `run_local_server()` 는 블로킹이고,
+    #   그게 턴 안에서 일어나면 BL-69(말을 걸었는데 아무 대답이 없다)가 재발한다.
+    from core.tool_registry import get_all_tools as _all
+    _names = {t.name for t in _all()}
+    check("연결 도구가 **도구 목록에 있다** (없으면 모델이 못 부른다)",
+          "connect_google" in _names)
+    from core.graph import DANGEROUS_TOOLS as _DT
+    check("🚨 **승인 도구가 아니다** (브라우저의 «허용»이 승인 그 자체다)",
+          "connect_google" not in _DT)
+    check("🚨 **기다리지 않는다** — 떼어낸 프로세스로 띄운다",
+          "subprocess.Popen" in _AUTH2 and "run_local_server" not in
+          _AUTH2[_AUTH2.find("def connect_google"):])
+    check("   왜 그런지 BL-69 를 근거로 적어 뒀다",
+          "BL-69" in _AUTH2[_AUTH2.find("# 연결을 **LLM 이 건다**"):])
+    # 🚨 돌려주는 문장이 «띄웠다»여야 한다. **«됐다»로 쓰면 모델이 그대로 옮기고,
+    #   사용자는 허용을 안 눌렀는데 연결된 줄 안다** — 이 저장소가 반복해서 데인
+    #   «확인하지 않고 됐다고 말한다» 계열이다(BL-12·19·21).
+    check("🚨 **«띄웠다»와 «됐다»를 섞지 않는다**",
+          '"✓ 구글 연결 창을 띄웠어요' in _AUTH2.replace("(", "").replace("'", '"'),
+          "띄웠어요" if "띄웠어요" in _AUTH2 else "없음")
+    check("   그리고 도구 설명이 모델에게 **그렇게 말하지 말라**고 못 박는다",
+          "«연결됐어요»라고 말하면 안 됩니다" in _AUTH2)
+    check("🔑 **지금 서버를 돌리는 그 파이썬**으로 띄운다 (base 는 패키지가 없다)",
+          "_sys.executable" in _AUTH2)
+    check("같은 창을 두 번 안 띄운다", "_connect_running()" in _AUTH2)
+    check("자격증명이 없으면 **브라우저를 안 연다** (빈 창만 뜬다)",
+          "return NO_CREDENTIALS" in _AUTH2)
 
     print(f"{NL}=== ⑫ 사람 이름 다듬기 ===")
     check("'홍길동 <a@b.com>' → '홍길동'",
