@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pluiz 시스템 전체 설명</title>
+<style>
+:root{--bg:#fbfaf8;--fg:#1d1c1a;--muted:#6b6862;--line:#e3ded6;--card:#fff;
+--accent:#8a5a2b;--red:#a93226;--amber:#9a6b12;--blue:#2a5c8a;--chip:#f2ede5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+--bg:#171614;--fg:#eceae6;--muted:#a29d94;--line:#333029;--card:#201e1b;
+--accent:#d9a86a;--red:#e08b80;--amber:#d9b263;--blue:#8fbdeb;--chip:#2a2723}}
+:root[data-theme="dark"]{--bg:#171614;--fg:#eceae6;--muted:#a29d94;--line:#333029;
+--card:#201e1b;--accent:#d9a86a;--red:#e08b80;--amber:#d9b263;--blue:#8fbdeb;--chip:#2a2723}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);line-height:1.65;font-size:16px;
+font-family:"Pretendard","Malgun Gothic",system-ui,-apple-system,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:36px 20px 80px}
+header{border-bottom:2px solid var(--line);padding-bottom:18px;margin-bottom:28px}
+h1{font-size:1.75rem;margin:0 0 6px;letter-spacing:-.02em}
+.sub{color:var(--muted);font-size:.9rem;margin:0}
+h2{font-size:1.15rem;margin:38px 0 10px;letter-spacing:-.01em}
+h2 .n{color:var(--accent);margin-right:.5em;font-variant-numeric:tabular-nums}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+padding:16px 18px;margin:12px 0}
+.card h1,.card h2,.card h3{font-size:1.05rem;margin:14px 0 6px}
+.card h1:first-child,.card h2:first-child{margin-top:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:12px 0}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.stat .k{font-size:.78rem;color:var(--muted);display:block;margin-bottom:4px}
+.stat .v{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}
+.stat .note{display:block;font-size:.78rem;color:var(--muted);margin-top:4px}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:.93rem}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--chip);font-weight:600}
+code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:.88em}
+pre{background:var(--chip);padding:14px 16px;border-radius:10px;overflow-x:auto;font-size:.85rem}
+pre code{background:none;padding:0}
+.scroll{overflow-x:auto}
+ul{padding-left:1.2em}
+li{margin:3px 0}
+.bl{display:flex;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--line)}
+.bl:last-child{border-bottom:none}
+.bl .num{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.bl .t{color:var(--muted);font-size:.9rem}
+.r{color:var(--red)}.a{color:var(--amber)}.b{color:var(--blue)}
+.warn{background:var(--chip);border-left:3px solid var(--accent);
+padding:12px 14px;border-radius:0 8px 8px 0;margin:14px 0;font-size:.92rem}
+footer{margin-top:50px;padding-top:16px;border-top:1px solid var(--line);
+color:var(--muted);font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Pluiz — 말로 시키면 Windows가 알아서 합니다</h1>
+  <p class="sub">시스템 전체 설명 · <b>이 파일은 손으로 고치지 마세요</b> —
+     <code>python scripts/build_overview.py</code> 가 만듭니다</p>
+</header>
+
+<div class="warn">
+  <b>🔑 숫자는 베껴 적지 않고 <b>원본에서 가져옵니다.</b></b><br>
+  합계 → <code>docs/README.md</code> 상태표 · 발표용 숫자 →
+  <code>docs/teamwork/10_개발_현황.md</code> §1 · 남은 결함 → <code>docs/BACKLOG.md</code>.<br>
+  🚨 <code>docs/meetings/</code> 의 문서들은 <b>그날의 기록</b>입니다 — 숫자가 지금과 다릅니다.
+  거기 숫자를 현재 값으로 쓰지 마세요.
+</div>
+
+<h2><span class="n">1</span>한 문장으로</h2>
+<div class="card">
+  <p><b>“메모장 열어줘”</b> 처럼 말하면, 그 말을 알아듣고 <b>실제로 Windows를 조작</b>합니다.
+  챗봇이 «이렇게 하세요»라고 알려 주는 것이 아니라 <b>직접 합니다.</b></p>
+  <p class="sub">호출어(“플루이즈”)·🎙️ 버튼·단축키 중 아무거나로 깨우고, 말하고, 결과를 듣습니다.</p>
+</div>
+
+<h2><span class="n">2</span>지금 상태</h2>
+<div class="grid"><div class="stat"><span class="k">조작 가능한 기능</span><span class="v">67개</span><span class="note">아는 앱 19개</span></div><div class="stat"><span class="k">자동 테스트</span><span class="v">84파일 · 3327건</span><span class="note">가짜 환경(mock) · 실패 0</span></div><div class="stat"><span class="k">같은 명령 응답</span><span class="v">0.09초 (AI는 9.25초)</span><span class="note">캐시가 받으면 AI를 안 부른다</span></div><div class="stat"><span class="k">말 거는 방법</span><span class="v">버튼 · 단축키 · 호출어 셋 다</span><span class="note">셋 다 됩니다</span></div></div>
+
+<h2><span class="n">3</span>어떻게 도는가</h2>
+<div class="card">
+<table>
+<tr><th>①</th><td><b>깨어난다</b> — 호출어 · 🎙️ 버튼 · 단축키. 창은 안 뜨고 접힌 채로 듣습니다</td></tr>
+<tr><th>②</th><td><b>알아듣는다</b> — 녹음을 글자로(STT). <b>말이 끝났는지</b>를 크기와 «사람 말인가»
+    두 가지로 판단해서 끊습니다</td></tr>
+<tr><th>③</th><td><b>정한다</b> — 자주 쓰는 말이면 <b>캐시가 바로</b>(0.09초 (AI는 9.25초)) 답하고,
+    처음 보는 말이면 AI가 어떤 기능을 쓸지 고릅니다</td></tr>
+<tr><th>④</th><td><b>되돌릴 수 없는 일이면 먼저 묻습니다</b> — 7개만 물어봅니다 (파일·폴더 삭제 · 화면 클릭 · 앱 강제 종료 · 덮어쓰기 · 파일 이동 · 이름 변경)</td></tr>
+<tr><th>⑤</th><td><b>한다, 그리고 확인한다</b> — 실제로 됐는지 보고, <b>안 됐으면 안 됐다고 말합니다</b></td></tr>
+</table>
+</div>
+
+<h2><span class="n">4</span>남들과 다른 점</h2>
+<div class="card">
+<table>
+<tr><th>직접 한다</th><td>알려 주는 것이 아니라 <b>실행</b>합니다. 그래서 «되돌릴 수 있나»가
+    설계의 중심입니다</td></tr>
+<tr><th>정직하게 말한다</th><td>못 한 것을 했다고 하지 않습니다. 도구를 안 불렀는데
+    «✓ 했어요»라고 말하는 길을 <b>코드가 막습니다</b></td></tr>
+<tr><th>인터넷이 끊겨도</th><td>자주 쓰는 명령은 <b>65.0% (컴퓨터 안 기능만 100%)</b> 돕니다 —
+    ⚠️ 차별점이라고 말하지 않습니다(윈도우 음성 액세스도 오프라인입니다)</td></tr>
+<tr><th>부르는 길이 셋</th><td>버튼 · 단축키 · 호출어 셋 다. 시끄러운 곳에서는 버튼이 확실합니다 —
+    <b>약점이 아니라 선택</b>입니다</td></tr>
+</table>
+</div>
+
+<h2><span class="n">5</span>지금 약한 곳 (숨기지 않습니다)</h2>
+<div class="card">
+<table>
+<tr><th>호출어 놓침</th><td>약 80% → 15.2% (10/01 운용점)</td></tr>
+<tr><th>호출어 헛깨어남</th><td>시간당 264회 → 15회 (10/01) · 목표는 1회</td></tr>
+</table>
+<p class="sub">🔑 그래서 <b>버튼·단축키를 같이 넣었습니다</b> — 누르지 않으면 안 깨니까
+   헛깨어남이 <b>구조적으로 0</b> 입니다.</p>
+</div>
+
+<h2><span class="n">6</span>남은 결함 16건</h2>
+<p class="sub">🔴 즉시 · 🟡 TODO · 🔵 결정 대기 — 상세는 <code>docs/BACKLOG.md</code></p>
+<div class="card"><div class="bl"><span class="num b">🔵 BL-82</span><span class="t">2026-10-01 신설 · 🎤 답이 나온 직후 빈 녹음이 한 번 더 열린다</span></div><div class="bl"><span class="num a">🟡 BL-83</span><span class="t">2026-10-02 신설 · 🧱 UI 자동 검사가 «코드가 아닌 것»을 못 본다</span></div><div class="bl"><span class="num a">🟡 BL-80</span><span class="t">2026-09-29 신설 · 📅 «오늘은 일정이 없어요». 🔻 2026-09-30 강등 — 재현 안 됨</span></div><div class="bl"><span class="num a">🟡 BL-75</span><span class="t">2026-09-28 신설 · 🖱 «어디 있어?» 한 마디로 `find_ui_element` 와</span></div><div class="bl"><span class="num a">🟡 BL-74</span><span class="t">2026-09-25 신설 · 🔑 구글 토큰이 만료됐을 때 할 일을 안 알려준다</span></div><div class="bl"><span class="num a">🟡 BL-72</span><span class="t">2026-09-25 신설 · ⏳ 약속이 서버 수명을 못 넘는다</span></div><div class="bl"><span class="num a">🟡 BL-73</span><span class="t">2026-09-25 신설 · 🔔 알림이 Windows 토스트가 아니다</span></div><div class="bl"><span class="num a">🟡 BL-71</span><span class="t">2026-09-24 신설 · 📏 도구를 더 늘리기 전에</span></div><div class="bl"><span class="num a">🟡 BL-70</span><span class="t">2026-09-24 신설 · ⏭️ 접근성이 못 보는 자리에 남아 있다</span></div><div class="bl"><span class="num a">🟡 BL-68</span><span class="t">2026-09-23 실기 신설 · ⏭️ 2-2(응답 품질)에서 같이 본다</span></div><div class="bl"><span class="num b">🔵 BL-65</span><span class="t">2026-09-21 신설 · ⏸️ 9/23 이후 결정. 🚨 동적 학습의 기여가 2.6%인데 사고는 3건이다</span></div><div class="bl"><span class="num b">🔵 BL-66</span><span class="t">2026-09-21 신설 · ⏸️ 10/31 실사용. 🚨 오매칭률을 세는 자리가 없다</span></div><div class="bl"><span class="num a">🟡 BL-62</span><span class="t">(2026-09-19) — 미해결. 학습은 코어를 다 쓰는데 평가는 아직 하나만 쓴다</span></div><div class="bl"><span class="num a">🟡 BL-55</span><span class="t">(2026-09-14 2차 리허설) — 미해결. `get_running_apps`가 프로세스를 센다</span></div><div class="bl"><span class="num a">🟡 BL-56</span><span class="t">(2026-09-14 2차 리허설) — 미해결. *"지금까지 한 거 뭐 했는지 정리해 줄래"* →</span></div><div class="bl"><span class="num a">🟡 BL-40</span><span class="t">(2026-09-11 사용자 지적 · A안 적용) — 파일 N개를 지우려면 승인을 N번 해야 한다</span></div></div>
+
+<h2><span class="n">7</span>어기면 깨지는 것 11가지</h2>
+<p class="sub">개발할 때 지키는 규칙입니다. 배경은 <code>CLAUDE.md</code> 에.</p>
+<div class="card"><ul><li>그래프 노드를 async로 바꾸지 말 것</li><li>`fast_path` 히트를 조기 return으로 "최적화"하지 말 것</li><li>히스토리를 슬라이스로 자르지 말 것</li><li>`.env` 변경 후 `get_settings.cache_clear()`</li><li>`services/`·`electron-ui/`를 `src/` 같은 폴더로 감싸지 말 것</li><li>"이번 턴"을 판단할 땐 `current_turn_messages()`를 쓸 것</li><li>테스트에서 소스를 열 땐 `encoding="utf-8"`를 붙일 것</li><li>`/voice`의 `thread_id`·`use_tts`에서 `Form(...)`을 빼지 말 것</li><li>클릭 도구에 좌표 인자(`x`, `y`)를 추가하지 말 것</li><li>`main.py`의 `allow_origins=["null"]`과 OPTIONS 면제를 "정리"하지 말 것</li><li>계획 상태(`plan`/`plan_cursor`)를 턴 너머로 새게 하지 말 것</li></ul></div>
+
+<footer>
+  다시 만들기 — <code>python scripts/build_overview.py</code> ·
+  낡았는지만 보기 — <code>python scripts/build_overview.py --check</code><br>
+  개발용 한 장은 <a href="작업_진행판.html">작업 진행판</a> 입니다.
+</footer>
+
+</div>
+</body>
+</html>
