@@ -146,9 +146,16 @@ _ADDED = [
     Case("보내기 전에 개인정보 있나 봐줘",             "scan_sensitive",     "입력", False),
     Case("확인 버튼 눌러줘",                           "click_ui_element",   "입력", False),
 
+    # ── 구글 연결 (🆕 BL-84 · 2026-10-02 — 막히면 **LLM 이 직접 연다**)
+    Case("구글 계정 연결해줘",                        "connect_google", "구글 연결", False),
+
     # ── 일정 (🆕 읽기가 2026-09-24 도구 · §4-① «쓰기는 있는데 읽기가 없다»의 짝)
     Case("내일 오후 3시에 팀 회의 잡아줘",             "create_calendar_event", "일정", False),
     Case("오늘 일정 뭐 있어?",                         "list_calendar_events",  "일정", False),
+    # 🚨 **고치기가 없어서 일정이 둘이 됐다**(BL-88 · 2026-10-02 실기).
+    #   *"3시간으로 수정해 줘"* 에 모델이 `create` 를 또 불렀다 — 게으른 게 아니라
+    #   **«고치기»를 할 수단이 원리적으로 없었다.**
+    Case("아까 만든 캡스톤 일정 3시간으로 바꿔줘",     "update_calendar_event", "일정", False),
 
     # ── 메일 (🆕 셋 다 새 도구 · 🔒 보내는 도구는 **아예 없다**)
     Case("밤새 온 메일 있어?",                         "list_emails", "메일", False),

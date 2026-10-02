@@ -53,6 +53,7 @@ GROUPS: list[tuple[str, str, str]] = [
     ("tools.vision",      "화면 보기", "화면을 읽고 «그거 어딨지»를 짚어 줍니다"),
     ("tools.input_control", "대신 입력하기", "글자를 치고 눌러 줍니다"),
     ("tools.background",  "나중에 알려주기", "지금 말고 **이따가** 할 일을 맡아 둡니다"),
+    ("tools.google_auth", "구글 연결", "일정·메일을 쓰려면 한 번 로그인이 필요합니다"),
     ("tools.calendar",    "일정", "구글 캘린더를 읽고 적습니다"),
     ("tools.gmail",       "메일", "읽고 보냅니다. 🔒 보내는 길은 두 겹으로 막혀 있습니다"),
     ("tools.weather",     "날씨", "링크가 아니라 **값으로** 답합니다"),

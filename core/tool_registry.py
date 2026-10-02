@@ -76,9 +76,11 @@ def get_all_tools() -> List[BaseTool]:
         click_ui_element,
         scan_sensitive,
     )
+    from tools.google_auth import connect_google
     from tools.calendar import (
         create_calendar_event,
         list_calendar_events,
+        update_calendar_event,
     )
     from tools.gmail import (
         list_emails,
@@ -173,8 +175,17 @@ def get_all_tools() -> List[BaseTool]:
         scan_sensitive,
         # 캘린더 — 🔑 **읽기·쓰기 한 쌍.** 읽기가 없으면 *"오늘 일정 뭐야"* 가
         # LLM 잡담으로 끝나고, 그러다 없는 일정을 지어낸다(BL-60·61 과 같은 모양).
+        # 🔑 **연결을 LLM 이 건다**(BL-84 · 2026-10-02 실기). 예전엔 막히면
+        #   *"터미널에서 직접 돌리세요"* 로 **사용자에게 떠넘겼다.**
+        #   🚨 브라우저를 **기다리지 않는다** — 기다리면 턴이 멈춘다(BL-69).
+        connect_google,
         create_calendar_event,
         list_calendar_events,
+        # 🚨 **고치기**(BL-88 · 2026-10-02 실기) — 없으면 «수정»이 **원리적으로
+        #   불가능**해서 모델이 할 수 있는 유일한 일(새로 만들기)을 하고 **일정이
+        #   둘이 된다.** 🔑 지우는 도구는 일부러 안 만들었다 — 고칠 수 있으면
+        #   «지우고 새로 만들기»가 필요 없다.
+        update_calendar_event,
         # 📧 메일 — **읽기만 한다.** 권한(`gmail.readonly`)과 도구 목록이 **둘 다**
         #   그 경계를 진다. 🚨 `gmail_send` 는 **아예 만들지 않았다** — 권한만 조이면
         #   나중에 범위를 넓히는 순간 도구가 생기고, 도구만 없애면 권한이 남는다.
