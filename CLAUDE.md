@@ -128,6 +128,7 @@ python tests/test_plan_node.py    # 82/82   ← 계획 전체(M3·M3-1·M3-2·BL
 python tests/test_find_file.py    # 61/61   ← 파일 찾기(BL-07·BL-31·D-01a)
 python tests/test_bl53_stt_echo.py # 31/31  ← 승인이 STT 반추에 안 깨진다(BL-53)
 python tests/test_llm_config.py   # 6/6     ← 모델 thinking을 끈 채로 둔다(BL-57)
+python tests/test_bl63_target_gate.py # 54/54 ← 대상이 빈 말이 특정 앱으로 안 굳는다(BL-63)
 python tests/test_tool_eval_cases.py # 30/30 ← 📏 **도구를 늘리면 평가 문장도 늘게 강제**(BL-71)
 
 python scripts/run_mock_suite.py  # 합계는 항상 이걸로 센다 (숫자는 여기 안 적는다)
