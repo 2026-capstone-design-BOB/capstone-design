@@ -469,6 +469,57 @@ def by(rows, field):
     return sorted(out.items())
 
 
+#: 본인 이름. **이 이름만 그대로 두고 나머지 화자는 「화자 A·B·C…」 로 바꾼다.**
+#: `.env` 가 아니라 환경변수로 둔 이유 — 이건 설정이 아니라 **이 저장소의 공개 정책**이다.
+SELF_SPEAKER = os.getenv("EVAL_SELF_SPEAKER", "변소윤")
+
+
+def _anon_label(i: int) -> str:
+    """0→'화자 A' … 25→'화자 Z' … 26→'화자 AA'. 26명을 넘겨도 안 겹친다."""
+    out = ""
+    i += 1
+    while i:
+        i, r = divmod(i - 1, 26)
+        out = chr(ord("A") + r) + out
+    return f"화자 {out}"
+
+
+def anonymize_rows(rows, self_name: str = None):
+    """결과 아티팩트에서 **남의 실명을 지운다.** 바꾼 rows 를 돌려준다(원본 유지).
+
+    🚨 **왜 이게 코드에 있나** — 2026-09-18 에 «녹음 참여자 3명의 개인별 인식률이
+      실명으로» 공개 저장소에 올라간 적이 있다. 그때는 **손으로 고쳤고**,
+      2026-10-02 에 **같은 일이 새 파일로 또 일어났다**(이 스크립트의 `--json` 산출물에
+      화자별 CER 이 실명으로 200줄). 손으로 고치는 것은 다음 번에 또 샌다.
+      🔑 **이 저장소가 세 번 배운 것과 같은 모양이다 — 보장하는 건 구조다.**
+
+    🔑 **대응표를 저장소에 두지 않는다.** 이름 목록을 코드에 적으면 그게 곧 대응표다.
+      그래서 **이름을 적지 않고** 자료에 실제로 나온 화자를 가나다순으로 세어
+      그 자리에서 A·B·C 를 붙인다.
+
+    ⚠️ Zeroth 코퍼스의 **숫자 화자 id**(`'104'`)는 그대로 둔다 — 공개 코퍼스의
+      식별자라 개인을 가리키지 않고, 바꾸면 원자료와 대조할 수 없다.
+    """
+    self_name = SELF_SPEAKER if self_name is None else self_name
+    names = sorted({str(r.get("speaker")) for r in rows
+                    if r.get("speaker") and str(r["speaker"]) != self_name
+                    and not str(r["speaker"]).isdigit()})
+    if not names:
+        return list(rows)
+    table = {n: _anon_label(i) for i, n in enumerate(names)}
+    out = []
+    for r in rows:
+        r = dict(r)
+        who = str(r.get("speaker") or "")
+        if who in table:
+            r["speaker"] = table[who]
+            sid = str(r.get("id") or "")
+            if sid.startswith(who):          # 'ㅇㅇㅇ#03' → '화자 A#03'
+                r["id"] = table[who] + sid[len(who):]
+        out.append(r)
+    return out
+
+
 def report(rows, engines):
     if not rows:
         print("\n측정할 표본이 없습니다.")
@@ -592,7 +643,9 @@ def main():
                                             if r["_source"] == src and r["engine"] == e])
                               for e in fns}
                         for src, _ in by(rows, "_source")},
-                "발화": rows,
+                # 🔒 남의 실명은 **파일로 나가지 않는다** (위 anonymize_rows 참조).
+                #   화면 출력은 그대로 둔다 — 그건 로컬이고, 누가 누군지 봐야 한다.
+                "발화": anonymize_rows(rows),
             }, f, ensure_ascii=False, indent=1)
         print(f"\n💾 {args.json}")
     return 0
