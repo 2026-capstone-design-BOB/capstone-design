@@ -441,6 +441,9 @@ feature/byeonsoyun  →  develop  →  main
 - [ ] **[BACKLOG.md](BACKLOG.md)** — 새로 발견한 결함을 BL 번호로 신설, 해결된 건 이동
 - [ ] **[README.md](README.md) 상태표** — 테스트 개수·실측 결과. **숫자의 유일 출처다**
 - [ ] 새 문서를 만들었으면 [README.md](README.md) 인덱스에 추가
+- [ ] 🆕 **작업 진행판을 다시 만든다** — `python scripts/build_board.py`
+      (안 해도 `tests/test_board.py` 가 잡는다. 🔑 **보드는 요약을 한 장에 모은 것이라**
+       이 저장소가 네 번 데인 «복사본이 낡는» 모양이다 — 그래서 손으로 안 쓴다)
 
 #### 🆕 3-A. 팀원 쪽 — **아래 셋 중 하나라도 걸리면 `teamwork/`도 같이 고친다**
 

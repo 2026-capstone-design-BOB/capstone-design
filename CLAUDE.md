@@ -43,6 +43,7 @@ FastAPI 서버(:8765) + Electron 오버레이 UI + LangGraph `StateGraph` 에이
 | 알고 싶은 것 | 문서 |
 |---|---|
 | **지금 뭘 해야 하나 (체크리스트)** | [docs/TASKS.md](docs/TASKS.md) ← **여기부터** |
+| 🆕 **개발하면서 옆에 띄워 둘 한 장** | [docs/작업_진행판.html](docs/작업_진행판.html) — **생성물입니다.** `python scripts/build_board.py` |
 | **어디로 가는가 (학기 목표)** | [docs/ROADMAP.md](docs/ROADMAP.md) |
 | **전체 문서 지도 · 작업별 라우팅** | [docs/README.md](docs/README.md) |
 | 뭘 어디에 두는가 · 새 파일 배치 | [docs/STRUCTURE.md](docs/STRUCTURE.md) |
