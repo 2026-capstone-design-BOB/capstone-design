@@ -50,11 +50,42 @@ function createWindow() {
   mainWindow.on('close', e => { if (!forceQuit) e.preventDefault(); });
 }
 
+// 🚨 **사용자가 옮겨 놓은 자리를 기억한다** (BL-85 · 2026-10-02 실기).
+//
+//   예전엔 여기서 `getPos()` 를 불러 **화면 하단 중앙을 매번 다시 계산**했다.
+//   그래서 창을 끌어다 옮겨 놔도 **접었다 펴면 제자리로 돌아갔다** — 옮긴 자리를
+//   아무도 기억하지 않았다.
+//
+// 🔑 **«아래 가운데»를 고정점으로 삼는다.** 접힌 알약과 펼친 창은 너비·높이가
+//   다른데, 왼쪽 위를 맞추면 펼칠 때 오른쪽 아래로 흘러내리고, 가운데를 맞추면
+//   아래로 자란다. 이 UI 는 **화면 아래쪽에 두고 쓰는 물건**이라 아래 가장자리가
+//   제자리에 있는 것이 자연스럽다.
+function anchorBounds(cur, w, h) {
+  // 지금 창의 **아래 가운데**가 그대로 있도록 새 좌표를 만든다.
+  return {
+    x: Math.round(cur.x + cur.width / 2 - w / 2),
+    y: Math.round(cur.y + cur.height - h),
+    width: w, height: h,
+  };
+}
+
+// 🚨 **화면 밖으로 내보내지 않는다.** 모니터를 뽑았거나 해상도가 바뀌었거나,
+//   가장자리에 바짝 붙여 둔 채 창이 커지면 **창이 안 보이게 된다** — 그러면
+//   사용자는 프로그램이 죽은 줄 안다. 되돌릴 방법도 눈에 안 보인다.
+function clampToArea(b, area) {
+  const x = Math.min(Math.max(b.x, area.x), area.x + area.width - b.width);
+  const y = Math.min(Math.max(b.y, area.y), area.y + area.height - b.height);
+  return { x: Math.round(x), y: Math.round(y), width: b.width, height: b.height };
+}
+
 function resizeTo(mode) {
   if (!mainWindow) return;
   const { w, h } = SIZE[mode];
-  const pos = getPos(w, h);
-  mainWindow.setBounds({ x: pos.x, y: pos.y, width: w, height: h }, true);
+  const cur = mainWindow.getBounds();
+  // 🔑 **지금 창이 올라가 있는 모니터**의 작업 영역을 쓴다. 주 모니터로 고정하면
+  //   보조 모니터에 올려 둔 창이 펼칠 때 주 모니터로 튀어 간다.
+  const area = screen.getDisplayMatching(cur).workArea;
+  mainWindow.setBounds(clampToArea(anchorBounds(cur, w, h), area), true);
 }
 
 // 웨이크워드용 python 찾기
