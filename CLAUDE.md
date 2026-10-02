@@ -44,7 +44,9 @@ FastAPI 서버(:8765) + Electron 오버레이 UI + LangGraph `StateGraph` 에이
 |---|---|
 | **지금 뭘 해야 하나 (체크리스트)** | [docs/TASKS.md](docs/TASKS.md) ← **여기부터** |
 | 🆕 **개발하면서 옆에 띄워 둘 한 장** | [docs/작업_진행판.html](docs/작업_진행판.html) — **생성물입니다.** `python scripts/build_board.py` |
-| 🆕 **남에게 보여줄 설명 한 장** | [docs/시스템_전체_설명.html](docs/시스템_전체_설명.html) — **생성물입니다.** `python scripts/build_overview.py` |
+| 🆕 **남에게 보여줄 설명 한 장** | [docs/시스템_전체_설명.html](docs/시스템_전체_설명.html) — **생성물입니다** |
+| 🆕 **지금 할 수 있는 일 전부** | [docs/전체_기능_설명.html](docs/전체_기능_설명.html) — **코드에서 생성됩니다** |
+| 🆕 **생성 문서를 다시 만들기** | `python scripts/build_docs.py` (셋 다) · `--check` 로 낡았는지만 |
 | **어디로 가는가 (학기 목표)** | [docs/ROADMAP.md](docs/ROADMAP.md) |
 | **전체 문서 지도 · 작업별 라우팅** | [docs/README.md](docs/README.md) |
 | 뭘 어디에 두는가 · 새 파일 배치 | [docs/STRUCTURE.md](docs/STRUCTURE.md) |
