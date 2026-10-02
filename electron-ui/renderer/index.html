@@ -1902,8 +1902,8 @@
       ok ? ring.classList.add('listening') : ring.classList.remove('listening');
       // 🔑 안내문을 **여기서 직접 쓰지 않는다.** 세 곳이 각자 쓰고 있어서
       //   단축키를 바꿔도 어떤 경로로 들어오면 옛 문구가 그대로 남았다.
-      if (ok) setIdleHint(document.getElementById('hotkey-select')?.value);
-      else document.getElementById('idle-hint').textContent = '서버 연결 중…';
+      connOk = ok;              // 🔑 상태만 바꾸고 **다시 그리라고 말한다**
+      refreshIdle();
     }
 
     // ── 내보내기 / 가져오기 (M6) ───────────────────────────────────
@@ -2108,14 +2108,14 @@
       hotkeyDefault = data.hotkey_default || hotkeyDefault;
       const hk = data.hotkey || hotkeyDefault;
       fillHotkeyChoices(data.hotkey_choices, hk);
-      setIdleHint(hk);
+      refreshIdle();
       // 🚨 **읽기만 하고 끝내지 않는다.** `main.js` 는 서버를 모르므로, 저장해 둔
       //   키를 실제로 잡는 것은 이 순간뿐이다. 실패하면 그것도 말한다.
       window.pluiz.setHotkey(hk).then(r => {
         if (r && !r.ok) {
           setHotkeyStatus(`⚠️ ${hk} 를 다른 프로그램이 쓰고 있어요` +
             (r.hotkey ? ` — ${r.hotkey} 로 부를 수 있어요` : ''), 'err');
-          if (r.hotkey) setIdleHint(r.hotkey);
+          refreshIdle();
         }
       }).catch(() => {});
     }
@@ -2136,13 +2136,27 @@
       el.className = 's-status' + (cls ? ' ' + cls : '');
     }
 
-    /** 대기 화면 안내. 🔑 **«창 여는 법»과 «말 거는 법»은 다른 일이다**(2026-10-02).
-     *  여기 말고는 단축키가 적힌 데가 없다. */
-    function setIdleHint(hotkey) {
-      const el = document.getElementById('idle-hint');
-      if (!el) return;
-      if (el.textContent.includes('로딩') || el.textContent.includes('중…')) return;
-      el.textContent = `말하기 ${hotkey || hotkeyDefault} · 창 더블클릭`;
+    // 🚨 **글자를 보고 판단하지 않는다** (2026-10-02 실기 3차).
+    //
+    //   여기에는 *"지금 글자에 「중…」이 들어 있으면 건드리지 않는다"* 는 가드가
+    //   있었다. 바쁜 표시를 덮어쓰지 않으려던 것인데, **그 가드가 자기 자신을 막았다** —
+    //   「생각하는 중…」을 지우러 온 호출이 **「중…」에 걸려 되돌아갔고**, 그래서
+    //   답을 받은 뒤에도 그 글자가 영영 남았다.
+    //
+    // 🔑 **쓰는 곳이 셋이었던 것이 뿌리다**(연결 상태 · 호출어 상태 · 단축키).
+    //   셋이 각자 «지금 덮어써도 되나»를 글자로 추측했다. 그래서 **글자를 만드는
+    //   곳을 하나로** 하고, 나머지는 **상태만 바꾸고 다시 그리라고 말한다.**
+    let connOk = false, wakeReady = false;
+
+    /** 대기 화면 한 줄. **오직 상태만 본다.** 우선순위가 곧 이 함수다. */
+    function idleLine() {
+      const hk = document.getElementById('hotkey-select')?.value || hotkeyDefault;
+      if (isRec) return '듣는 중…';
+      if (busy) return '생각하는 중…';
+      if (!connOk) return '서버 연결 중…';
+      // 🔑 호출어가 로딩 중이어도 **버튼과 단축키는 이미 쓸 수 있다.**
+      if (!wakeReady) return `호출어 로딩 중… (🎙️ · ${hk} 는 지금도 돼요)`;
+      return `말하기 ${hk} · 창 더블클릭`;
     }
 
     /** 고를 수 있는 단축키로 목록을 채운다. 🔑 목록은 **서버가 준다.** */
@@ -2189,14 +2203,14 @@
         const applied = await window.pluiz.setHotkey(data.hotkey);
         if (applied && applied.ok) {
           setHotkeyStatus(`✓ 이제 ${data.hotkey} 로 부를 수 있어요`, 'ok');
-          setIdleHint(data.hotkey);
+          refreshIdle();
         } else {
           const kept = applied && applied.hotkey;
           setHotkeyStatus(
             `⚠️ ${data.hotkey} 는 다른 프로그램이 쓰고 있어요` +
             (kept ? ` — 그대로 ${kept} 로 부를 수 있어요` : ' — 다른 키로 해 보세요'),
             'err');
-          if (kept) setIdleHint(kept);
+          refreshIdle();
         }
       } catch (e) {
         setHotkeyStatus('오류: ' + e.message, 'err');
@@ -2393,33 +2407,20 @@
       startMic();                 // 표시는 `startMic()` 안에서 상태를 보고 켜진다
     }
 
-    // 🚨 **표시를 손으로 켜고 끄지 않는다** (2026-10-02 실기 2차).
-    //   `sendVoice()` 는 **녹음이 너무 짧으면 try 에 들어가기 전에 return** 한다.
-    //   그 길에는 `finally` 가 없어서, 손으로 켠 「생각하는 중…」이 **영영 남았다** —
-    //   사용자는 아무것도 안 했는데 대기 화면이 그렇게 보였다.
+    // 🚨 **표시를 손으로 켜고 끄지 않는다** (2026-10-02 실기 2차·3차).
+    //   `sendVoice()` 는 녹음이 너무 짧으면 **try 에 들어가기도 전에 return** 한다.
+    //   그 길에는 `finally` 가 없어서, 손으로 켠 「생각하는 중…」이 영영 남았다.
     //
-    // 🔑 그래서 **진짜 상태(`isRec`·`busy`)에서 끌어온다.** 길이 몇 개든,
-    //   새 길이 생기든, 표시는 어긋날 수 없다. (`setBusy()` 가 이걸 부른다)
+    // 🔑 그래서 **진짜 상태(`isRec`·`busy`)에서 끌어온다.** 길이 몇 개든, 새 길이
+    //   생기든 표시는 어긋날 수 없다. (`setBusy()` 가 이걸 부른다)
     function refreshIdle() {
-      if (isActive) return;        // 펼쳐져 있으면 접힌 표시는 쓰이지 않는다
-      setIdleBusy(isRec ? 'listening' : (busy ? 'processing' : ''));
-    }
-
-    /** 접힌 상태의 «지금 무슨 일이 일어나는지». 펼친 창에는 따로 UI 가 있다. */
-    function setIdleBusy(mode) {
-      const ring = document.getElementById('logo-ring');
       const hint = document.getElementById('idle-hint');
-      if (!ring || !hint) return;
+      if (hint) hint.textContent = idleLine();
+      const ring = document.getElementById('logo-ring');
+      if (!ring) return;
       ring.classList.remove('rec', 'proc');
-      if (mode === 'listening') {
-        ring.classList.add('rec');
-        hint.textContent = '듣는 중…';
-      } else if (mode === 'processing') {
-        ring.classList.add('proc');
-        hint.textContent = '생각하는 중…';
-      } else {
-        setIdleHint(document.getElementById('hotkey-select')?.value);
-      }
+      if (isRec) ring.classList.add('rec');
+      else if (busy) ring.classList.add('proc');
     }
 
     function deactivate() {
@@ -2867,14 +2868,8 @@
 
     // BUG-08: ready/loading 상태를 UI에 실제로 반영
     window.pluiz.onWakewordStatus(s => {
-      const el = document.getElementById('idle-hint');
-      // 🔑 «부르는 법»을 한 문장에 다 적는다 — 호출어가 로딩 중이어도
-      //   버튼과 단축키는 **이미 쓸 수 있다.**
-      // 🔑 호출어가 로딩 중이어도 **버튼과 단축키는 이미 쓸 수 있다.**
-      el.textContent = s === 'ready'
-        ? `말하기 ${hotkeyDefault} · 창 더블클릭`
-        : `호출어 로딩 중… (🎙️ · ${hotkeyDefault} 는 지금도 돼요)`;
-      if (s === 'ready') setIdleHint(document.getElementById('hotkey-select')?.value);
+      wakeReady = (s === 'ready');   // 🔑 상태만 바꾸고 다시 그린다
+      refreshIdle();
     });
 
     // 🔑 **단축키는 호출어를 대신하는 웨이크 신호다** — 창을 열지도 닫지도 않는다.
