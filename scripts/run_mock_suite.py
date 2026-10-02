@@ -52,6 +52,14 @@ def _run(fname: str, env: dict) -> subprocess.CompletedProcess:
     )
 
 
+def _readme_text() -> str:
+    """README 상태표. 못 읽으면 빈 문자열 — **대조 때문에 스위트가 죽지 않는다.**"""
+    try:
+        with open(os.path.join(_ROOT, "docs", "README.md"), encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
 def main() -> int:
     quiet = "-q" in sys.argv
     as_md = "--md" in sys.argv
@@ -103,6 +111,18 @@ def main() -> int:
                 print(f"    - {f:30} {why}")
 
     print(f"\n전체 mock: {len(rows)}파일 · {n_pass}/{n_all}")
+    # 🚨 **README 상태표가 합계의 유일한 출처인데, 그걸 손으로 옮겨 적는다.**
+    #   그래서 네 번 어긋났다(2026-09-12·09-17·09-18·10-02). 2026-10-02 에는
+    #   **이 줄을 넣는 바로 그 세션에서 또 어긋났다** — 갱신 스크립트가 중간에
+    #   멈춰 숫자만 안 들어갔는데, 돌려 보기 전에는 아무도 몰랐다.
+    # 🔑 **재는 쪽이 적힌 쪽을 본다.** 고치지는 않는다 — 어느 쪽이 맞는지는
+    #   사람이 정한다(테스트를 일부러 뺀 날도 있다). 다만 **조용히 지나가지 않는다.**
+    _m = re.search(r"mock \*\*(\d+)파일 (\d+)개\*\*", _readme_text())
+    if _m and (int(_m.group(1)), int(_m.group(2))) != (len(rows), n_all):
+        print(f"{chr(10)}🚨 README 상태표와 어긋납니다 — 거기 적힌 값: "
+              f"{_m.group(1)}파일 {_m.group(2)}개")
+        print("   합계의 유일한 출처는 docs/README.md 상태표입니다. 거기를 고치세요.")
+        print("   (고친 뒤 `python scripts/build_board.py` 도 다시 돌리세요)")
 
     if failed:
         print(f"\n★ 실패 {len(failed)}파일")
