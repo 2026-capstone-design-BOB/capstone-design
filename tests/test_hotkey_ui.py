@@ -121,7 +121,7 @@ check("🚨 단축키가 창을 열지도 닫지도 않는다",
 check("호출어도 접힌 채로 듣는다", "wakeListen(true);" in ui)
 check("🎙️ 버튼도 같다", 'wakeListen(false)"' in ui)
 check("🔑 접힌 상태에 «지금 무슨 일인지»가 보인다 (안 보이면 반응이 없어 보인다)",
-      "function setIdleBusy" in ui and "듣는 중" in ui and "생각하는 중" in ui)
+      "function idleLine()" in ui and "듣는 중…" in ui and "생각하는 중…" in ui)
 
 # 🚨 **2026-10-02 실기 2차 — 아무것도 안 했는데 「생각하는 중…」이 남아 있었다.**
 #   `sendVoice()` 는 녹음이 너무 짧으면 **try 에 들어가기도 전에 return** 한다.
@@ -130,7 +130,8 @@ check("🔑 접힌 상태에 «지금 무슨 일인지»가 보인다 (안 보�
 #   길이 몇 개든, 새 길이 생기든 어긋날 수 없다.
 check("🚨 표시가 **상태에서 나온다** (`isRec`·`busy`)",
       "function refreshIdle" in ui
-      and "setIdleBusy(isRec ? 'listening' : (busy ? 'processing' : ''))" in ui)
+      and "if (isRec) return '듣는 중…';" in ui
+      and "if (busy) return '생각하는 중…';" in ui)
 check("🔑 `setBusy()` 가 표시를 **같이** 되돌린다 (빠뜨릴 자리가 없게)",
       "function setBusy(v) {" in ui
       and "refreshIdle();" in ui[ui.index("function setBusy(v) {"):
@@ -139,7 +140,29 @@ check("마이크가 **실패해도** 표시가 안 남는다 (finally 에서 다
       "micStarting = false;" in ui
       and "refreshIdle();        // 🚨 실패해도" in ui)
 check("🚨 손으로 켜는 자리가 **남아 있지 않다**",
-      "setIdleBusy('listening')" not in ui and "setIdleBusy('processing')" not in ui)
+      "setIdleBusy(" not in ui)
+
+# 🚨 **2026-10-02 실기 3차 — 답을 받은 뒤에도 「생각하는 중…」이 남아 있었다.**
+#   `setIdleHint()` 안에 *"지금 글자에 「중…」이 들어 있으면 건드리지 않는다"* 는
+#   가드가 있었다. 바쁜 표시를 덮어쓰지 않으려던 것인데 **그 가드가 자기 자신을 막았다** —
+#   지우러 온 호출이 「중…」에 걸려 되돌아갔다.
+# 🔑 **뿌리는 글자를 쓰는 곳이 셋이었던 것**이다(연결 상태 · 호출어 상태 · 단축키).
+#   셋이 각자 «지금 덮어써도 되나»를 **글자로 추측**했다.
+check("🚨 **글자를 보고 판단하지 않는다** (가드가 자기 자신을 막았다)",
+      ".textContent.includes(" not in ui)
+check("🔑 한 줄을 만드는 곳이 **하나다** (`idleLine()`)",
+      "function idleLine()" in ui)
+check("🚨 `idle-hint` 글자를 쓰는 자리가 **한 곳뿐이다**",
+      ui.count("hint.textContent = idleLine()") == 1
+      and ui.count("getElementById('idle-hint').textContent =") == 0,
+      "쓰는 곳이 둘 이상이면 또 서로를 덮어쓴다")
+check("🔑 다른 곳은 **상태만 바꾸고 다시 그리라고 말한다**",
+      "connOk = ok;" in ui and "wakeReady = (s === 'ready');" in ui)
+# 우선순위가 곧 그 함수다 — 녹음이 연결 상태보다 앞에 와야 «듣는 중»이 안 가려진다.
+_line = between(ui, "function idleLine()", "function fillHotkeyChoices")
+check("우선순위가 녹음 → 처리 → 연결 → 호출어 → 대기 순이다",
+      _line.index("isRec") < _line.index("busy") < _line.index("connOk")
+      < _line.index("wakeReady"))
 check("헛깨어남이 **사람이 연 창을 닫지 않는다**",
       "if (!recAuto || busy) return;" in ui
       and "deactivate()" not in between(ui, "function closeIfSpurious()", "function stopVad()"))
@@ -204,7 +227,7 @@ check("웨이크워드는 그대로 돈다", "startWakeword();" in mainjs)
 check("설정에 «말 거는 방법» 이 있다", "말 거는 방법" in ui)
 # 🚨 안내문을 세 곳이 각자 쓰고 있어서, 어떤 경로로 들어오면 옛 문구가 남았다.
 check("🔑 안내문이 **한 함수**에서만 만들어진다",
-      "function setIdleHint" in ui and ui.count("'더블클릭 · 🎙️'") == 0)
+      "function idleLine()" in ui and ui.count("'더블클릭 · 🎙️'") == 0)
 check("안내가 «말하기»와 «창 열기»를 갈라 말한다",
       "말하기 ${" in ui and "창 더블클릭" in ui)
 check("호출어 로딩 중에도 «지금도 돼요»라고 말한다", "는 지금도 돼요" in ui)

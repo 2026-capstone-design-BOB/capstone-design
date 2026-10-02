@@ -257,7 +257,7 @@ send_voice = between(ui, "async function sendVoice(blob)", "// ── 텍스트 
 wake_fn = between(ui, "window.pluiz.onWakeDetected", "window.pluiz.onWakewordStatus")
 toggle = between(ui, "function toggleMic()", "// 🚨 2026-09-09")
 close_fn = between(ui, "function closeIfSpurious()", "function stopVad()")
-wake_listen = between(ui, "function wakeListen(auto)", "/** 접힌 상태의")
+wake_listen = between(ui, "function wakeListen(auto)", "function refreshIdle")
 
 # 🔑 **2026-10-02 재정의** — 웨이크 신호(호출어·단축키·🎙️)는 **창을 열지 않는다.**
 #   창을 펴는 것은 더블클릭 전용이다. 그래서 «열었으니 닫는다»가 **«접힌 표시를
