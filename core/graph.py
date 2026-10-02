@@ -666,6 +666,12 @@ class PluizState(MessagesState):
     #   messages 외의 필드는 기존 셋과 같이 마지막 쓰기가 이긴다.
     plan: list[str]
     plan_cursor: int
+    # 「지금까지 뭐 했지?」의 **근거 기록**(BL-56). recap 노드가 적고 agent 가 쓴다.
+    #
+    # ⚠️ **리듀서를 붙이지 말 것 · 턴을 넘기지 말 것.** `plan` 과 똑같은 이유다
+    #   (절대규칙 11) — 지난 턴 기록이 남으면 이번 턴 답에 **지난 대화가 섞인다.**
+    #   `input_guard` 가 새 턴마다 지운다.
+    recap: str
 
 
 # ── 시스템 프롬프트 (날짜 갱신) ───────────────────────────────────
@@ -741,6 +747,17 @@ def build_system_prompt() -> str:
         "'그만 봐'·'감시 그만'처럼 중단을 요청하면 반드시 stop_watching을 호출하세요. "
         "부르지 않고 '중단했어요'라고 답하면 감시는 계속 돕니다. "
         "(다만 사용자가 요청하지 않았는데 스스로 감시를 시작하지는 마세요.)\n"
+        # 🚨 **BL-84 (2026-10-02 실기).** *"오늘 일정 알려줘"* 에 «터미널에서 직접
+        #    돌리세요»가 나갔다. 이제 `connect_google` 이 있으니 **모델이 열면 된다.**
+        #    ⚠️ **해야 할 일을 먼저, 제약을 뒤에** (BL-19 의 순서 규칙).
+        #    ⚠️ 이건 프롬프트라 **확률만 올린다.** 보장은 도구가 진다 —
+        #       그래서 `NEED_LOGIN` 에서 «사용자가 직접 하세요»를 **걷어냈다.**
+        #       모델이 안 불러도 **거짓말은 안 나간다**(상태만 말한다).
+        "구글 일정·메일이 '구글 로그인이 아직 안 됐어요'로 막히면 "
+        "connect_google을 호출해 연결 창을 여세요. "
+        "그 도구는 브라우저를 띄우기만 하고 바로 끝나니 '연결됐어요'라고 하지 말고, "
+        "허용을 누른 뒤 다시 말씀해 달라고 하세요. "
+        "사용자에게 터미널에서 직접 실행하라고 하지 마세요.\n"
         "이전 대화 맥락을 활용하세요. '그거', '아까 그거' 같은 지칭은 직전 대화를 참고해 해석하세요.\n"
         "사용자가 '안 됐어/안 열렸어/실행 안 됨'처럼 실패를 알리면, 같은 답을 반복하지 말고 "
         "get_running_apps로 실제 실행 여부를 확인한 뒤 다른 방법으로 다시 시도하세요. "
@@ -1102,6 +1119,74 @@ def needs_promise_retry(response: Any, *, in_plan: bool = False) -> bool:
     if _HONEST_FAIL_RE.search(text):
         return False
     return bool(_PROMISE_NOW_RE.search(text))
+
+
+# ── 🔑 연결이 막혔으면 **열어 준다** (BL-90 · 2026-10-02 실기) ─────
+#
+# 🚨 **BL-84 로 도구를 만들었는데, 실기에서 모델이 안 불렀다.**
+#
+#     👤 오늘 일정 알려줘
+#     🤖 구글 로그인이 아직 안 됐어요. 연결 창에서 한 번 로그인하면…
+#     🙋 *"구글 로그인 어떻게 하는지, 브라우저도 안 띄워주고 이상해.."*
+#
+#   도구도 있었고 시스템 프롬프트도 «connect_google 을 호출하세요»라고 적어 뒀다.
+#   **둘 다 있는데 안 불렀다.** 이 저장소가 반복해서 적어 둔 그 문장이 또 맞았다 —
+#   *«프롬프트는 확률을 올릴 뿐이고 보장하는 건 구조다»*.
+#
+# 🔑 그래서 BL-19(감시)·BL-35(약속)와 **같은 기계**를 쓴다: 이번 턴의 도구 결과가
+#   «로그인이 안 됐다»인데 연결 도구를 안 불렀으면 **한 번 강제로** 부른다.
+#   부를 도구가 **하나로 정해져 있어서**(`connect_google`) BL-19 처럼 `tool_choice`
+#   강제가 가능하다 — M-01 처럼 «뭘 부를지 모르는» 경우가 아니다.
+
+#: 🚨 `tools/google_auth.NEED_LOGIN` 의 일부다. **두 곳에 적힌 사실**이라 어긋날 수
+#   있어서, `tests/test_gmail.py` 가 **실제 문장에 이 조각이 들어 있는지** 센다.
+#   (core 가 tools 를 import 하면 순환이 생긴다 — 그래서 조각으로 두고 테스트로 묶었다)
+_NEED_LOGIN_MARK = "구글 로그인이 아직 안 됐어요"
+
+#: 연결을 여는 도구. 없으면(주입 안 됐으면) 이 기계는 통째로 안 돈다.
+_CONNECT_TOOL = "connect_google"
+
+
+def needs_connect_retry(messages: list[AnyMessage], response: Any) -> bool:
+    """이번 턴이 «로그인이 안 됐다»로 막혔는데 **연결을 안 열었나.**
+
+    ⚠️ **이번 턴만 본다**(절대규칙 6). 지난 턴에 막혔던 것을 지금 또 열면,
+      이미 로그인한 사용자에게 브라우저가 느닷없이 뜬다.
+    """
+    if getattr(response, "tool_calls", None):
+        return False                      # 이미 뭔가 부르는 중이면 안 끼어든다
+    turn = current_turn_messages(messages)
+    blocked = any(_NEED_LOGIN_MARK in _msg_text(m)
+                  for m in turn if isinstance(m, ToolMessage))
+    if not blocked:
+        return False
+    # 🔒 이번 턴에 **이미 열었으면** 또 열지 않는다. 창이 두 개 뜨면 어느 쪽을
+    #   봐야 할지 모르고, 포트가 겹쳐 **둘 다 실패**할 수 있다.
+    for m in turn:
+        for c in (getattr(m, "tool_calls", None) or []):
+            if c.get("name") == _CONNECT_TOOL:
+                return False
+    return True
+
+
+#: 연결 재시도에 얹는 지시. 🚨 **«연결됐다»고 말하지 말라**를 같이 적는다 —
+#  도구는 창을 띄우기만 하고, 허용을 누르는 건 사람이다.
+_CONNECT_DIRECTIVE = (
+    f"{_NL}{_NL}[지금 할 일] 구글 연결이 막혀 있어요. "
+    f"{_CONNECT_TOOL} 을 호출해 연결 창을 여세요. "
+    "사용자에게 터미널에서 직접 하라고 하지 마세요. "
+    "그 도구는 브라우저를 띄우기만 하므로 «연결됐어요»라고 하지 말고, "
+    "«허용»을 누른 뒤 다시 말씀해 달라고 하세요.")
+
+
+def with_connect_directive(msgs: list[AnyMessage]) -> list[AnyMessage]:
+    """`with_watch_directive` 와 **같은 규칙** — 시스템 메시지를 교체한다."""
+    out = list(msgs)
+    for i, m in enumerate(out):
+        if isinstance(m, SystemMessage):
+            out[i] = SystemMessage(content=_msg_text(m) + _CONNECT_DIRECTIVE)
+            return out
+    return [SystemMessage(content=_CONNECT_DIRECTIVE.strip())] + out
 
 
 def _tools_ran_this_turn(messages: list[AnyMessage]) -> bool:
@@ -1695,6 +1780,155 @@ class OfflineSkip(Exception):
     """
 
 
+# ── 「지금까지 뭐 했지?」 — 근거에서 만든다 (BL-56 · 2026-10-02) ───
+#
+# 🚨 **이 자리에 프롬프트 한 줄을 넣지 않았다.** 그 길(BACKLOG ⓐ)은 싸지만,
+#   이 저장소가 반복해서 적어 둔 «프롬프트는 확률을 올릴 뿐이고 보장하는 건 구조다»
+#   에 정면으로 걸린다. 그리고 여기서 틀리면 **«안 한 일을 했다고 말하는 것»** 이라
+#   BL-12·19·21·26 이 «요약»이라는 **새 입구로** 들어온다.
+#
+# 🔑 그래서 **기록을 코드가 만들고, 모델은 문장만 만든다.** 모델이 고칠 수 있는 건
+#   말투지 사실이 아니다. 도구를 새로 만들지도 않았다(ⓑ) — 상태를 보는 자리는
+#   이미 노드이고, 도구를 늘리면 평가 문장·기능 문서·README 도구 수가 같이 움직인다.
+
+#: 「언제까지」 — 범위를 가리키는 말. 이것만으로는 부족하다.
+_RECAP_SCOPE = ("지금까지", "여태", "여지껏", "이때까지", "아까부터",
+                "방금까지", "그동안", "오늘", "우리")
+
+#: 「무엇을」 — **행동이나 대화**를 가리키는 말. 🚨 「정리」·「요약」을 여기 넣지 않는다.
+#   *"지금까지 받은 파일 정리해줘"* 가 요약 요청으로 읽히면 **파일을 안 건드리고
+#   말만 하는** 턴이 된다. 동사가 아니라 **대상**을 본다.
+_RECAP_OBJECT = ("뭐 했", "뭘 했", "무엇을 했", "무슨 일", "한 거", "한 일",
+                 "한 것", "했던 거", "했던 일", "대화")
+
+#: 기록에 담는 턴 수의 상한. 넘으면 **넘었다고 말한다**(조용히 자르지 않는다).
+_RECAP_MAX_TURNS = 12
+
+
+def is_recap_request(text: Any) -> bool:
+    """*"지금까지 한 거 뭐 했는지 정리해 줄래"* 류인가.
+
+    🔒 **범위**와 **대상**이 **둘 다** 있어야 참이다. 하나만으로는 안 된다 —
+      *"오늘 날씨 알려줘"*(범위만) · *"그거 한 거 취소해"*(대상만) 가 걸리면
+      명령이 수다로 바뀐다. **놓치는 쪽이 안전하다**(놓치면 오늘과 같이 돈다).
+    """
+    t = str(text or "")
+    if not t:
+        return False
+    return (any(w in t for w in _RECAP_SCOPE)
+            and any(w in t for w in _RECAP_OBJECT))
+
+
+def _recap_call_line(name: str, args: Any) -> str:
+    """`open_app(app='메모장')` 처럼 — **무엇을 불렀는지**를 그대로 적는다."""
+    if not isinstance(args, dict) or not args:
+        return f"{name}()"
+    inner = ", ".join(f"{k}={v!r}" for k, v in list(args.items())[:3])
+    return f"{name}({inner})"
+
+
+def build_recap(messages: list[AnyMessage]) -> str:
+    """이번 thread 에서 **실제로 일어난 일**을 기록으로 만든다.
+
+    🚨 **절대규칙 6 의 의도된 예외다.** 다른 판단은 `current_turn_messages()` 로
+      이번 턴만 봐야 하지만, 여기서 묻는 것이 *"지금까지"* 라 **전체가 대상**이다.
+      그래서 이 함수는 **판단을 하지 않는다** — 읽어서 적기만 한다.
+
+    🔑 판정의 유일한 근거는 `ToolMessage` 의 내용이고, ✓/✗ 는
+      `core/tool_result.py` 가 가린다(읽는 쪽이 셋인데 규칙이 달랐던 BL-29 의 자리).
+      **모델이 ✗ 를 ✓ 로 바꿔 말할 재료가 기록에 없다.**
+    """
+    turns: list[list[str]] = []
+    said = ""
+    lines: list[str] = []
+    replied = ""
+
+    def _flush():
+        if said or lines:
+            # 🚨 **도구를 안 부른 턴도 «한 일»이다** (2026-10-02 실기).
+            #   예전엔 여기에 *"(도구를 부르지 않았습니다)"* 만 적었다. 그러니
+            #   *"저녁 메뉴 추천해 줘"* 가 **빈칸처럼 보였고 모델이 요약에서 뺐다** —
+            #   기록에는 있었는데 **뺄 만해 보이게 적은 것이 잘못**이었다.
+            #   🔑 잡담 턴에서는 **말한 것이 곧 한 일**이라 그 말을 적는다.
+            turns.append([said] + (lines or [f"    - (도구 없이 말로 답함) {replied}"]))
+
+    pending: dict[str, Any] = {}
+    for m in messages or []:
+        if isinstance(m, HumanMessage):
+            _flush()
+            said, lines, pending, replied = _msg_text(m).strip(), [], {}, ""
+            continue
+        if isinstance(m, AIMessage):
+            calls = getattr(m, "tool_calls", None) or []
+            if not calls:
+                replied = _msg_text(m).strip().replace(_NL, " ")[:60]
+            for c in calls:
+                cid = c.get("id") or ""
+                pending[cid] = (c.get("name") or "?", c.get("args") or {})
+            continue
+        if isinstance(m, ToolMessage):
+            body = _msg_text(m)
+            name, args = pending.pop(getattr(m, "tool_call_id", "") or "",
+                                     (getattr(m, "name", "") or "?", {}))
+            mark = "✗" if _tool_reported_failure(body) else "✓"
+            # 도구 결과가 이미 ✓/✗ 로 시작하면 **두 번 찍지 않는다** (보기만 나빠진다)
+            tail = body.strip().lstrip("✓✗").strip().replace(_NL, " ")[:60]
+            lines.append(f"    - {_recap_call_line(name, args)} {mark} {tail}")
+    _flush()
+
+    # 🔑 **지금 묻고 있는 턴은 뺀다.** 이 노드는 agent 보다 먼저 돌아서 마지막 턴이
+    #   «정리해 줘» 그 자체다. 그대로 두면 기록에 *"4. 사용자: 정리해 줘 — 도구 없음"*
+    #   이 남고, 모델이 **그것도 «한 일»로 센다.**
+    if turns and turns[-1][1:] == ["    - (도구 없이 말로 답함) "]:
+        turns = turns[:-1]
+    if not turns:
+        return ""
+
+    dropped = max(0, len(turns) - _RECAP_MAX_TURNS)
+    shown = turns[-_RECAP_MAX_TURNS:]
+    out = ["[이번 대화에서 실제로 일어난 일]"]
+    if dropped:
+        # 🚨 **조용히 자르지 않는다.** 자른 줄 모르면 «그게 전부»로 요약된다.
+        out.append(f"(앞의 {dropped}턴은 기록에서 빠졌습니다 — 그 부분은 모른다고 말하세요)")
+    for n, turn in enumerate(shown, 1):
+        head = turn[0] or "(말 없음)"
+        out.append(f"{n}. 사용자: {head}")
+        if len(turn) > 1:
+            out.extend(turn[1:])
+        else:
+            out.append("    - (도구를 부르지 않았습니다)")
+    return _NL.join(out)
+
+
+#: 기록을 시스템 자리에 붙일 때 같이 거는 규칙.
+#  ⚠️ **«요약해 주세요»라고만 쓰지 않는다** — 그러면 모델이 빈칸을 메운다.
+_RECAP_DIRECTIVE_HEAD = (
+    f"{_NL}{_NL}[지금 할 일] 사용자가 «지금까지 뭘 했는지»를 물었어요. "
+    "아래 기록은 **코드가 대화에서 그대로 읽어 적은 것**이에요.")
+_RECAP_DIRECTIVE_TAIL = (
+    f"{_NL}{_NL}규칙: 이 기록에 **있는 것만** 말하세요. "
+    "✗ 가 붙은 것은 **안 된 것**이니 됐다고 하지 마세요. "
+    "기록에 없는 것을 물으면 «그건 기록에 없어요»라고 말하세요. "
+    "🚨 도구를 안 부른 턴도 **한 일입니다** — 빼지 말고 같이 말하세요. "
+    "도구를 새로 부르지 말고, 짧게 말하세요.")
+
+
+def with_recap_directive(msgs: list[AnyMessage], recap: str) -> list[AnyMessage]:
+    """기록을 시스템 메시지에 덧붙인다. `with_watch_directive` 와 **같은 규칙**이다.
+
+    ⚠️ 뒤에 `SystemMessage` 를 새로 붙이지 않는다(Gemini 가 무시하거나 400).
+    """
+    if not recap:
+        return msgs
+    directive = _RECAP_DIRECTIVE_HEAD + _NL + _NL + recap + _RECAP_DIRECTIVE_TAIL
+    out = list(msgs)
+    for i, m in enumerate(out):
+        if isinstance(m, SystemMessage):
+            out[i] = SystemMessage(content=_msg_text(m) + directive)
+            return out
+    return [SystemMessage(content=directive.strip())] + out
+
+
 def build_pluiz_graph(
     *,
     llm: Any,
@@ -1785,9 +2019,9 @@ def build_pluiz_graph(
         if blocked:
             return {"messages": [AIMessage(content=reason)], "decision": "blocked",
                     "deletion_cancelled": False, "cancelled_noun": "", "visual_verified": False,
-                    "missing_targets": [], "plan": [], "plan_cursor": 0}
+                    "missing_targets": [], "plan": [], "plan_cursor": 0, "recap": ""}
         return {"decision": "", "deletion_cancelled": False, "cancelled_noun": "", "visual_verified": False,
-                "missing_targets": [], "plan": [], "plan_cursor": 0}
+                "missing_targets": [], "plan": [], "plan_cursor": 0, "recap": ""}
 
     def fast_path(state: PluizState) -> dict:
         """캐시/라우터 빠른 경로. 히트 시 결과를 messages에 기록(맥락 통합 핵심).
@@ -1813,6 +2047,11 @@ def build_pluiz_graph(
             #   정직함을 지는 자리는 `core/fast_path.py` 머리의 **계약 둘**이다.
             #   여기서 문자열을 손보지 말 것 — 손보면 그게 마지막 검사 없는 말이 된다.
             return {"messages": [AIMessage(content=str(result))], "decision": "fast_hit"}
+        # 🔑 **계획보다 먼저 본다**(BL-56). *"지금까지 한 거 정리해 줘"* 를 분해하면
+        #   «지금까지 한 것»과 «정리»가 두 단계가 되고, 두 번째 단계에서 모델이
+        #   **뭔가를 정리하는 도구**를 찾는다. 요약은 단계가 아니라 **읽는 일**이다.
+        if is_recap_request(text):
+            return {"decision": "to_recap"}
         if plan_decompose is not None and _is_plannable(text):
             return {"decision": "to_plan"}
         return {"decision": "to_agent"}
@@ -1840,6 +2079,30 @@ def build_pluiz_graph(
             return {}
         _plog.info("계획 %d단계 | %s", len(steps), " / ".join(steps))
         return {"plan": steps, "plan_cursor": 0}
+
+    def recap(state: PluizState) -> dict:
+        """이번 대화에서 **실제로 일어난 일**을 기록으로 적는다. 말은 하지 않는다. (BL-56)
+
+        🔑 `planner` 와 **같은 모양**이다 — agent 앞에서 상태에 적고, 실행(여기선 말하기)은
+          agent 가 한다. 그래서 이 노드도 **턴을 절대 죽이지 않는다**: 기록을 못 만들면
+          `{}` 하나로 수렴해 **오늘과 완전히 같은** 경로로 간다(그러면 모델이 예전처럼
+          *"못 한다"* 고 답할 수는 있어도, 없던 고장이 생기지는 않는다).
+
+        🚨 **여기서 요약문을 만들지 않는다.** 사실만 적는다 — 문장은 agent 가 만든다.
+          코드가 말을 지으면 그 말은 `output_guard` 의 그물을 **하나도 안 지난다**
+          (`fast_path` 머리의 감사 G-03 과 같은 자리).
+        """
+        try:
+            text = build_recap(state["messages"])
+        except Exception as e:                                # noqa: BLE001
+            _log.error("[BL-56] 기록 조립 실패(오늘 경로로 계속) | %s: %s",
+                       type(e).__name__, e)
+            return {}
+        if not text:
+            _log.info("[BL-56] 기록할 것이 없다 → 오늘 경로 그대로")
+            return {}
+        _log.info("[BL-56] 기록 %d줄을 근거로 넘긴다", text.count(_NL) + 1)
+        return {"recap": text}
 
     def agent(state: PluizState) -> dict:
         """LLM ReAct 추론 노드 (동기 invoke — interrupt 호환).
@@ -1870,6 +2133,10 @@ def build_pluiz_graph(
         in_plan = bool(plan) and cursor < len(plan)
         if in_plan:
             msgs = with_step_directive(msgs, plan, cursor)
+        # BL-56 — recap 노드가 적어 둔 **근거**가 있으면 시스템 자리에 붙인다.
+        #   ⚠️ 비어 있으면 `with_recap_directive` 가 **그대로 돌려준다** — 꺼진 경로가
+        #     글자 그대로 예전과 같다(planner·visual_check 와 같은 규칙).
+        msgs = with_recap_directive(msgs, str(state.get("recap") or ""))
         response = llm_with_tools.invoke(msgs)
 
         # BL-19: 감시 요청인데 도구를 안 불렀으면 **한 번만** 다시 묻는다.
@@ -1877,7 +2144,40 @@ def build_pluiz_graph(
         user_text = _last_human_text(state["messages"])
         # BL-78: «이번 턴»에 이미 도구가 돌았는지 — 절대규칙 6 대로 이번 턴만 본다.
         acted = _tools_ran_this_turn(state["messages"])
-        if needs_watch_retry(user_text, response, watching=is_watching(),
+        # BL-90: 구글 연결이 막혔는데 **연결 도구를 안 불렀으면** 한 번 강제한다.
+        # 🚨 BL-19 와 같은 기계다 — 다른 점은 **부를 도구가 처음부터 하나로
+        #   정해져 있다**는 것뿐이라 `tool_choice` 강제가 자연스럽다.
+        # ⚠️ **BL-19/35 보다 먼저 본다.** 연결이 막힌 턴은 그 둘의 조건에도 걸릴 수
+        #   있는데(«하겠다»고 말해 놓고 도구를 안 부른 모양), 그때 엉뚱한 도구를
+        #   강제하면 **막힌 이유를 영영 못 푼다.**
+        if needs_connect_retry(state["messages"], response):
+            _log.info("[BL-90] 로그인이 막혔는데 연결을 안 열었다 → 1회 강제 | 입력=%r",
+                      user_text)
+            retried = None
+            msgs_c = with_connect_directive(msgs)
+            forced = _forced_llm(_CONNECT_TOOL)
+            if forced is not None:
+                try:
+                    retried = forced.invoke(msgs_c)
+                except Exception as e:                        # noqa: BLE001
+                    _log.warning("[BL-90] 강제 호출 실패(%s: %s) → 설득 재시도로 폴백",
+                                 type(e).__name__, e)
+                    retried = None
+            if retried is None:
+                try:
+                    retried = llm_with_tools.invoke(msgs_c)
+                except Exception as e:                        # noqa: BLE001
+                    _log.warning("[BL-90] 재시도 실패(%s) — 원래 응답을 쓴다",
+                                 type(e).__name__)
+                    retried = None
+            if retried is not None and getattr(retried, "tool_calls", None):
+                response = retried
+            else:
+                # 🚨 **고쳐 쓰지 않는다.** 못 열었으면 원래 응답(«로그인이 안 됐어요»)이
+                #   그대로 나간다 — 그건 사실이고, 거짓말이 아니다.
+                _log.warning("[BL-90] 재시도에도 연결을 안 열었다 — 원래 응답을 그대로 둔다")
+
+        elif needs_watch_retry(user_text, response, watching=is_watching(),
                              acted_this_turn=acted):
             want = ("stop_watching" if _STOP_REQUEST_RE.search(user_text)
                     else "watch_screen")
@@ -2301,6 +2601,8 @@ def build_pluiz_graph(
         d = state.get("decision")
         if d == "fast_hit":
             return "output_guard"
+        if d == "to_recap":
+            return "recap"     # BL-56 — 기록을 적고 agent 로 간다
         if d == "to_plan":
             return "planner"   # plan_decompose가 없으면 이 값 자체가 만들어지지 않는다
         return "agent"
@@ -2367,7 +2669,11 @@ def build_pluiz_graph(
     # 계획 수립(M3)은 설정이 아니라 **주입 여부**로 켜진다. plan_decompose가 없으면
     # planner 노드도 엣지도 만들지 않는다 — visual_check(아래)와 완전히 같은 패턴이고,
     # 그래야 꺼진 경로가 글자 그대로 예전과 같다.
-    fast_dests = {"agent": "agent", "output_guard": "output_guard"}
+    # BL-56 — `recap` 은 **설정이 아니라 항상 있다.** planner·visual_verify 와 달리
+    #   주입 의존이 없고(상태만 읽는다) LLM 왕복도 안 쓴다.
+    g.add_node("recap", recap)
+    g.add_edge("recap", "agent")
+    fast_dests = {"agent": "agent", "output_guard": "output_guard", "recap": "recap"}
     agent_dests = {"tools": "tools", "hitl": "hitl", "output_guard": "output_guard"}
     if plan_decompose is not None:
         g.add_node("planner", planner)
