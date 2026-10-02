@@ -39,8 +39,10 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_ROOT, "scripts"))
 
 import glob  # noqa: E402
+import re  # noqa: E402
 import build_board as B  # noqa: E402
 import build_overview as O  # noqa: E402
+import build_features as F  # noqa: E402
 
 passed = total = 0
 
@@ -170,6 +172,46 @@ def run():
     one = io.open(metas[0], encoding="utf-8").read() if metas else ""
     check("배너가 **지금 문서로 보낸다**",
           not metas or ("시스템_전체_설명.html" in one and "작업_진행판.html" in one))
+
+    print("")
+    print("=== ⑧ 🚨 **전체 기능 설명**은 문서가 아니라 **코드**에서 나오는가 ===")
+    # 🔑 기능 목록을 손으로 쓰면 반드시 낡는다 — `docs/meetings/` 의 2026-09-11 자
+    #   기능 현황이 그 증거다(그때 44개, 지금 67개). 그래서 **등록부에서 만든다.**
+    tools, danger, buckets = F.collect()
+    feats = F.build()
+    check("기능 문서가 있다", os.path.exists(F.OUT), F.OUT)
+    if os.path.exists(F.OUT):
+        check("🚨 기능 문서가 낡지 않았다 (`python scripts/build_features.py`)",
+              io.open(F.OUT, encoding="utf-8").read() == feats)
+    check("🔑 생성이 **결정적이다**", F.build() == feats)
+    check("도구를 **전부** 담는다", feats.count("<tr><th>") == len(tools),
+          f"→ {feats.count('<tr><th>')} vs {len(tools)}")
+    check("승인 필요한 것을 **표시한다**",
+          feats.count("먼저 물어봅니다</b>") == sum(1 for t in tools if t.name in danger))
+    # 🚨 모르는 모듈을 «기타»로 밀어 넣으면 **설명 없는 기능이 쌓인다.**
+    #    (`test_tool_eval_cases` 가 «도구를 늘리면 평가 문장도 늘게» 하는 것과 같다)
+    # 🔑 **가짜 도구 하나로 실제 분류 함수를 돌려 본다** — 흉내만 내면 그 검사는
+    #    «죽는다»를 한 번도 확인하지 않는다.
+    class _Fake:
+        name = "새_도구"
+
+        def func(self):      # noqa: D401 — `__module__` 만 쓰인다
+            pass
+
+    _Fake.func.__module__ = "tools.아직_없는_분류"
+    check("🚨 분류에 없는 모듈이 나오면 **죽는다**", _dies(F.bucket, [_Fake()]))
+    check("아는 모듈은 그대로 담긴다", len(F.bucket(tools)) == len(F.GROUPS))
+    check("🚨 숫자를 **소스에 안 적었다**",
+          "67가지" not in io.open(os.path.join(_ROOT, "scripts", "build_features.py"),
+                                  encoding="utf-8").read())
+
+    print("")
+    print("=== ⑨ 🚨 README 의 **도구 수가 코드와 같은가** ===")
+    # 🚨 이 칸은 «46 인 채로 낡아 있었다»는 기록이 README 자신에 남아 있다
+    #   (9/24 에 62 가 됐는데 안 따라왔다). 사람이 옮겨 적는 값은 **반드시** 어긋난다.
+    want = int(re.sub(r"[^0-9]", "", B.numbers(B.read("docs", "README.md"))[1][1]))
+    check("🚨 README 도구 수 == `get_all_tools()`", want == len(tools),
+          f"→ README {want}개 vs 코드 {len(tools)}개")
 
     print("")
     print(f"결과: {passed}/{total} 통과")
