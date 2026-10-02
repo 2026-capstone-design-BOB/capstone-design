@@ -287,6 +287,40 @@ def run():
     check("임시 wav 를 지운다 (측정이 디스크를 남기지 않는다)",
           "os.unlink(f)" in _SRC and "os.rmdir(tmpdir)" in _SRC)
 
+    print(f"{NL}=== ⑫ 🔒 **남의 실명이 파일로 나가지 않는다** (2026-10-02) ===")
+    # 🚨 2026-09-18 에 «녹음 참여자 3명의 개인별 인식률이 실명으로» public 저장소에
+    #   올라갔다. 그때는 **손으로 고쳤고**, 2026-10-02 에 **같은 일이 이 스크립트의
+    #   `--json` 산출물로 또 일어났다**(화자별 CER 200줄). 손으로 고치면 다음에 또 샌다.
+    #   🔑 이 저장소가 세 번 배운 것과 같은 모양이다 — **보장하는 건 구조다.**
+    rows = [{"id": "홍길동#00", "speaker": "홍길동"},
+            {"id": "홍길동#01", "speaker": "홍길동"},
+            {"id": "김영희#00", "speaker": "김영희"},
+            {"id": "변소윤#00", "speaker": "변소윤"},
+            {"id": "104_1",    "speaker": "104"}]
+    out = E.anonymize_rows(rows, self_name="변소윤")
+    blob = repr(out)
+    check("🚨 남의 실명이 결과에 **0건**",
+          "홍길동" not in blob and "김영희" not in blob, blob[:120])
+    check("id 에 박힌 이름도 같이 바뀐다",
+          {r["id"] for r in out} >= {"화자 B#00", "화자 B#01", "화자 A#00"},
+          f"→ {[r['id'] for r in out]}")
+    check("같은 사람은 **같은 라벨**을 받는다",
+          out[0]["speaker"] == out[1]["speaker"])
+    check("다른 사람은 **다른 라벨**", out[0]["speaker"] != out[2]["speaker"])
+    check("🔴 본인 이름은 그대로 둔다 (2026-09-18 선례)",
+          any(r["speaker"] == "변소윤" for r in out))
+    check("⚠ Zeroth 의 숫자 화자 id 는 안 건드린다 (공개 코퍼스 식별자)",
+          any(r["speaker"] == "104" for r in out))
+    check("원본 rows 를 안 바꾼다", rows[0]["speaker"] == "홍길동")
+    check("26명을 넘겨도 라벨이 안 겹친다", E._anon_label(26) == "화자 AA")
+    # 🔑 **대응표를 저장소에 두지 않는다** — 이름 목록을 코드에 적으면 그게 대응표다.
+    check("🔑 소스에 남의 이름 목록이 없다 (= 대응표가 아니다)",
+          "홍길동" not in _SRC and _SRC.count("SELF_SPEAKER") >= 2)
+    check("쓰는 자리에 실제로 걸려 있다",
+          '"발화": anonymize_rows(rows)' in _SRC)
+    check("화면 출력은 익명화하지 않는다 (로컬에선 누가 누군지 봐야 한다)",
+          "report(rows" in _SRC)
+
     print(f"{NL}결과: {passed}/{total} 통과")
     return passed == total
 
