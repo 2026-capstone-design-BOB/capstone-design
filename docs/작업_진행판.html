@@ -69,36 +69,42 @@ color:var(--muted);font-size:.85rem}
 
 <h2><span class="n">1</span>지금 하는 중</h2>
 <div class="card scroll">
-<h1>🚩 다음 세션은 <strong>여기부터</strong> — 2026-10-02 · ② 끝(실기까지), 남은 🔴 없음 → ③ 호출어</h1>
-<h2>▶️ 바로 할 것 — 🎙 <strong>호출어 개선</strong>(③) · 10월 내내</h2>
-<p>🙋 <strong>필요한 것은 딱 하나</strong> — 변소윤 목소리로 <strong>소크 녹음 20~30분</strong>.
-혼잣말·통화·영상 보며 하는 말, <strong>«플루이즈»만 안 부르면</strong> 됩니다.</p>
-<pre><code>python scripts/eval_wakeword.py --compare services/wakeword_model.npz &gt;        --soak 새녹음.wav --holdout-only
-</code></pre>
+<h1>🚩 다음 세션은 <strong>여기부터</strong> — 2026-10-02 (14) · 🔴 <strong>BL-92 부터 바로 고치면 된다</strong></h1>
+<h2>▶️ 바로 할 것 — 📅 <strong>BL-92: «그 일정 하나»를 집을 수 있게</strong></h2>
+<p>🔑 <strong>원인 셋 다 확인했고 고치는 법까지 <a href="BACKLOG.md">BACKLOG</a> 에 적어 뒀다.</strong>
+조사부터 다시 할 필요 없다. 전부 <code>tools/calendar.py</code> 안에서 끝난다.</p>
 <table>
 <thead>
 <tr>
 <th></th>
-<th style="text-align:right">지금</th>
-<th style="text-align:right">목표 (10월 말)</th>
+<th>무엇</th>
+<th>왜</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>헛깨어남</td>
-<td style="text-align:right"><strong>15회/시간</strong></td>
-<td style="text-align:right">1회/시간</td>
+<td>①</td>
+<td><code>date</code> 가 있으면 <strong>그 날만</strong> 본다 (<code>lo</code> 를 하루 당기지 않는다)</td>
+<td>🚨 지금은 날짜를 줘도 <strong>하루 앞이 같이 걸린다</strong> — 내가 넣은 버그</td>
 </tr>
 <tr>
-<td>놓침</td>
-<td style="text-align:right"><strong>15.2%</strong></td>
-<td style="text-align:right">10%</td>
+<td>②</td>
+<td><strong>정확히 같은 제목</strong>이 있으면 그것만 후보로</td>
+<td>«미팅» 이 «캡스톤 미팅» 을 끌고 온다</td>
+</tr>
+<tr>
+<td>③</td>
+<td>🚨 <strong><code>time</code> 인자 신설</strong></td>
+<td><em>&quot;9시 거&quot;</em> 를 넘길 자리가 <strong>아예 없다. 이게 핵심이다</strong></td>
+</tr>
+<tr>
+<td>④</td>
+<td>후보를 줄 때 <strong>무엇을 더 말해야 집히는지</strong> 알려준다</td>
+<td>지금은 «어느 것인지»만 묻는다</td>
 </tr>
 </tbody>
 </table>
-<p>🔑 <strong>지금까지 가장 효과가 컸던 것은 «소크를 더 모으는 것»</strong> 이다 — 새 모델보다
-<strong>판정 방법</strong>(연속 2창)과 <strong>측정 자료</strong>가 더 크게 움직였다(10/01 기록).</p>
-<h2>✅ 2026-10-02 에 한 것 (한눈에)</h2>
+<h2>✅ 3차 실기 — <strong>넷 통과, 하나 남음</strong></h2>
 <table>
 <thead>
 <tr>
@@ -108,106 +114,47 @@ color:var(--muted);font-size:.85rem}
 </thead>
 <tbody>
 <tr>
-<td>1</td>
-<td>🔴 <strong>BL-63</strong> 닫음 — 캐시가 «그냥 닫아줘»를 특정 앱으로 굳히던 것</td>
+<td>✅</td>
+<td>창을 옮긴 뒤 더블클릭(BL-85) · 접힌 배지(BL-86) · 알림이 창을 안 폄(BL-87)</td>
 </tr>
 <tr>
-<td>2</td>
-<td>🎛 <strong>버튼·단축키</strong> — 창 열기와 음성 깨우기를 갈랐다. <strong>실기 통과</strong></td>
+<td>✅</td>
+<td>🚨 <strong>브라우저 로그인이 저절로 뜬다</strong>(BL-90) — 🙋 <em>&quot;그 부분은 잘 됐어&quot;</em></td>
 </tr>
 <tr>
-<td>3</td>
-<td>🔒 <strong>개인정보</strong> — 타인 실명이 public 으로 나가던 것을 막고, 재발을 코드로 막음</td>
-</tr>
-<tr>
-<td>4</td>
-<td>📋 <strong>생성 문서 셋</strong> — 작업 진행판 · 시스템 전체 설명 · 전체 기능 설명</td>
-</tr>
-<tr>
-<td>5</td>
-<td>📏 <strong>드리프트 경고</strong> — 스위트가 README·팀원 문서의 합계를 대조한다</td>
+<td>🔴</td>
+<td><strong>BL-92</strong> — 일정 수정에서 «그 하나»를 못 집는다</td>
 </tr>
 </tbody>
 </table>
-<p>🚨 <strong>2·3·4 는 전부 «같은 사고»의 다른 얼굴이다</strong> — 한 사실이 두 곳에 있으면
-한쪽만 갱신된다. 오늘만 <strong>다섯 번</strong> 데였고, 그래서 <strong>구조로</strong> 바꿨다.</p>
-<h2>📋 볼 것 셋 — <a href="%EC%9E%91%EC%97%85_%EC%A7%84%ED%96%89%ED%8C%90.html"><code>작업_진행판.html</code></a> · <a href="%EC%8B%9C%EC%8A%A4%ED%85%9C_%EC%A0%84%EC%B2%B4_%EC%84%A4%EB%AA%85.html"><code>시스템_전체_설명.html</code></a> · <a href="%EC%A0%84%EC%B2%B4_%EA%B8%B0%EB%8A%A5_%EC%84%A4%EB%AA%85.html"><code>전체_기능_설명.html</code></a></h2>
-<p>지금 하는 중(이 블록) · 숫자 · 남은 결함 · 절대 규칙 · 돌리는 법이 <strong>한 장</strong>에 있습니다.
-🚨 <strong>손으로 고치지 마세요</strong> — <code>python scripts/build_board.py</code> 가 <strong>원본에서 만듭니다.</strong>
-🆕 둘째는 <strong>남에게 보여줄 개요</strong>, 셋째는 <strong>지금 할 수 있는 일 전부</strong>(코드에서 생성).
-🔑 다시 만들기는 <code>python scripts/build_docs.py</code> 하나로 — 셋이 같이 갱신됩니다.
-📌 <code>docs/meetings/</code> 의 여섯은 <strong>그날의 기록</strong>이라 안 고칩니다 — 맨 위 배너를 보세요.
-🔑 보드는 «요약을 한 장에 모은 것»이라 이 저장소가 <strong>네 번 데인 «복사본이 낡는»</strong>
-모양입니다(9/12·9/17·9/18·10/02). 그래서 생성물로 두고, <strong>낡으면 스위트가 깨집니다.</strong></p>
-<h2>✅ ② 버튼·단축키 — <strong>실기까지 끝났다</strong></h2>
-<table>
-<thead>
-<tr>
-<th>입력</th>
-<th>뜻</th>
-<th>실기</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>더블클릭</strong></td>
-<td>창 활성화 (채팅·설정·즐겨찾기)</td>
-<td>✅</td>
-</tr>
-<tr>
-<td><strong>단축키 · 🎙️</strong></td>
-<td>웨이크 신호 — 창과 무관, <strong>접힌 채 듣는다</strong></td>
-<td>✅</td>
-</tr>
-<tr>
-<td><strong><code>−</code> 버튼</strong></td>
-<td>창 접기</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>고리(🎙️) 끌기</td>
-<td>창 옮기기</td>
-<td>✅</td>
-</tr>
-</tbody>
-</table>
-<p>🙋 <em>&quot;생각하는 중 해결된 것 확인 했고 더블클릭도 확인 했어. 잘 돼.&quot;</em>
-🔑 기본 단축키는 <strong><code>Ctrl+Alt+Space</code></strong>. 설정 → 「말 거는 방법」에서 <strong>목록으로</strong> 고른다.</p>
-<h2>🚨 이번 ② 에서 내가 세 번 틀렸다 — 셋 다 «그럴듯한 원인»이었다</h2>
+<h2>🚨 오늘 내가 세 번 같은 실수를 했다</h2>
 <table>
 <thead>
 <tr>
 <th></th>
-<th>말한 원인</th>
-<th>실제</th>
+<th>무엇</th>
+<th>교훈</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>(3)</td>
-<td><em>&quot;다른 앱이 쓰면 등록이 실패한다&quot;</em></td>
-<td><code>Ctrl+C</code> 는 <strong>등록이 성공한다</strong></td>
+<td>1</td>
+<td>BL-84 를 «해결»로 적었는데 <strong>실기에서 도구가 한 번도 안 불렸다</strong></td>
+<td><em>«도구가 있다»와 «불린다»는 다르다</em></td>
 </tr>
 <tr>
-<td>(4)</td>
-<td><em>&quot;단일 클릭이 먼저 열어서 dblclick 이 샌다&quot;</em></td>
-<td><strong>애초에 클릭이 안 왔다</strong>(CSS)</td>
+<td>2</td>
+<td>BL-88 을 고치며 <strong>좁히는 쪽을 안 쟀다</strong> → BL-92</td>
+<td><em>고치면서 같은 모양을 한 칸 옮겨 만들 수 있다</em></td>
 </tr>
 <tr>
-<td>(5)</td>
-<td><em>&quot;표시만 안 돌아온 것&quot;</em></td>
-<td>✅ 맞았다</td>
+<td>3</td>
+<td>토큰 백업이 <strong><code>.gitignore</code> 에 안 걸렸다</strong></td>
+<td><em>내가 만든 임시 파일이 비밀을 공개 저장소 한 걸음 앞에 뒀다</em></td>
 </tr>
 </tbody>
 </table>
-<p>🔑 셋 다 <strong>mock 3,000건이 초록인 채로</strong> 살아 있었고 <strong>실기가 세 번 다 잡았다.</strong>
-📌 그래서 테스트 범위를 두 번 넓혔다 — <strong>CSS 를 센다</strong> · <strong>«글자로 판단하지 않는다»를 센다.</strong>
-🆕 <strong><a href="BACKLOG.md">BL-83</a></strong> 신설 — «UI 자동 검사가 «코드가 아닌 것»을 못 본다». ⏸️ 급하지 않다.</p>
-<h2>📋 팀원 문서를 걷었다 (마무리 3-A)</h2>
-<p><code>현황판.html</code>(9/25 자) · <code>11_어필_재료.md</code> §1·§7 · <code>10_개발_현황.md</code> 숫자.
-🚨 어필 재료에 «놓침 약 80%» 가 남아 있었다 — 그대로 쓰면 <strong>실제보다 다섯 배 나쁘게</strong>
-말하게 된다. 🎤 <strong>「버튼이나 목소리로 말을 겁니다」는 이제 단정적으로 써도 된다.</strong></p>
-<p>✅ <strong>mock 83파일 3295/3295 · 실패 0</strong> · ⏸️ <strong>푸시는 사용자 결정</strong></p>
+<p>✅ <strong>mock 88파일 3468/3468 · 실패 0</strong> · 🔧 도구 <strong>69개</strong> · ⏸️ <strong>푸시는 사용자 결정</strong></p>
 <h2>🙋 사용자 몫</h2>
 <table>
 <thead>
@@ -220,18 +167,50 @@ color:var(--muted);font-size:.85rem}
 <tbody>
 <tr>
 <td>🔴</td>
-<td>🎙 <strong>소크 녹음 20~30분</strong> — ③ 에 쓸 자료. <strong>이것만 있으면 됩니다</strong></td>
-<td>25분</td>
-</tr>
-<tr>
-<td></td>
-<td>구글 토큰이 7일마다 끊깁니다 — <code>python scripts/connect_google.py --check</code></td>
-<td>수시</td>
-</tr>
-<tr>
-<td></td>
-<td>팀원에게 <code>teamwork/현황판.html</code> 갱신됐다고 알려 주기</td>
+<td>📅 <strong>캘린더에서 «캡스톤 미팅» 하나 지우기</strong> — 10-02 사고의 흔적이 <strong>둘</strong> 남아 있다</td>
 <td>1분</td>
+</tr>
+<tr>
+<td></td>
+<td>🎙 <strong>카페 미팅 소크 녹음</strong> — ③ 에 쓸 자료</td>
+<td>미팅 중</td>
+</tr>
+<tr>
+<td></td>
+<td>⏸️ <strong>푸시할지</strong></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h2>▶️ 남은 순서</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>무엇</th>
+<th>왜</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1</strong></td>
+<td>🔴 <strong>BL-92</strong></td>
+<td>고치는 법이 적혀 있다</td>
+</tr>
+<tr>
+<td>2</td>
+<td>🟡 <strong>BL-89</strong> — 음성 중 창 이동</td>
+<td>⚠️ 재현이 먼저. <code>[VAD] 사유=manual</code> 이 가른다</td>
+</tr>
+<tr>
+<td>3</td>
+<td>🟡 <strong>BL-55·72·43</strong> (A군 남은 셋)</td>
+<td>🙋 «셋만 제대로»로 그은 범위 밖</td>
+</tr>
+<tr>
+<td>4</td>
+<td>🎙 <strong>호출어</strong>(③)</td>
+<td>소크가 들어오면</td>
 </tr>
 </tbody>
 </table>
@@ -245,16 +224,20 @@ color:var(--muted);font-size:.85rem}
 </thead>
 <tbody>
 <tr>
-<td>부스에서 호출어를 쓸 것인가 (버튼이 확보됐으니 <strong>숫자를 보고</strong>)</td>
-<td>10월 말</td>
+<td>🆕 <strong>10/28 제출물을 일정표에 올린다</strong> — 소개글(hwp) · 포스터(PPT A2)</td>
+<td><strong>지금</strong></td>
 </tr>
 <tr>
-<td>부스에서 쓸 단축키 — 기본값 <code>Ctrl+Alt+Space</code> 로 써 보고</td>
-<td>10월 말</td>
+<td>🆕 <strong>일정 «지우기» 도구를 만들 것인가</strong> — BL-92 를 고치면 필요가 줄지만, 사고로 생긴 중복은 사용자가 지워야 한다</td>
+<td>11/24 전</td>
 </tr>
 <tr>
-<td>놓침 쪽으로 되돌릴 것인가 (9/28 모델 + 연속 2 + 0.62)</td>
-<td>10월 중</td>
+<td>BL-73 — 알림을 Windows 토스트로 (BL-87 로 급하지 않아졌다)</td>
+<td>11/24 전</td>
+</tr>
+<tr>
+<td>부스에서 호출어를 쓸 것인가</td>
+<td>10월 말</td>
 </tr>
 <tr>
 <td>BL-75 — <code>find_ui_element</code> 를 뺄 것인가</td>
@@ -265,20 +248,12 @@ color:var(--muted);font-size:.85rem}
 <td>11/24 전</td>
 </tr>
 <tr>
-<td>알림을 Windows 토스트로</td>
-<td>11/24 전</td>
-</tr>
-<tr>
 <td>의존성 (<code>anthropic</code> MAJOR)</td>
 <td>10/31 전</td>
 </tr>
 <tr>
 <td>발표 서사 한 문장</td>
 <td>10/28 전</td>
-</tr>
-<tr>
-<td>W5(10/21~25) 3.5일</td>
-<td>10월 중</td>
 </tr>
 </tbody>
 </table>
@@ -287,11 +262,11 @@ color:var(--muted);font-size:.85rem}
 <h2><span class="n">2</span>숫자</h2>
 <p class="sub">합계의 <b>유일한 출처</b>는 <code>docs/README.md</code> 상태표입니다.
    여기 없는 숫자는 지어내지 말고 거기서 가져오세요.</p>
-<div class="grid"><div class="stat"><span class="k">자동 테스트</span><span class="v">84파일 · 3336건</span><span class="note">실패 0 · mock(가짜 환경)</span></div><div class="stat"><span class="k">조작 가능한 도구</span><span class="v">67개</span><span class="note">앱·파일·시스템·화면·일정·메일</span></div></div>
+<div class="grid"><div class="stat"><span class="k">자동 테스트</span><span class="v">88파일 · 3468건</span><span class="note">실패 0 · mock(가짜 환경)</span></div><div class="stat"><span class="k">조작 가능한 도구</span><span class="v">69개</span><span class="note">앱·파일·시스템·화면·일정·메일</span></div></div>
 
 <h2><span class="n">3</span>남은 결함</h2>
 <p class="sub">🔴 즉시 · 🟡 TODO · 🔵 결정 대기 — 상세는 <code>docs/BACKLOG.md</code></p>
-<div class="card"><div class="bl"><span class="num b">🔵 BL-82</span><span class="t">2026-10-01 신설 · 🎤 답이 나온 직후 빈 녹음이 한 번 더 열린다</span></div><div class="bl"><span class="num a">🟡 BL-83</span><span class="t">2026-10-02 신설 · 🧱 UI 자동 검사가 «코드가 아닌 것»을 못 본다</span></div><div class="bl"><span class="num a">🟡 BL-80</span><span class="t">2026-09-29 신설 · 📅 «오늘은 일정이 없어요». 🔻 2026-09-30 강등 — 재현 안 됨</span></div><div class="bl"><span class="num a">🟡 BL-75</span><span class="t">2026-09-28 신설 · 🖱 «어디 있어?» 한 마디로 `find_ui_element` 와</span></div><div class="bl"><span class="num a">🟡 BL-74</span><span class="t">2026-09-25 신설 · 🔑 구글 토큰이 만료됐을 때 할 일을 안 알려준다</span></div><div class="bl"><span class="num a">🟡 BL-72</span><span class="t">2026-09-25 신설 · ⏳ 약속이 서버 수명을 못 넘는다</span></div><div class="bl"><span class="num a">🟡 BL-73</span><span class="t">2026-09-25 신설 · 🔔 알림이 Windows 토스트가 아니다</span></div><div class="bl"><span class="num a">🟡 BL-71</span><span class="t">2026-09-24 신설 · 📏 도구를 더 늘리기 전에</span></div><div class="bl"><span class="num a">🟡 BL-70</span><span class="t">2026-09-24 신설 · ⏭️ 접근성이 못 보는 자리에 남아 있다</span></div><div class="bl"><span class="num a">🟡 BL-68</span><span class="t">2026-09-23 실기 신설 · ⏭️ 2-2(응답 품질)에서 같이 본다</span></div><div class="bl"><span class="num b">🔵 BL-65</span><span class="t">2026-09-21 신설 · ⏸️ 9/23 이후 결정. 🚨 동적 학습의 기여가 2.6%인데 사고는 3건이다</span></div><div class="bl"><span class="num b">🔵 BL-66</span><span class="t">2026-09-21 신설 · ⏸️ 10/31 실사용. 🚨 오매칭률을 세는 자리가 없다</span></div><div class="bl"><span class="num a">🟡 BL-62</span><span class="t">(2026-09-19) — 미해결. 학습은 코어를 다 쓰는데 평가는 아직 하나만 쓴다</span></div><div class="bl"><span class="num a">🟡 BL-55</span><span class="t">(2026-09-14 2차 리허설) — 미해결. `get_running_apps`가 프로세스를 센다</span></div><div class="bl"><span class="num a">🟡 BL-56</span><span class="t">(2026-09-14 2차 리허설) — 미해결. *"지금까지 한 거 뭐 했는지 정리해 줄래"* →</span></div><div class="bl"><span class="num a">🟡 BL-40</span><span class="t">(2026-09-11 사용자 지적 · A안 적용) — 파일 N개를 지우려면 승인을 N번 해야 한다</span></div></div>
+<div class="card"><div class="bl"><span class="num r">🔴 BL-92</span><span class="t">2026-10-02 3차 실기 · 📅 «그 일정 하나»를 집을 수가 없다. 미해결</span></div><div class="bl"><span class="num a">🟡 BL-89</span><span class="t">2026-10-02 실기 · 🎤 음성 입력 중 창을 옮기면 입력이 취소된 것처럼 보인다</span></div><div class="bl"><span class="num a">🟡 BL-82</span><span class="t">2026-10-01 신설 · 🎤 답이 나온 직후 빈 녹음이 한 번 더 열린다</span></div><div class="bl"><span class="num a">🟡 BL-83</span><span class="t">2026-10-02 신설 · 🧱 UI 자동 검사가 «코드가 아닌 것»을 못 본다</span></div><div class="bl"><span class="num a">🟡 BL-80</span><span class="t">2026-09-29 신설 · 📅 «오늘은 일정이 없어요». 🔻 2026-09-30 강등 — 재현 안 됨</span></div><div class="bl"><span class="num a">🟡 BL-75</span><span class="t">2026-09-28 신설 · 🖱 «어디 있어?» 한 마디로 `find_ui_element` 와</span></div><div class="bl"><span class="num a">🟡 BL-72</span><span class="t">2026-09-25 신설 · ⏳ 약속이 서버 수명을 못 넘는다</span></div><div class="bl"><span class="num a">🟡 BL-73</span><span class="t">2026-09-25 신설 · 🔔 알림이 Windows 토스트가 아니다</span></div><div class="bl"><span class="num a">🟡 BL-71</span><span class="t">2026-09-24 신설 · 📏 도구를 더 늘리기 전에</span></div><div class="bl"><span class="num a">🟡 BL-70</span><span class="t">2026-09-24 신설 · ⏭️ 접근성이 못 보는 자리에 남아 있다</span></div><div class="bl"><span class="num a">🟡 BL-68</span><span class="t">2026-09-23 실기 신설 · ⏭️ 2-2(응답 품질)에서 같이 본다</span></div><div class="bl"><span class="num b">🔵 BL-65</span><span class="t">2026-09-21 신설 · ⏸️ 9/23 이후 결정. 🚨 동적 학습의 기여가 2.6%인데 사고는 3건이다</span></div><div class="bl"><span class="num b">🔵 BL-66</span><span class="t">2026-09-21 신설 · ⏸️ 10/31 실사용. 🚨 오매칭률을 세는 자리가 없다</span></div><div class="bl"><span class="num a">🟡 BL-62</span><span class="t">(2026-09-19) — 미해결. 학습은 코어를 다 쓰는데 평가는 아직 하나만 쓴다</span></div><div class="bl"><span class="num a">🟡 BL-55</span><span class="t">(2026-09-14 2차 리허설) — 미해결. `get_running_apps`가 프로세스를 센다</span></div><div class="bl"><span class="num a">🟡 BL-40</span><span class="t">(2026-09-11 사용자 지적 · A안 적용) — 파일 N개를 지우려면 승인을 N번 해야 한다</span></div></div>
 
 <h2><span class="n">4</span>코드를 고치기 전 — 절대 규칙</h2>
 <p class="sub">어기면 바로 깨지는 것들입니다. 배경은 <code>CLAUDE.md</code> 의 각 링크에.</p>

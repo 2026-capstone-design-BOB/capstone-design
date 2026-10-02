@@ -60,8 +60,9 @@ START → input_guard ─(차단)────→ output_guard → END
         fast_path ─(hit)───────→ output_guard → END
            │(miss)
            │
-           ├─(복합 명령·계획 ON)→ planner ─┐
-           │                               ▼
+           ├─(「지금까지 뭐 했지?」)→ recap ─┐   ← 기록만 적는다. 말은 안 한다(BL-56)
+           ├─(복합 명령·계획 ON)─→ planner ─┤
+           │                                ▼
            └──────────────────────────→ agent ⇄ tools ──────→ output_guard → END
                                           │ ▲       │
                                           │ │(오프라인)→ OfflineSkip ⇒ 그래프 밖 _dead_end (BL-46)
@@ -78,11 +79,16 @@ START → input_guard ─(차단)────→ output_guard → END
 
 > `planner`와 `visual_verify`는 **의존성이 주입됐을 때만 그래프에 존재한다.**
 > 꺼져 있으면 노드도 엣지도 만들어지지 않아 경로가 글자 그대로 예전과 같다.
+>
+> 🆕 **`recap` 은 다르다 — 항상 있다.** 주입 의존이 없고(상태만 읽는다) LLM 왕복도
+> 안 쓴다. 대신 **기록이 비면 `agent` 가 아무것도 안 붙인다** — 꺼진 경로가 같다는
+> 성질은 같은 방식으로 지킨다.
 
 | 노드 | 역할 |
 |---|---|
 | `input_guard` | 코드 레벨 보안 검사 (OWASP LLM01/02) |
 | `fast_path` | 캐시 + 결정론적 라우터. **히트해도 결과를 `state.messages`에 기록** |
+| 🆕 `recap` | *"지금까지 한 거 뭐 했는지 정리해 줄래"* 에 **대화에서 사실만 읽어 상태에 적는다**(BL-56, 2026-10-02). 말은 `agent` 가 만든다.<br>🚨 **여기서 요약문을 만들지 않는다** — 코드가 지은 말은 `output_guard` 의 그물을 하나도 안 지난다(`fast_path` 와 같은 자리).<br>🔑 **도구를 늘리지 않은 이유** — 상태를 보는 자리는 이미 노드다. 도구로 만들면 `InjectedState` 라는 새 장치가 필요하고, 평가 문장·기능 문서·README 도구 수가 같이 움직인다 |
 | `planner` | 복합 명령을 **최대 2단계로 나눠 상태에 적는다**(M3). 실행은 하지 않는다. **기본 켜짐**(2026-09-07 라이브 확인 후 — `.env` `PLAN_ENABLED=false`로 끔) |
 | `agent` | LLM ReAct 추론 (동기 invoke). 계획이 있으면 **지금 실행할 단계만** 지시받는다. **오프라인이면 `llm.invoke()` 직전에 `OfflineSkip`을 올려 LLM을 아예 안 부른다**(BL-46 — 실패 턴 8.01초 → 0.17초) |
 | `tools` | LangGraph `ToolNode` |
@@ -253,7 +259,7 @@ LangGraph `interrupt`(HITL 승인)가 sync invoke 경로에서만 안정 동작�
 
 ---
 
-## 도구 (67개)
+## 도구 (69개)
 
 [`core/tool_registry.py`](../core/tool_registry.py)에 단일 등록.
 
