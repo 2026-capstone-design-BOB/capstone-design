@@ -167,5 +167,45 @@ check("🔑 상한을 지우지도 않았다 — 끝나지 않는 녹음의 마�
       "MAX_MS" in _vad)
 
 
+# ═══ ⑥ **끝나는 길이 둘인데 기록은 하나였다** (BL-82 조사, 2026-10-02) ═══
+#
+# 🚨 2026-10-01 22:33 에 «아무도 안 말했는데 7,056바이트 녹음이 갔다» 를 받았고,
+#   로그로 가리려 했더니 **가릴 재료가 없었다**:
+#
+#     · 웨이크워드는 **안 깼다** (그 6초 동안 prob=0.000)  ← BACKLOG 가 적어 둔
+#       가설(«재생 중에 웨이크워드가 깬 것»)이 **로그로 반증됐다**
+#     · [VAD] 보고도 **없다** → endVad() 를 안 거치고 온 녹음이다
+#
+# 🔑 즉 **버튼·단축키·창 접기로 끝낸 녹음은 서버 로그에 한 줄도 안 남았다.**
+#   원인을 못 찾은 게 아니라 **찾을 자료가 없었다.** 그래서 자료부터 만든다.
+print("\n=== ⑥ 어느 길로 끝나도 한 줄은 남는다 (BL-82) ===")
+check("끝났는지 **표시**를 들고 다닌다 (두 번 보내지 않으려고)",
+      "vadReported" in _UI)
+check("새 판이 시작되면 내린다", "vadReported = false;" in _UI)
+check("보냈으면 올린다", "vadReported = true;" in _UI)
+check("🚨 버튼·단축키로 끝낸 녹음도 보고한다 (stopMic 안에서)",
+      "if (vadTimer && !vadReported)" in _UI)
+check("   보낼 때 **누가 끊었는지**를 같이 적는다",
+      "vadEndBy = send ? 'button' : 'close';" in _UI)
+check("   보내는 녹음과 버리는 녹음을 가른다",
+      "reportVad(send ? 'manual' : 'discard')" in _UI)
+check("🔒 endVad 로 끝난 판은 **두 번 안 보낸다** (표시가 막는다)",
+      _UI.count("vadReported = true;") == 1 and "reportVad(reason);" in _UI)
+
+try:
+    with TestClient(_m.app, base_url="http://127.0.0.1:8765") as c2:
+        h2 = {_auth.HEADER_NAME: _m._AUTH_TOKEN}
+        r2 = c2.post("/api/vad-report", headers=h2, json={
+            "reason": "manual", "ms": 1200, "floor": 0.0004,
+            "start_rms": 0.02, "peak": 0.003, "auto": False,
+            "end_by": "button", "mic": {},
+        })
+        _ok2 = r2.status_code == 200 and r2.json().get("status") == "ok"
+        _d2 = str(r2.status_code)
+except Exception as e:                                        # noqa: BLE001
+    _ok2, _d2 = False, f"{type(e).__name__}: {e}"
+check("🚨 서버가 manual 도 그대로 받아 적는다 (새 사유에 안 깨진다)", _ok2, _d2)
+
+
 print(f"\n결과: {passed}/{total} 통과")
 sys.exit(0 if passed == total else 1)
