@@ -220,14 +220,14 @@ function startWakeword() {
 //   «설정에 저장은 됐는데 눌러도 아무 일이 없는» 상태가 된다 —
 //   [BL-13](../docs/BACKLOG.md)이 막으려던 바로 그 모양이다. 그래서 **말한다.**
 //
-// ⚠️ 기본값은 `config/settings.py` 가 주인이다. 여기 적힌 값은 **서버가 뜨기 전
-//   첫 순간용**이고, 렌더러가 설정을 읽으면 곧바로 덮어쓴다.
-const DEFAULT_HOTKEY = 'Alt+Space';
+// ⚠️ **여기에 기본값을 두지 않는다.** 주인은 `config/settings.py` 하나다 —
+//   두 곳에 있으면 «설정은 바뀌었는데 실제로 듣는 키는 그대로»가 된다(BL-13).
 let currentHotkey = null;
 
 /** 단축키를 실제로 잡는다. `{ ok, hotkey, previous }` 를 돌려준다. */
 function applyHotkey(key) {
-  const want = (key || '').trim() || DEFAULT_HOTKEY;
+  const want = (key || '').trim();
+  if (!want) return { ok: false, hotkey: currentHotkey, previous: currentHotkey };
   if (want === currentHotkey) return { ok: true, hotkey: want, previous: currentHotkey };
 
   const previous = currentHotkey;
@@ -277,7 +277,10 @@ app.whenReady().then(() => {
 
   createWindow();
 
-  applyHotkey(DEFAULT_HOTKEY);
+  // 🔑 **여기서 아무 키도 안 잡는다.** 기본값의 주인은 `config/settings.py` 하나고,
+  //   이 프로세스는 서버를 모른다(토큰 파일만 읽는다). 설정을 읽는 렌더러가
+  //   곧바로 `setHotkey` 로 알려 준다 — 못 읽어도 기본값으로 한 번은 잡는다.
+  // 🚨 여기에 기본값을 적어 두면 **잠깐이라도 틀린 키를 전역으로 가로챈다.**
 
   startWakeword();
 });

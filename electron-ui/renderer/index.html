@@ -344,6 +344,41 @@
       animation: ring-wake .5s ease forwards;
     }
 
+    /* 🔑 **접힌 채로 듣는다**(2026-10-02). 창을 펴지 않으므로 «지금 무슨 일이
+       일어나는지»를 여기서 말해야 한다 — 펼친 창에만 표시가 있으면 사용자는
+       말하고 있는데 아무 반응도 못 본다. */
+    .logo-ring.rec {
+      animation: ring-rec 1s ease-in-out infinite;
+    }
+
+    .logo-ring.proc {
+      animation: ring-proc 1.2s linear infinite;
+    }
+
+    @keyframes ring-rec {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 2px rgba(239, 68, 68, .55)
+      }
+
+      50% {
+        box-shadow: 0 0 0 7px rgba(239, 68, 68, 0)
+      }
+    }
+
+    @keyframes ring-proc {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 2px rgba(147, 197, 253, .55)
+      }
+
+      50% {
+        box-shadow: 0 0 0 5px rgba(147, 197, 253, .15)
+      }
+    }
+
     @keyframes ring-breathe {
 
       0%,
@@ -1297,13 +1332,15 @@
         <div>
           <div class="s-label" style="margin:0">말 거는 방법</div>
           <div class="s-desc" style="margin:4px 0 6px">
-            호출어 말고도 <b>🎙️ 버튼</b>, <b>창 더블클릭</b>, <b>단축키</b>로 부를 수 있어요.
-            시끄러운 곳에서는 이쪽이 확실해요.
+            단축키와 🎙️ 버튼은 <b>호출어 대신 음성 인식을 깨우는</b> 신호예요 —
+            <b>창은 안 떠요.</b> 채팅·설정처럼 창이 필요한 일은 <b>창을 더블클릭</b>하세요.
           </div>
+          <!-- 🚨 **자유 입력이 아니다** (2026-10-02 실기). `Ctrl+C` 를 넣었더니
+               그대로 등록돼 **온 시스템의 복사를 가로챘다.** 「이미 쓰이는 키인가」는
+               Electron 이 알려 줄 수 없으므로(앱 내부 단축키는 등록이 성공한다)
+               **안전한 것만 고르게 한다.** 목록의 주인은 `config/settings.py` 다. -->
           <div class="s-row">
-            <input class="s-input" type="text" id="hotkey-input"
-              placeholder="Alt+Space" autocomplete="off" spellcheck="false"
-              readonly title="여기를 누른 뒤 쓰고 싶은 키를 눌러 보세요">
+            <select class="s-input" id="hotkey-select"></select>
             <button class="s-mini-btn" id="hotkey-save-btn" onclick="saveHotkey()">저장</button>
           </div>
           <div class="s-status" id="hotkey-status"></div>
@@ -1364,17 +1401,19 @@
     </div>
 
     <!-- ── IDLE ─────────────────────────────────────────────── -->
-    <div class="idle-view" id="idle-view" onclick="activate(false)" ondblclick="activate(true)">
+    <div class="idle-view" id="idle-view" ondblclick="activate(false)"
+         title="더블클릭하면 창이 열려요">
       <div class="logo-ring" id="logo-ring">🎙️</div>
       <div class="idle-info">
         <div class="idle-name">Pluiz <span class="sdot spin" id="sdot"></span></div>
-        <div class="idle-hint" id="idle-hint">더블클릭 · 🎙️</div>
+        <div class="idle-hint" id="idle-hint">연결 중…</div>
       </div>
       <div class="idle-actions">
-        <button class="idle-icon-btn" onclick="event.stopPropagation(); showSettings()"
+        <button class="idle-icon-btn" onclick="event.stopPropagation(); activate(false); showSettings()"
           ondblclick="event.stopPropagation()" title="설정">⚙️</button>
-        <button class="idle-icon-btn mic-idle" onclick="event.stopPropagation(); activate(true)"
-          ondblclick="event.stopPropagation()" title="음성 입력">🎙️</button>
+        <button class="idle-icon-btn mic-idle" id="idle-mic-btn"
+          onclick="event.stopPropagation(); wakeListen(false)"
+          ondblclick="event.stopPropagation()" title="음성 입력 (창은 안 떠요)">🎙️</button>
       </div>
     </div>
 
@@ -1395,6 +1434,8 @@
           title="히스토리">📋</button>
         <button class="hbtn" onclick="event.stopPropagation(); showSettings()" ondblclick="event.stopPropagation()"
           title="설정">⚙️</button>
+        <button class="hbtn" id="min-btn" onclick="event.stopPropagation(); deactivate()"
+          ondblclick="event.stopPropagation()" title="창 접기">−</button>
         <button class="hbtn close" onclick="event.stopPropagation(); window.pluiz.quit()"
           ondblclick="event.stopPropagation()" title="종료">✕</button>
       </div>
@@ -1845,8 +1886,10 @@
       document.getElementById('sdot2').className = cls;
       const ring = document.getElementById('logo-ring');
       ok ? ring.classList.add('listening') : ring.classList.remove('listening');
-      document.getElementById('idle-hint').textContent =
-        ok ? '더블클릭 · 🎙️' : '서버 연결 중...';
+      // 🔑 안내문을 **여기서 직접 쓰지 않는다.** 세 곳이 각자 쓰고 있어서
+      //   단축키를 바꿔도 어떤 경로로 들어오면 옛 문구가 그대로 남았다.
+      if (ok) setIdleHint(document.getElementById('hotkey-select')?.value);
+      else document.getElementById('idle-hint').textContent = '서버 연결 중…';
     }
 
     // ── 내보내기 / 가져오기 (M6) ───────────────────────────────────
@@ -2050,11 +2093,7 @@
       // 🔑 기본값의 주인은 `config/settings.py` 다 — 여기서 들고 있지 않는다.
       hotkeyDefault = data.hotkey_default || hotkeyDefault;
       const hk = data.hotkey || hotkeyDefault;
-      const hkInput = document.getElementById('hotkey-input');
-      if (hkInput) {
-        hkInput.value = hk;
-        hkInput.placeholder = hotkeyDefault;
-      }
+      fillHotkeyChoices(data.hotkey_choices, hk);
       setIdleHint(hk);
       // 🚨 **읽기만 하고 끝내지 않는다.** `main.js` 는 서버를 모르므로, 저장해 둔
       //   키를 실제로 잡는 것은 이 순간뿐이다. 실패하면 그것도 말한다.
@@ -2083,47 +2122,34 @@
       el.className = 's-status' + (cls ? ' ' + cls : '');
     }
 
-    /** 대기 화면 안내에 «어떻게 부르는지»를 적는다. 여기 말고는 적힌 데가 없다. */
+    /** 대기 화면 안내. 🔑 **«창 여는 법»과 «말 거는 법»은 다른 일이다**(2026-10-02).
+     *  여기 말고는 단축키가 적힌 데가 없다. */
     function setIdleHint(hotkey) {
       const el = document.getElementById('idle-hint');
-      if (el && !el.textContent.includes('로딩')) {
-        el.textContent = `더블클릭 · 🎙️ · ${hotkey || hotkeyDefault}`;
-      }
+      if (!el) return;
+      if (el.textContent.includes('로딩') || el.textContent.includes('중…')) return;
+      el.textContent = `말하기 ${hotkey || hotkeyDefault} · 창 더블클릭`;
     }
 
-    /** 누른 키 조합을 Electron accelerator 문자열로. ('Ctrl+Shift+P') */
-    function accelFrom(e) {
-      const mods = [];
-      if (e.ctrlKey)  mods.push('Ctrl');
-      if (e.altKey)   mods.push('Alt');
-      if (e.shiftKey) mods.push('Shift');
-      if (e.metaKey)  mods.push('Super');
-      let k = e.key;
-      if (['Control', 'Alt', 'Shift', 'Meta'].includes(k)) return null;  // 조합키만 → 아직
-      if (k === ' ') k = 'Space';
-      else if (k.length === 1) k = k.toUpperCase();
-      // 🔑 **조합키 없는 한 글자는 안 받는다.** 전역 단축키라 다른 프로그램에서
-      //   타자를 칠 때마다 창이 뜬다 — 되돌리기 어려운 종류의 성가심이다.
-      if (!mods.length && k.length <= 1) return null;
-      return [...mods, k].join('+');
-    }
-
-    function bindHotkeyCapture() {
-      const input = document.getElementById('hotkey-input');
-      if (!input) return;
-      input.addEventListener('keydown', e => {
-        e.preventDefault();                       // 설정창에서 타자가 새어 나가지 않게
-        const accel = accelFrom(e);
-        if (!accel) return;
-        input.value = accel;
-        setHotkeyStatus('저장을 눌러야 바뀌어요', '');
+    /** 고를 수 있는 단축키로 목록을 채운다. 🔑 목록은 **서버가 준다.** */
+    function fillHotkeyChoices(choices, current) {
+      const sel = document.getElementById('hotkey-select');
+      if (!sel) return;
+      sel.innerHTML = '';
+      (choices && choices.length ? choices : [hotkeyDefault]).forEach(k => {
+        const o = document.createElement('option');
+        o.value = k;
+        // ⚠️ Windows 의 창 시스템 메뉴가 이 키다 — 쓸 수는 있지만 겹친다고 말해 준다.
+        o.textContent = k + (k === 'Alt+Space' ? '  (Windows 창 메뉴와 겹침)' : '');
+        sel.appendChild(o);
       });
+      if (current) sel.value = current;
     }
 
     /** 서버에 저장하고 **Electron 이 실제로 잡았는지**까지 확인해서 말한다. */
     async function saveHotkey() {
       const btn = document.getElementById('hotkey-save-btn');
-      const want = document.getElementById('hotkey-input').value.trim();
+      const want = document.getElementById('hotkey-select').value;
       btn.disabled = true;
       btn.textContent = '저장 중';
       setHotkeyStatus('', '');
@@ -2134,11 +2160,17 @@
           body: JSON.stringify({ hotkey: want }),
         });
         const data = await res.json();
+        if (data.status === 'rejected') {
+          // 🚨 서버가 마지막 문이다 — UI 를 우회해도 여기서 막힌다.
+          setHotkeyStatus('⚠️ ' + (data.reason || '고를 수 없는 키예요'), 'err');
+          fillHotkeyChoices(data.choices, data.hotkey);
+          return;
+        }
         if (data.status !== 'ok') {
           setHotkeyStatus('저장 실패: ' + JSON.stringify(data), 'err');
           return;
         }
-        document.getElementById('hotkey-input').value = data.hotkey || '';
+        document.getElementById('hotkey-select').value = data.hotkey || '';
         // 🚨 여기가 요점이다 — 저장됐다고 «된다»고 말하지 않는다.
         const applied = await window.pluiz.setHotkey(data.hotkey);
         if (applied && applied.ok) {
@@ -2167,6 +2199,10 @@
         applyWakeConfig(await res.json());
       } catch (e) {
         console.error('[wakeword] 설정 읽기 실패', e);
+        // 🚨 **여기서 포기하면 단축키가 아예 안 잡힌다.** `main.js` 는 서버를 모르고
+        //   (토큰 파일만 읽는다) 기본값도 들고 있지 않다 — 주인이 하나이기 때문이다.
+        //   그래서 설정을 못 읽었을 때라도 **기본값으로 한 번은 잡아 둔다.**
+        window.pluiz.setHotkey(hotkeyDefault).catch(() => {});
       }
     }
 
@@ -2191,8 +2227,8 @@
           if (!enabled) {
             // 🔑 하드코딩된 'Alt+Space' 였다 — 키를 바꿀 수 있게 된 순간
             //    **거짓말이 된다.** 지금 실제로 잡혀 있는 키를 말한다.
-            const hk = document.getElementById('hotkey-input')?.value || hotkeyDefault;
-            setWakeStatus(`✓ 껐어요. ${hk} · 🎙️ 버튼으로 부를 수 있어요`, 'ok');
+            const hk = document.getElementById('hotkey-select')?.value || hotkeyDefault;
+            setWakeStatus(`✓ 껐어요. ${hk} · 🎙️ 버튼으로 말을 걸 수 있어요`, 'ok');
           } else {
             const shown = data.wake_words || wakeWordsDefault;
             setWakeStatus(`✓ "${shown}" 저장 — 10초 안에 반영돼요`, 'ok');
@@ -2321,6 +2357,44 @@
       setState('ready');
       if (autoMic) setTimeout(() => startMic(), 300);
       else setTimeout(() => document.getElementById('txt').focus(), 200);
+    }
+
+    // ── 웨이크 신호 — 단축키 · 호출어 · 🎙️ (2026-10-02 재정의) ────
+    //
+    // 🔑 **창 활성화와 음성 깨우기는 다른 일이다.**
+    //   창을 펴는 것은 «사람이 소프트웨어를 다루는» 일(채팅·설정·즐겨찾기)이고,
+    //   그건 **더블클릭 전용**이다. 웨이크 신호는 **접힌 채로** 듣고 말로 답한다.
+    //
+    // 🚨 전에는 셋 다 `activate(true)` 를 불러 **창을 펼쳤다.** 그래서
+    //   «말 안 했는데 갑자기 음성 입력 모드»가 됐다(2026-10-02 실기 지적).
+    //
+    // ⚠️ `sendVoice()` 는 창이 접혀 있어도 그대로 돈다 — `addMsg()` 는 숨은
+    //   `#chat` 에 쌓이고(펼치면 보인다) 답은 TTS 로 나간다. 그래서 여기서
+    //   **하는 일은 «녹음을 시작한다» 하나뿐**이다.
+    function wakeListen(auto) {
+      if (busy) return;
+      if (isRec) { stopMic(true); return; }   // 다시 누르면 지금까지 말한 것을 보낸다
+      micAuto = auto;
+      wakeOpened = false;                     // 🔑 창을 안 열었으니 닫을 것도 없다
+      setIdleBusy('listening');
+      startMic();
+    }
+
+    /** 접힌 상태의 «지금 무슨 일이 일어나는지». 펼친 창에는 따로 UI 가 있다. */
+    function setIdleBusy(mode) {
+      const ring = document.getElementById('logo-ring');
+      const hint = document.getElementById('idle-hint');
+      if (!ring || !hint) return;
+      ring.classList.remove('rec', 'proc');
+      if (mode === 'listening') {
+        ring.classList.add('rec');
+        hint.textContent = '듣는 중…';
+      } else if (mode === 'processing') {
+        ring.classList.add('proc');
+        hint.textContent = '생각하는 중…';
+      } else {
+        setIdleHint(document.getElementById('hotkey-select')?.value);
+      }
     }
 
     function deactivate() {
@@ -2487,11 +2561,13 @@
     }
 
     function closeIfSpurious() {
-      // 웨이크워드가 **열었고** 대화가 하나도 안 생겼으면 없던 일로 한다.
+      // 🔑 **이제 웨이크 신호는 창을 열지 않는다**(2026-10-02 재정의). 그래서
+      //   «없던 일로 한다»는 **접힌 표시를 되돌리는 것**이 전부다.
+      //   창이 떠 있었다면 그건 사람이 더블클릭으로 연 것이므로 **건드리지 않는다.**
       // ⚠️ busy면 손대지 않는다 — 서버가 답하는 중이면 그건 진짜 턴이다.
-      if (!recAuto || !wakeOpened || busy) return;
+      if (!recAuto || busy) return;
       recAuto = false; wakeOpened = false;
-      deactivate();
+      if (!isActive) setIdleBusy('');
     }
 
     function stopVad() {
@@ -2613,6 +2689,7 @@
       document.getElementById('mic-btn').classList.remove('rec');
       document.getElementById('mic-btn').textContent = '🎙️';
       setWf('');
+      if (!isActive) setIdleBusy(send ? 'processing' : '');
       flushPendingAudio();   // 녹음 때문에 미뤄 둔 TTS가 있으면 지금 내보낸다
     }
 
@@ -2640,6 +2717,7 @@
         addMsg('a', '⚠️ ' + err.message);
       } finally {
         setBusy(false); setState('ready'); setWf('');
+        if (!isActive) setIdleBusy('');   // 접힌 채였으면 안내문으로 되돌린다
       }
     }
 
@@ -2751,10 +2829,10 @@
         ring.classList.remove('awake');
         if (!isActive) ring.classList.add('listening');
       }, { once: true });
-      // 이 녹음은 **사람이 시킨 것이 아니다.** 실패하면 조용히 닫는다.
-      micAuto = true;
-      wakeOpened = !isActive;    // 이미 떠 있었으면 닫지 않는다
-      activate(true);
+      // 이 녹음은 **사람이 시킨 것이 아니다.** 실패하면 조용히 넘어간다.
+      // 🚨 전에는 `activate(true)` 로 **창을 펼쳤다.** 이제 접힌 채로 듣는다 —
+      //   창을 펴는 길은 더블클릭 하나다(2026-10-02 재정의).
+      wakeListen(true);
     });
 
     // BUG-08: ready/loading 상태를 UI에 실제로 반영
@@ -2762,22 +2840,21 @@
       const el = document.getElementById('idle-hint');
       // 🔑 «부르는 법»을 한 문장에 다 적는다 — 호출어가 로딩 중이어도
       //   버튼과 단축키는 **이미 쓸 수 있다.**
+      // 🔑 호출어가 로딩 중이어도 **버튼과 단축키는 이미 쓸 수 있다.**
       el.textContent = s === 'ready'
-        ? `더블클릭 · 🎙️ · ${hotkeyDefault}`
-        : `웨이크워드 로딩 중... (🎙️ · ${hotkeyDefault} 는 지금도 돼요)`;
-      if (s === 'ready') setIdleHint(document.getElementById('hotkey-input')?.value);
+        ? `말하기 ${hotkeyDefault} · 창 더블클릭`
+        : `호출어 로딩 중… (🎙️ · ${hotkeyDefault} 는 지금도 돼요)`;
+      if (s === 'ready') setIdleHint(document.getElementById('hotkey-select')?.value);
     });
 
-    window.pluiz.onToggleActive(() => {
-      micAuto = false; wakeOpened = false;   // Alt+Space는 **사람**이다
-      if (isActive) deactivate();
-      else activate(true);
-    });
+    // 🔑 **단축키는 호출어를 대신하는 웨이크 신호다** — 창을 열지도 닫지도 않는다.
+    //   전에는 토글이라 **더블클릭으로 연 창을 단축키가 닫았다.** 그건 「창과 무관」이
+    //   아니다. 지금은 녹음만 토글한다(누르면 듣고, 또 누르면 보낸다).
+    window.pluiz.onToggleActive(() => wakeListen(false));
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape' && isActive) deactivate();
     });
 
-    bindHotkeyCapture();
     connect();
   </script>
