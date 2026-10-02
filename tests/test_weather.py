@@ -318,7 +318,7 @@ check("get_weather가 등록돼 있다", "get_weather" in names, f"→ {len(name
 #   `cancel_reminder` · `do_in_background` · `watch_inbox`. 페르소나 §3-E·F·J 의 빈칸.
 #   🚨 엔진은 그래프 **밖**이라 승인 노드는 한 줄도 안 건드린다(절대규칙 1)
 #   → docs/design/M9_백그라운드_작업자.md)
-check("도구가 67개다", len(names) == 67, f"→ {len(names)}개")
+check("도구가 69개다", len(names) == 69, f"→ {len(names)}개")
 
 doc = (get_weather.description or "")
 check("설명이 «날씨는 항상 이 도구»라고 못박는다", "항상 이 도구" in doc, f"→ {doc[:80]}")
