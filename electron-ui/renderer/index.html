@@ -356,6 +356,30 @@
       animation: ring-wake .5s ease forwards;
     }
 
+    /* 🔔 **먼저 거는 말**(BL-87 · 2026-10-02). 창을 펴지 않고 여기서 알린다.
+       🚨 `awake`(웨이크 신호)와 **색을 다르게** 한다 — 같은 표시를 쓰면 사용자가
+          «내가 불렀나?» 와 «쟤가 말을 거나?» 를 구별할 수 없다. */
+    .logo-ring.notify {
+      animation: ring-notify .8s ease-out 3;
+    }
+
+    @keyframes ring-notify {
+      0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(52, 211, 153, .95)
+      }
+
+      45% {
+        transform: scale(1.22);
+        box-shadow: 0 0 0 14px rgba(52, 211, 153, 0)
+      }
+
+      100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(52, 211, 153, 0)
+      }
+    }
+
     /* 🔑 **접힌 채로 듣는다**(2026-10-02). 창을 펴지 않으므로 «지금 무슨 일이
        일어나는지»를 여기서 말해야 한다 — 펼친 창에만 표시가 있으면 사용자는
        말하고 있는데 아무 반응도 못 본다. */
@@ -1417,7 +1441,13 @@
          title="더블클릭하면 창이 열려요">
       <div class="logo-ring" id="logo-ring" title="끌어서 옮길 수 있어요">🎙️</div>
       <div class="idle-info">
-        <div class="idle-name">Pluiz <span class="sdot spin" id="sdot"></span></div>
+        <!-- 🚨 **접어 두면 «뭔가 돌고 있다»를 볼 자리가 없었다**(BL-86 · 2026-10-02 실기).
+             배지가 펼친 창(`a-header`)에만 있어서, 접고 쓰는 평소 상태에서는
+             감시도 약속도 **보이지 않았다.** -->
+        <div class="idle-name">Pluiz <span class="sdot spin" id="sdot"></span>
+          <span class="watch-badge" id="watch-badge-idle" title="화면 감시 중">👁</span>
+          <span class="watch-badge" id="worker-badge-idle" title="알려주기로 한 것">⏳ 0</span>
+        </div>
         <div class="idle-hint" id="idle-hint">연결 중…</div>
       </div>
       <div class="idle-actions">
@@ -1621,6 +1651,13 @@
     // VAD 한 판의 요약을 서버 로그로 보내려고 모아 둔다 (BL-81).
     // 🚨 **판정에는 안 쓴다.** 기록 전용이다.
     let micSettings = {}, vadFloor = 0, vadStartRms = 0, vadT0 = 0, vadEndBy = '';
+    // 🚨 **이 판의 결말을 이미 남겼나** (2026-10-02 · BL-82 조사에서 생긴 구멍).
+    //   `endVad()` 로 끝난 녹음만 서버 로그에 남고, **버튼·단축키로 끝낸 녹음은
+    //   한 줄도 안 남았다.** 그래서 2026-10-01 22:33 의 «빈 녹음 7,056바이트»가
+    //   어느 길로 왔는지 로그만으로는 **가릴 수가 없었다** — 웨이크워드는 안 깼고
+    //   (`prob=0.000`), VAD 보고도 없어서 **남은 것이 아무것도 없었다.**
+    // 🔑 측정이 없으면 다음에도 똑같이 못 가린다. 끝나는 길이 몇 개든 **한 줄은 남긴다.**
+    let vadReported = false;
     // 🗣 말 판정 신호 (M10). 🔒 **신호가 없으면 지금과 완전히 같이 돈다.**
     let speechOn = false, speechSeenAt = 0, speechQuietAt = 0;
     const SPEECH_STALE_MS = 5000;   // 이만큼 소식이 없으면 «신호 없음»으로 친다
@@ -2498,6 +2535,7 @@
       let speechAt = 0, quietAt = 0, floorSum = 0, floorN = 0, startRms = 0;
       vadPeak = 0;
       vadT0 = t0; vadFloor = 0; vadStartRms = 0; vadEndBy = '';
+      vadReported = false;              // 새 판이다 — 결말은 아직 안 남겼다
       speechQuietAt = 0;   // 🔑 지난 녹음의 «조용해진 시각»이 새어 들어오면 바로 끊긴다
 
       // ⚠️ 인터벌과 별개로 상한을 하나 더 건다. 인터벌이 throttle돼도 끊긴다.
@@ -2576,6 +2614,7 @@
       //   지금까지 이 정보가 브라우저 콘솔에만 있어서, 「30초를 꽉 채운다」를
       //   사용자가 먼저 알아챘는데도 로그로는 왜인지 볼 수 없었다.
       // 🚨 **실패해도 조용히 넘어간다.** 기록 때문에 녹음이 깨지면 안 된다.
+      vadReported = true;
       try {
         fetch(`${API}/api/vad-report`, {
           method: 'POST',
@@ -2708,6 +2747,15 @@
     }
 
     function stopMic(send = true) {
+      // 🚨 **끝나는 길이 둘인데 기록은 하나였다** (BL-82 조사, 2026-10-02).
+      //   `endVad()` 를 안 거치고 온 녹음 — 버튼·단축키·창 접기 — 은 서버 로그에
+      //   **흔적이 없다.** 그래서 «아무도 안 말했는데 녹음이 갔다»를 받아도
+      //   **어느 길로 왔는지 물어볼 데가 없었다.**
+      if (vadTimer && !vadReported) {
+        //   `끝낸것` 은 **누가 끊었나**다 — 사람이 끊은 것과 발화가 끝난 것은 다르다.
+        vadEndBy = send ? 'button' : 'close';
+        reportVad(send ? 'manual' : 'discard');
+      }
       stopVad();
       hideLevel();
       // ★ `mr.stop()`의 마지막 flush까지 막으려면 **플래그가 먼저** 서야 한다.
@@ -2827,28 +2875,68 @@
     // ── 화면 감시 알림 ────────────────────────────────────────────
     // 감시는 사용자가 화면을 안 보고 있을 때 쓰는 기능이다. 그래서 조용히
     // 채팅에만 적으면 전달되지 않는다 — 창을 앞으로 꺼내고 소리로도 알린다.
+    // 🔔 **먼저 거는 말.** 🚨 **알림마다 무게가 다른데 대우가 같았다**
+    //   (BL-87 · 2026-10-02 실기).
+    //
+    //   예전엔 `showWindow()` + `activate(false)` 를 **조건 없이** 불렀다. 그래서
+    //   «1분 뒤 물 마시기» 가 **창을 통째로 펼쳤다.** 🙋 *"정말 별로다."*
+    //
+    // 🔑 **가르는 기준은 «사용자가 화면을 보고 있나»** 다 (🙋 2026-10-02 결정):
+    //
+    //   · 화면 감시(`screen_monitor`) — *"오류 뜨면 알려줘"* 는 **안 보고 있을 때**
+    //     쓰는 기능이다. 조용히 채팅에만 적으면 **전달되지 않는다.** → 창을 편다.
+    //   · 약속·알람·메일 기다리기(`worker`) — 사용자는 **자기 일을 하는 중**이다.
+    //     하던 일을 덮을 이유가 없다. → **접힌 채로** 고리가 반짝이고 말로 알린다.
+    //
+    // ⚠️ **조용한 쪽도 «조용히 실패»하지는 않는다** — 글은 채팅에 남고, 소리는
+    //   나가고, 고리가 반짝이고, 접힌 창의 배지(BL-86)가 켜져 있다. 넷이 겹친다.
     function onWatchNotify(m) {
       // 🚨 **감시 배지를 아무 알림에나 끄지 않는다.** 백그라운드 약속(worker)이
       //   말을 걸면 «돌고 있는 화면 감시»가 꺼진 것처럼 보인다 —
       //   그러면 사용자는 안 보고 있는 줄 알고 다시 시킨다.
-      if (m.source !== 'worker') setWatchBadge(false);
-      window.pluiz.showWindow();
-      activate(false);
+      const quiet = (m.source === 'worker');
+      if (!quiet) setWatchBadge(false);
+      if (quiet) {
+        blinkNotify();
+      } else {
+        window.pluiz.showWindow();
+        activate(false);
+      }
       addMsg('a', m.text || '');
       if (m.audio_base64) playAudio(m.audio_base64, m.audio_mime);
     }
 
+    // 접힌 채로 «말을 걸었다»를 보여 준다. 🚨 녹음·처리 중이면 **건드리지 않는다** —
+    //   그 표시가 더 급하고, 덮어쓰면 사용자가 지금 뭐가 되는 중인지 못 본다.
+    function blinkNotify() {
+      const ring = document.getElementById('logo-ring');
+      if (!ring || isRec || busy) return;
+      ring.classList.remove('notify');
+      void ring.offsetWidth;              // 애니메이션을 다시 트는 표준 방법
+      ring.classList.add('notify');
+      ring.addEventListener('animationend',
+                            () => ring.classList.remove('notify'), { once: true });
+    }
+
     // 잡아 둔 약속 개수. 0이면 숨긴다. (감시 배지와 **별개다** — 둘은 동시에 돈다)
+    // 🚨 **배지는 두 자리에 있다** — 펼친 창(`a-header`)과 접힌 알약(`idle-info`).
+    //   한쪽만 갱신하면 *«한 사실이 두 곳에 있으면 한쪽만 갱신된다»* 는, 이 저장소가
+    //   네 번 데인 바로 그 모양이 된다. 그래서 **쓰는 자리를 하나로** 둔다.
+    function setBadge(name, show, text) {
+      for (const id of [name, name + '-idle']) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        if (text !== undefined) el.textContent = text;
+        el.className = 'watch-badge' + (show ? ' show' : '');
+      }
+    }
+
     function setWorkerBadge(count) {
-      const el = document.getElementById('worker-badge');
-      if (!el) return;
-      el.textContent = '⏳ ' + count;
-      el.className = 'watch-badge' + (count > 0 ? ' show' : '');
+      setBadge('worker-badge', count > 0, '⏳ ' + count);
     }
 
     function setWatchBadge(active) {
-      const el = document.getElementById('watch-badge');
-      if (el) el.className = 'watch-badge' + (active ? ' show' : '');
+      setBadge('watch-badge', active);
     }
 
     // ── IPC ───────────────────────────────────────────────────────
