@@ -602,6 +602,42 @@ _QUERY_MARKERS = (
     "돼있", "되있", "됐어", "됐나",            # 「음소거됐어?」
 )
 
+# ── BL-63: 대상 게이트 — **«그냥 닫아줘»가 특정 앱으로 굳었다** ──────
+#
+# 2026-09-20 3차 리허설에서 캐시에 이게 박혔다:
+#
+#   '그냥 닫아줘'  →  close_app(app='설정')
+#
+# 「그냥」은 **지시어가 아니다.** 그래서 [BL-50] 지시대명사 게이트를 그냥 지나고,
+# 「닫아」가 action 이라 L1 도 통과하고, 5글자라 L2 도, 대조가 없어 L3 도 통과한다.
+# (`_ESCALATION_MARKERS` 에 「그냥꺼」·「그냥종료」가 있는데 **「그냥닫아」는 없다** —
+#  목록이 한 칸 모자랐다는 것 자체가 아래의 요점이다)
+#
+# 🚨 **같은 모양이 이번이 세 번째다** — BL-27(「그래」) · BL-50(「그거 꺼줘」) · 여기.
+#   **셋 다 «토큰 목록»으로 막았고 셋 다 다음 표현이 샜다.** 「그냥」을 목록에 더하면
+#   다음은 「이제 닫아줘」이고 그 다음은 「됐어 닫아줘」다. 끝이 없다.
+#
+# 🔑 **막아야 할 축이 달랐다.** «지시어가 있나»가 아니라
+#   **«대상이 있어야 하는 도구인데 발화가 그 대상을 말했나»** 이다.
+#   「그냥 닫아줘」가 위험한 이유는 「그냥」이 아니라 **무엇을 닫는지가 안 적혀서**다.
+#   그러면 캐시가 «직전에 열려 있던 것»을 **영구히** 기억하는 꼴이 된다.
+#
+# ## 왜 «도구 이름 목록»이 아니라 «인자»를 보나
+#
+# 도구로 적으면 또 목록 관리가 된다. 대신 **도구 호출이 들고 있는 대상 인자**를 본다 —
+# `close_app(app='설정')` 은 자기가 무엇에 매여 있는지 **스스로 말하고 있다.**
+# 대상 인자가 없는 도구(`volume_up`·`take_screenshot`…)는 이 게이트에 **닿지도 않는다.**
+# 그래서 도구가 늘어도 여기는 고칠 것이 없다 — `_QUERY_SAFE_TOOLS` 를 여집합으로
+# 두지 않은 것과 **같은 이유를 반대편에서** 푸는 모양이다.
+#
+# ⚠️ `web_search(query=…)`·`open_url(url=…)` 은 **일부러 안 본다.** 「날씨 검색해줘」의
+#   「날씨」는 캐시 엔티티 표에 없어서, 그것까지 «대상»으로 보면 **멀쩡한 시드가 죽는다.**
+#   여기서 막고 싶은 것은 «되돌릴 수 없는 대상 지목»(열기·닫기)이다.
+#
+# ⚠️ 오판의 방향은 앞의 셋과 같다 — 막아서 생기는 손해는 **LLM 왕복 2.5초**뿐이고,
+#   놓쳐서 생기는 손해는 **엉뚱한 앱이 닫히는 것**이다. 맥락을 아는 쪽은 LLM 뿐이다.
+_TARGET_ARG_KEYS = ("app", "window")
+
 # ── BL-27: 학습 자격 — **발화** 쪽 조건 ───────────────────────────
 #
 # `_is_learnable()`은 **도구**가 화이트리스트인지만 봤다. 발화가 명령의 꼴인지는
@@ -774,6 +810,92 @@ class CommandCache:
         if not tool_calls:
             return False
         return self.has_escalation_marker(user_input)
+
+    # ── BL-63: 대상 게이트 ───────────────────────────────────────
+
+    @staticmethod
+    def _targets_of(tool_calls: list) -> list[str]:
+        """도구 호출이 들고 있는 **대상 인자** 값들. (BL-63)
+
+        `close_app(app='설정')` 의 `'설정'`. 대상 인자가 없는 도구
+        (`volume_up`·`take_screenshot`…)는 빈 목록이라 게이트에 **닿지 않는다.**
+        """
+        out: list[str] = []
+        for call in tool_calls or []:
+            args = (call or {}).get("args") or {}
+            for k in _TARGET_ARG_KEYS:
+                v = args.get(k)
+                if isinstance(v, str) and v.strip():
+                    out.append(v.strip())
+        return out
+
+    def _has_target_slot(self, text_norm: str) -> bool:
+        """발화에 **대상 자리를 채운 말**이 있는가. (BL-63)
+
+        삽입어(`_FILLER_TOKENS`)와 **동작 트리거를 품은 어절**을 빼고도 남는
+        낱말이 있으면 «무엇을»이 적혀 있다고 본다.
+
+            '그냥 닫아줘'  → [그냥(삽입어), 닫아줘(동작)]        → 남는 것 없음
+            '노트 띄워줘'  → [노트, 띄워줘(동작)]                → **노트**가 남는다
+
+        🔑 **낱말 목록을 늘리지 않는다.** `_FILLER_TOKENS` 는 이미 있는 표를 쓰고,
+          판정은 «빼고 남는가»라는 **자리**로 한다.
+
+        ⚠️ **남는 오차** — 표에 없는 삽입어(「일단」·「됐어」)는 대상 이름으로 읽힌다.
+          `'노트 띄워줘'` 의 「노트」와 **구별할 방법이 없기 때문**이다(둘 다 캐시가
+          모르는 낱말이다). 그걸 가르려고 목록을 늘리면 BL-27·BL-50 이 세 번 걸어간
+          길을 네 번째로 걷게 된다. 대신 **아는 대상을 말한 경우는 ②가 따로 본다.**
+        """
+        act = self._match_action(text_norm.replace(" ", ""),
+                                 _strip_fillers_ns(text_norm))
+        trigger = act[1] if act else ""
+        for tok in text_norm.split(" "):
+            t = tok.strip()
+            if not t or len(t) < 2:
+                continue                      # 「줘」·「좀」·「그」 — 잡음
+            if t in _FILLER_TOKENS:
+                continue
+            if trigger and trigger in t.replace(" ", ""):
+                continue                      # 동작을 품은 어절은 «대상»이 아니다
+            return True
+        return False
+
+    def target_conflict(self, user_input: str, tool_calls: list) -> bool:
+        """대상이 있어야 하는 도구인데 **발화가 그 대상을 말하지 않았는가**. (BL-63)
+
+        🔑 `query_conflict` 와 **같은 자리**다 — 발화만 보지도, 도구만 보지도 않는다.
+          발화만 보면 「그냥 닫아줘」를 막을 길이 낱말 목록뿐이고(그래서 세 번 샜다),
+          도구만 보면 「메모장 닫아줘」까지 죽는다. **짝**이 성립할 때만 막는다.
+
+        두 갈래로 본다:
+
+        | | 발화가 | 무엇을 보나 | 예 |
+        |---|---|---|---|
+        | ② | **아는 대상**을 말했다 | 도구가 든 것과 **같은가** | `'크롬 닫아줘'` ↛ `close_app(메모장)` |
+        | ① | 아는 대상이 없다 | **대상 자리라도 채웠는가** | `'그냥 닫아줘'` ↛ `close_app(설정)` |
+
+        ①이 «캐시 어휘에 있는 엔티티를 요구»하지 **않는** 것이 중요하다.
+        `'노트 띄워줘'` → `open_app(메모장)` 은 **사용자 자신의 낱말**이고, 이 학습이
+        이 캐시가 버는 것의 큰 몫이다([BL-65](../docs/BACKLOG.md) — 동적 학습은
+        «습관 학습»이 아니라 **«손으로 쓴 표의 빈칸 메우기»**를 하고 있었다).
+        거기까지 막으면 게이트가 아니라 **기능 삭제**가 된다.
+
+        ⚠️ ②에서 대상 값이 캐시 어휘로 **안 풀리면**(`app='settings'`·`app='notepad'`
+          처럼 영문 키로 박힌 시드·학습분) 건너뛴다. 모르는 것을 틀렸다고 하지
+          않는다 — 그쪽은 **멀쩡한 시드를 죽이는** 방향이다.
+        """
+        targets = self._targets_of(tool_calls)
+        if not targets:
+            return False                      # 대상 인자가 없는 도구는 닿지 않는다
+        norm = self._normalize(user_input)
+        said = self._extract_entity(norm)
+        if said is not None:
+            for t in targets:                 # ② 말한 것과 다른 것을 들고 있다
+                want = self._extract_entity(t)
+                if want is not None and want != said:
+                    return True
+            return False
+        return not self._has_target_slot(norm)   # ① «무엇을»이 비어 있다
 
     def _extract_entity(self, text: str) -> Optional[str]:
         """텍스트에서 entity 키 추출. 더 긴 표면형 우선."""
@@ -1055,6 +1177,11 @@ class CommandCache:
                 print(f"[CommandCache] [격상] 센 동작을 요구했는데 캐시는 약한 도구 → "
                       f"캐시 포기, LLM으로: {normalized!r} ↛ {matched.pattern!r}")
                 return None
+            # Stage 0-d: 대상 게이트 (BL-63) — 조회 게이트와 **같은 자리**다.
+            if self.target_conflict(normalized, matched.tool_calls):
+                print(f"[CommandCache] [BL-63] 대상이 비었거나 다르다 → 캐시 포기, "
+                      f"LLM으로: {normalized!r} ↛ {matched.pattern!r}")
+                return None
             print(f"[CommandCache] [S1-intent] {intent} → {matched.pattern!r}")
             return matched, 0.90
 
@@ -1078,6 +1205,13 @@ class CommandCache:
             if self.escalation_conflict(normalized, best_entry.tool_calls):
                 print(f"[CommandCache] [격상] 센 동작을 요구했는데 캐시는 약한 도구 → "
                       f"캐시 포기, LLM으로: {normalized!r} ↛ {best_entry.pattern!r} "
+                      f"(score={best_score:.2f})")
+                return None
+            # 🚨 **여기가 BL-63 이 샌 자리다.** 「그냥 닫아줘」는 학습된 자기 자신과
+            #   유사도 1.00 으로 맞으므로 Stage 2 를 **반드시** 통과한다.
+            if self.target_conflict(normalized, best_entry.tool_calls):
+                print(f"[CommandCache] [BL-63] 대상이 비었거나 다르다 → 캐시 포기, "
+                      f"LLM으로: {normalized!r} ↛ {best_entry.pattern!r} "
                       f"(score={best_score:.2f})")
                 return None
             print(f"[CommandCache] [S2-sim] score={best_score:.2f} → {best_entry.pattern!r}")
@@ -1223,6 +1357,12 @@ class CommandCache:
 
         cand = [i for i in range(len(keys))
                 if self._shares_token(text, keys[i], _tool_of(i))]
+        # ③-c 대상 게이트 (BL-63) — `find()` 와 **같은 판정**을 받는다.
+        #   제안도 실행의 입구다(BL-37) — *"혹시 「설정 닫아줘」인가요?"* 에
+        #   「네」 하면 **묻지도 않은 설정이 닫힌다.** 판정에 «걸린 도구»가 들어가므로
+        #   앞의 세 게이트와 달리 **후보를 고른 뒤**에 놓인다.
+        cand = [i for i in cand
+                if not self.target_conflict(text, entries[i].tool_calls)]
         if not cand:
             return None
         i = max(cand, key=lambda j: sims[j])
@@ -1511,6 +1651,13 @@ class CommandCache:
         if self.has_escalation_marker(key):
             print(f"[CommandCache] 학습 거부(L6:격상 표현은 굳히지 않는다): {key!r}")
             return False
+        # L7 — **대상이 비어 있는 명령을 특정 대상으로 굳히지 않는다.** (BL-63)
+        # 🚨 「그냥 닫아줘」가 `close_app(설정)` 으로 박혔던 자리다. 한 번 굳으면
+        #   다음부터는 **무엇을 보고 있든 설정이 닫힌다** — 캐시는 맥락을 안 본다.
+        if self.target_conflict(key, tool_calls):
+            print(f"[CommandCache] [BL-63] 학습 거부(L7:대상 없는 말↛특정 대상): {key!r} "
+                  f"↛ {self._targets_of(tool_calls)}")
+            return False
         now = _now_iso()
         if key in self._cache:                  # 이미 알고 있음 → 사용 기록만 갱신
             e = self._cache[key]
@@ -1569,6 +1716,10 @@ class CommandCache:
             if entry.source != "dynamic" or entry.is_seed:
                 continue
             reason = self.is_learnable_utterance(key)
+            # 🆕 BL-63 — `is_learnable_utterance` 는 **발화만** 본다. 「그냥 닫아줘」는
+            #   발화만 보면 멀쩡해서, 짝(=들고 있는 대상)을 같이 봐야 걷힌다.
+            if reason is None and self.target_conflict(key, entry.tool_calls):
+                reason = "L7:대상 없는 말↛특정 대상"
             if reason is not None:
                 victims.append((key, reason))
         if dry_run or not victims:

@@ -265,6 +265,15 @@ def merge_cache_entries(current: dict, incoming: dict, cache,
             rejected.append((pattern, "L5:묻는 말↛조작 도구"))
             continue
 
+        # ④ 대상 게이트 (BL-63) — 역시 learn()이 쓰는 것과 **같은 함수**
+        # 🚨 ①도 ③도 못 막는다. 「그냥 닫아줘」는 발화만 보면 멀쩡하고
+        #   `close_app` 은 묻는 말도 아니다. 나쁜 것은 **«대상이 빈 말»과
+        #   «특정 앱»의 짝**이다. 이 줄이 없으면 가져오기가 BL-63 게이트의
+        #   우회로가 된다(③과 같은 논리).
+        if cache.target_conflict(pattern, calls):
+            rejected.append((pattern, "L7:대상 없는 말↛특정 대상"))
+            continue
+
         key = cache._normalize(pattern)
         existing = current.get(pattern) or current.get(key)
         if existing:
