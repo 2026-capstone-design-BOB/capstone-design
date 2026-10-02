@@ -18,7 +18,7 @@ from pydantic import BaseModel
 # BUG-02: create_task 참조 손실 방지용 백그라운드 태스크 집합
 _bg_tasks: set = set()
 
-from config.settings import get_settings
+from config.settings import Settings, get_settings
 from core import auth
 from core.graph_agent import get_graph_agent
 from core.logger import get_logger
@@ -194,6 +194,11 @@ class WakeWordRequest(BaseModel):
     enabled: bool = True
 
 
+class HotkeyRequest(BaseModel):
+    """말 거는 단축키. Electron accelerator 문법(`Alt+Space`·`Ctrl+Shift+P`)."""
+    hotkey: str = ""          # 빈 문자열이면 기본값으로 되돌린다
+
+
 class TTSRequest(BaseModel):
     """목소리 설정. (계획 2-5)"""
     #: auto = 망이 되면 edge, 끊기면 로컬 | edge = 항상 edge | local = 항상 로컬
@@ -224,6 +229,11 @@ async def get_config():
         "wake_word_enabled": s.wake_word_enabled,
         # 사용자가 아무것도 안 정했을 때 실제로 쓰이는 값 (UI 플레이스홀더용)
         "wake_words_default": "플루이즈",
+        # 🔑 **말 거는 길은 하나가 아니다** — 호출어 · 🎙️ 버튼 · 더블클릭 · 단축키.
+        #   UI 가 단축키를 보여 주려면 서버가 알려 줘야 한다(그 전에는 `main.js` 에만
+        #   박혀 있어서 **사용자가 알 길이 없었다**).
+        "hotkey": s.hotkey,
+        "hotkey_default": Settings.model_fields["hotkey"].default,
     }
 
 
@@ -325,6 +335,29 @@ async def save_wakeword(req: WakeWordRequest):
         "wake_words": words,
         "enabled": req.enabled,
         "note": "웨이크워드 서비스가 10초 안에 자동 반영합니다.",
+    }
+
+
+@app.post("/api/hotkey")
+async def save_hotkey(req: HotkeyRequest):
+    """말 거는 단축키 저장.
+
+    🚨 **여기서 «된다»고 말하지 않는다.** 실제로 그 키를 잡는 것은 Electron 이고,
+      다른 프로그램이 이미 쓰고 있으면 **등록이 실패한다.** 서버는 저장만 하고,
+      성공/실패는 `main.js` 의 `globalShortcut.register()` 가 말한다.
+      → BL-13 이 막으려던 *"저장까지 했는데 아무 반응이 없는 최악의 모양"* 이
+        여기에 그대로 있다. **저장과 적용은 다른 일이다.**
+
+    ⚠️ 개행을 자른다 — `.env` 에 임의의 줄을 끼워 넣을 수 있다(BL-14 ③과 같은 자리).
+    """
+    key = "".join(ch for ch in req.hotkey if ch not in (chr(10), chr(13))).strip()
+    default = Settings.model_fields["hotkey"].default
+    _write_env({"HOTKEY": key or default})
+    print(f"[config] 단축키 저장: {key or default}")
+    return {
+        "status": "ok",
+        "hotkey": key or default,
+        "note": "실제로 잡혔는지는 UI 가 Electron 에게 물어 확인합니다.",
     }
 
 

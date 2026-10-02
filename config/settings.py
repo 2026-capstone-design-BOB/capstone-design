@@ -128,6 +128,14 @@ class Settings(BaseSettings):
     # 예: WAKE_WORDS=플루이즈,헤이 플루이즈,pluiz
     wake_words: str = ""
     wake_word_enabled: bool = True
+
+    # ── 말 거는 단축키 (2026-10-02) ───────────────────────────────
+    # 🔑 **호출어를 끄지 않고 둘 다 쓴다.** 전시장처럼 「남의 말소리」가 많은 자리에서는
+    #   호출어의 헛깨어남을 임계로 못 죽인다 — 버튼·단축키는 그게 **구조적으로 0** 이다.
+    # ⚠️ 기본값을 여기 **한 곳에만** 둔다. `main.js` 와 UI 가 각자 기본값을 들고 있으면
+    #   «설정은 바뀌었는데 실제로 듣는 키는 그대로»가 된다(BL-13 이 데인 모양).
+    # 📌 Electron accelerator 문법이다 — `Alt+Space` · `Ctrl+Shift+P` 처럼 쓴다.
+    hotkey: str = "Alt+Space"
     # 인식 튜닝 — 마이크/환경마다 달라서 코드 수정 없이 조절할 수 있게 뺐다
     wakeword_model: str = "base"          # tiny / base. ⚠️ base가 오히려 **5배 빠르다** —
                                           # tiny는 환각으로 수백 토큰을 뱉느라 시간을 다 쓴다
