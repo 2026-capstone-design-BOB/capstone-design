@@ -10,6 +10,8 @@ import urllib.parse
 from datetime import datetime, timedelta
 from langchain_core.tools import tool
 
+NL = chr(10)
+
 
 def _parse_datetime(date_str: str, time_str: str) -> datetime | None:
     """
@@ -46,7 +48,17 @@ def _create_via_url(title: str, start_dt: datetime, end_dt: datetime, descriptio
 
     url = "https://calendar.google.com/calendar/render?" + urllib.parse.urlencode(params)
     _open_url(url)
-    return f"✓ Google Calendar에서 '{title}' 일정 추가 화면을 열었어요. 저장 버튼을 눌러주세요!"
+    # 🚨 **✓ 가 아니라 ⚠️ 다** (2026-10-02 실기).
+    #
+    #   예전엔 `✓ … 추가 화면을 열었어요` 였다. 그런데 `✓` 는 *«의도한 일이 됐다»* 는
+    #   표시이고, 여기서 된 것은 **창을 연 것**뿐이다 — 일정은 **아직 없다.**
+    #   실기에서 모델이 그 `✓` 를 보고 *"일정을 만들었어요!"* 라고 답했다.
+    #   🙋 *"내가 직접 일정 만들라고 하질 않나"*
+    #
+    # 🔑 `⚠️`(core/tool_result.py: *«도구는 돌았지만 목적이 달성되지 않았다»*)로 바꾸면
+    #   `output_guard` 의 그물에 걸린다 — 말로 부탁하는 대신 **표시를 바로잡는다.**
+    return (f"⚠️ 아직 일정이 만들어지지 않았어요. Google Calendar 에 '{title}' 추가 "
+            "화면만 열어 뒀어요 — **저장 버튼을 눌러야** 등록돼요.")
 
 
 def _create_via_api(title: str, start_dt: datetime, end_dt: datetime, description: str, location: str) -> str:
@@ -106,12 +118,22 @@ def create_calendar_event(
     # 방법 2 시도 (calendar_credentials.json 있을 때만)
     try:
         return _create_via_api(title, start_dt, end_dt, description, location)
-    except FileNotFoundError:
-        pass  # credentials 없으면 URL 방식으로 fallback
-    except ImportError:
-        pass  # google 패키지 미설치 시 fallback
-    except Exception as e:
-        print(f"[calendar] API 오류, URL fallback: {e}")
+    except Exception as e:                                    # noqa: BLE001
+        # 🚨 **«로그인만 안 된 것»은 URL 로 도망가지 않는다** (2026-10-02 실기).
+        #
+        #   예전엔 전부 한 덩어리로 URL 폴백이었다. 그래서 토큰이 없을 때
+        #   *"내일모레 9시에 미팅 만들어줘"* 가 **브라우저 창을 띄우고 «저장 버튼을
+        #   눌러주세요»** 로 끝났다 — 🙋 *"내가 직접 일정 만들라고 하질 않나."*
+        #
+        # 🔑 **로그인은 우리가 열어 줄 수 있다**(BL-84 `connect_google`). 할 수 있는
+        #   일을 두고 사용자에게 떠넘기지 않는다. 막힌 이유마다 할 일이 다르다는
+        #   `tools/google_auth.py` 의 규칙이 여기까지 와야 한다.
+        from tools.google_auth import NeedLogin, message_for
+        if isinstance(e, NeedLogin):
+            return message_for(e)
+        # 자격증명 자체가 없거나 패키지가 없으면 **URL 말고는 길이 없다** → 폴백.
+        if not isinstance(e, (FileNotFoundError, ImportError)):
+            print(f"[calendar] API 오류, URL fallback: {e}")
 
     # 방법 1: URL 스킴 fallback
     return _create_via_url(title, start_dt, end_dt, description, location)
@@ -231,3 +253,170 @@ def list_calendar_events(date: str = "", days: int = 1) -> str:
         lines.append(piece)
 
     return f"✓ {when} 일정 {len(items)}개예요:\n" + "\n".join(lines)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 일정 고치기 — 2026-10-02 실기 신설 (BL-88)
+#
+# 🚨 **«수정»할 수단이 없어서 하나 더 생겼다.**
+#
+#     21:46:00  내일 13시에 캡스톤 미팅 만들어줘  → create  (1시간)
+#     21:46:45  1시간이 아니라 3시간으로 수정해 줘 → 되물었다
+#     21:47:05  맞아                              → create  ← 두 번째가 생겼다
+#
+#   모델이 게으른 게 아니었다. 캘린더 도구가 `create` 와 `list` **둘뿐**이라
+#   «고치기»를 할 방법이 **원리적으로 없었다.** 할 수 있는 유일한 일을 한 것이다.
+#
+# 🔑 **지우는 도구는 일부러 안 만든다.** 고칠 수 있으면 «지우고 새로 만들기»가
+#   필요 없고, 이 저장소의 규칙이 *«도구 목록이 경계를 같이 진다»* 이다
+#   (`gmail_send` 를 아예 안 만든 것과 같은 이유). 지우기는 **요청이 생기면** 만든다.
+#
+# 🚨 **그리고 이 도구는 «무엇을 어떻게 바꿨는지»를 스스로 말한다**
+#   (🙋 2026-10-02 사용자 제안).
+#
+#     *"모호할 수 있거나 삭제·수정과 관련된 작업을 하면 내가 말한 의도를 따르되
+#       작업 수행 이후 고쳐진 것을 말하도록 하는 게 좋지 않을까"*
+#
+#   그 말을 **프롬프트로 부탁하지 않는다.** 도구가 돌려주는 문장에 전/후가 들어
+#   있으면 모델은 그걸 옮길 수밖에 없다 — 이 저장소가 반복해서 적어 둔
+#   *«프롬프트는 확률을 올릴 뿐이고 보장하는 건 구조다»* 의 그 자리다.
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _ev_span(ev: dict) -> str:
+    """«10월 03일 13:00~14:00 (60분)». 전/후를 말하려면 길이가 보여야 한다."""
+    s0, e0 = ev.get("start", {}), ev.get("end", {})
+    if "date" in s0:
+        return f"{s0.get('date', '')} 하루 종일"
+    try:
+        a = datetime.fromisoformat(s0.get("dateTime", ""))
+        b = datetime.fromisoformat(e0.get("dateTime", ""))
+        mins = int((b - a).total_seconds() // 60)
+        return f"{a.strftime('%m월 %d일 %H:%M')}~{b.strftime('%H:%M')} ({mins}분)"
+    except Exception:
+        return s0.get("dateTime", "")[:16].replace("T", " ")
+
+
+def _find_events(service, title: str, date: str) -> list:
+    """제목으로 찾는다. 🚨 **고를 범위를 넓히지 않는다** — 앞뒤 한 달만 본다."""
+    try:
+        base = datetime.strptime(date, "%Y-%m-%d") if date else datetime.now()
+    except ValueError:
+        base = datetime.now()
+    lo = (base - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    hi = base + timedelta(days=30 if not date else 1)
+    res = service.events().list(
+        calendarId="primary",
+        timeMin=lo.astimezone().isoformat(), timeMax=hi.astimezone().isoformat(),
+        singleEvents=True, orderBy="startTime", maxResults=50,
+    ).execute()
+    key = (title or "").strip().replace(" ", "")
+    if not key:
+        return list(res.get("items", []))
+    return [e for e in res.get("items", [])
+            if key in (e.get("summary") or "").replace(" ", "")]
+
+
+@tool
+def update_calendar_event(
+    title: str,
+    date: str = "",
+    new_title: str = "",
+    new_date: str = "",
+    new_time: str = "",
+    duration_minutes: int = 0,
+    location: str = "",
+    description: str = "",
+) -> str:
+    """이미 있는 캘린더 일정을 **고칩니다**. "아까 만든 일정 3시간으로 바꿔줘" 같은 요청에 씁니다.
+
+    🚨 고치는 요청이면 새 일정을 만들지 말고 반드시 이 도구를 쓰세요.
+    title: 고칠 일정의 제목 (일부만 맞아도 됩니다. 예: 캡스톤)
+    date: 그 일정의 날짜 (YYYY-MM-DD). 비우면 앞뒤 한 달에서 찾습니다.
+    new_title / new_date / new_time: 바꿀 값. 안 바꿀 것은 비워 두세요.
+    duration_minutes: 새 길이(분). 0이면 안 바꿉니다.
+    location / description: 바꿀 값 (선택).
+    """
+    try:
+        service = _calendar_service()
+    except Exception as e:                                    # noqa: BLE001
+        from tools.google_auth import NotConnected, message_for
+        if isinstance(e, NotConnected):
+            return message_for(e)
+        if isinstance(e, (FileNotFoundError, ImportError)):
+            return _NO_CREDS
+        return f"✗ 캘린더에 연결하지 못했어요 ({type(e).__name__})."
+
+    try:
+        found = _find_events(service, title, date)
+    except Exception as e:                                    # noqa: BLE001
+        return f"✗ 캘린더를 읽지 못했어요 ({type(e).__name__}). 직접 확인해 보시겠어요?"
+
+    if not found:
+        # 🚨 «없다»와 «못 찾았다»를 섞지 않는다 — 못 찾았으면 **안 고친다.**
+        return (f"✗ '{title}' 이라는 일정을 못 찾았어요. 제목이나 날짜를 알려 주시겠어요? "
+                "(기본 달력만 봤어요)")
+    if len(found) > 1:
+        # 🚨 **여럿이면 고르지 않는다.** 엉뚱한 일정을 고치면 되돌릴 수 없고,
+        #   사용자는 고쳐진 줄 안다. (`read_email` 이 같은 규칙을 쓴다)
+        lines = [f"  • {_ev_span(e)} {e.get('summary') or '(제목 없음)'}"
+                 for e in found[:5]]
+        return (f"✗ '{title}' 로 찾은 일정이 {len(found)}개예요. 어느 것인지 알려 주세요:"
+                + NL + NL.join(lines))
+
+    ev = found[0]
+    before = _ev_span(ev)
+    before_title = ev.get("summary") or "(제목 없음)"
+
+    start_raw = (ev.get("start") or {}).get("dateTime")
+    if not start_raw:
+        return (f"✗ '{before_title}' 은 하루 종일 일정이라 시간을 못 바꿔요. "
+                "캘린더에서 직접 고쳐 보시겠어요?")
+
+    try:
+        cur_start = datetime.fromisoformat(start_raw)
+        cur_end = datetime.fromisoformat((ev.get("end") or {}).get("dateTime", ""))
+    except Exception:
+        return f"✗ '{before_title}' 의 시간을 읽지 못했어요. 캘린더에서 직접 고쳐 보시겠어요?"
+
+    new_start = cur_start
+    if new_date or new_time:
+        parsed = _parse_datetime(new_date or cur_start.strftime("%Y-%m-%d"),
+                                 new_time or cur_start.strftime("%H:%M"))
+        if not parsed:
+            return f"✗ 날짜/시간 형식 오류: new_date='{new_date}', new_time='{new_time}'"
+        new_start = parsed.replace(tzinfo=cur_start.tzinfo)
+
+    mins = duration_minutes if duration_minutes > 0 else int(
+        (cur_end - cur_start).total_seconds() // 60)
+    new_end = new_start + timedelta(minutes=mins)
+
+    tz = "Asia/Seoul"
+    body = {
+        "start": {"dateTime": new_start.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": tz},
+        "end":   {"dateTime": new_end.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": tz},
+    }
+    if new_title:
+        body["summary"] = new_title
+    if location:
+        body["location"] = location
+    if description:
+        body["description"] = description
+
+    try:
+        service.events().patch(calendarId="primary", eventId=ev.get("id"),
+                               body=body).execute()
+    except Exception as e:                                    # noqa: BLE001
+        # 🚨 **못 고쳤으면 못 고쳤다고 한다.** 여기서 새로 만들지 않는다 —
+        #   그게 2026-10-02 에 일정이 둘이 된 길이다.
+        return f"✗ '{before_title}' 을 고치지 못했어요 ({type(e).__name__})."
+
+    after = _ev_span({"start": body["start"], "end": body["end"]})
+    # 🔑 **전/후를 도구가 말한다.** 모델에게 «바꾼 걸 말해 주세요»라고 부탁하는 대신,
+    #   옮길 수밖에 없는 문장을 쥐여 준다. 🚨 «새로 만들지 않았어요»도 같이 말한다 —
+    #   사용자가 걱정한 것이 바로 **하나 더 생기는 것**이었다.
+    head = f"✓ 기존 '{before_title}' 일정을 고쳤어요 (새로 만들지 않았어요)."
+    if new_title and new_title != before_title:
+        head = (f"✓ 기존 '{before_title}' 일정을 '{new_title}' 로 고쳤어요 "
+                "(새로 만들지 않았어요).")
+    return f"{head}{NL}  전: {before}{NL}  후: {after}"
