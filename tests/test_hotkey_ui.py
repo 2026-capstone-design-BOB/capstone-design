@@ -72,6 +72,11 @@ settings = src("config", "settings.py")
 
 from config.settings import Settings  # noqa: E402
 
+
+def between(text, a, b):
+    i = text.index(a)
+    return text[i:text.index(b, i)]
+
 print("=== ① 🚨 더블클릭이 창을 여는 **유일한** 길인가 ===")
 # 실기에서 더블클릭이 안 먹힌 원인은 **단일 클릭**이었다 — 첫 클릭이 창을 열며
 # 레이아웃을 바꿔, 두 번째 클릭의 dblclick 이 다른 요소로 갔다.
@@ -81,6 +86,24 @@ check("🚨 대기 화면에 `onclick` 으로 창을 여는 길이 없다",
 check("더블클릭이 창을 연다", 'id="idle-view" ondblclick="activate(false)"' in ui)
 check("🔑 창을 **펼치면서 녹음**하는 길이 아예 없다 (④ 의 뿌리)",
       "activate(true);" not in ui)
+
+# 🚨 **2026-10-02 실기 2차 — 한 번도 두 번도 아무 반응이 없었다.**
+#   JS 는 멀쩡했다. `.card` 에 `-webkit-app-region: drag` 가 걸려 있는데
+#   **Electron 의 드래그 영역은 클릭·더블클릭 이벤트를 삼킨다.**
+#   버튼만 `.idle-actions` 로 `no-drag` 라 버튼은 되고 창은 안 됐다.
+# 🔑 **JS 를 아무리 고쳐도 안 고쳐지는 종류였다 — CSS 사실이다.**
+#   그래서 여기서 **CSS 를 센다.** 핸들러만 세는 테스트는 이걸 영원히 못 잡는다.
+def css_block(name):
+    i = ui.index(name + " {")
+    return ui[i:ui.index("}", i)]
+
+
+check("🚨 대기 화면이 **드래그 영역이 아니다** (드래그면 클릭이 안 간다)",
+      "-webkit-app-region: no-drag" in css_block("    .idle-view"))
+check("🔑 그래도 **창을 끌 자리는 있다** (고리가 손잡이)",
+      "-webkit-app-region: drag" in css_block("    .logo-ring"))
+check("⚠️ 헤더의 죽은 `ondblclick` 을 지웠다 (드래그 영역이라 안 불린다)",
+      'class="a-header" ondblclick' not in ui)
 
 print("")
 print("=== ② 창을 닫는 길이 **보이는가** ===")
@@ -99,10 +122,27 @@ check("호출어도 접힌 채로 듣는다", "wakeListen(true);" in ui)
 check("🎙️ 버튼도 같다", 'wakeListen(false)"' in ui)
 check("🔑 접힌 상태에 «지금 무슨 일인지»가 보인다 (안 보이면 반응이 없어 보인다)",
       "function setIdleBusy" in ui and "듣는 중" in ui and "생각하는 중" in ui)
-check("녹음/응답이 끝나면 안내문으로 되돌아온다",
-      ui.count("setIdleBusy('')") >= 2)
+
+# 🚨 **2026-10-02 실기 2차 — 아무것도 안 했는데 「생각하는 중…」이 남아 있었다.**
+#   `sendVoice()` 는 녹음이 너무 짧으면 **try 에 들어가기도 전에 return** 한다.
+#   그 길에는 `finally` 가 없어서 손으로 켠 표시가 영영 남았다.
+# 🔑 그래서 **표시를 손으로 켜고 끄지 않는다 — 진짜 상태에서 끌어온다.**
+#   길이 몇 개든, 새 길이 생기든 어긋날 수 없다.
+check("🚨 표시가 **상태에서 나온다** (`isRec`·`busy`)",
+      "function refreshIdle" in ui
+      and "setIdleBusy(isRec ? 'listening' : (busy ? 'processing' : ''))" in ui)
+check("🔑 `setBusy()` 가 표시를 **같이** 되돌린다 (빠뜨릴 자리가 없게)",
+      "function setBusy(v) {" in ui
+      and "refreshIdle();" in ui[ui.index("function setBusy(v) {"):
+                                 ui.index("function setBusy(v) {") + 220])
+check("마이크가 **실패해도** 표시가 안 남는다 (finally 에서 다시 읽는다)",
+      "micStarting = false;" in ui
+      and "refreshIdle();        // 🚨 실패해도" in ui)
+check("🚨 손으로 켜는 자리가 **남아 있지 않다**",
+      "setIdleBusy('listening')" not in ui and "setIdleBusy('processing')" not in ui)
 check("헛깨어남이 **사람이 연 창을 닫지 않는다**",
-      "if (!isActive) setIdleBusy('');" in ui and "if (!recAuto || busy) return;" in ui)
+      "if (!recAuto || busy) return;" in ui
+      and "deactivate()" not in between(ui, "function closeIfSpurious()", "function stopVad()"))
 
 print("")
 print("=== ④ 🚨 고를 수 있는 키만 — **서버가 거부한다** ===")

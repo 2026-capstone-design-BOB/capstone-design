@@ -303,7 +303,9 @@ check("닫을 때 플래그를 되돌린다",
 check("🚨 헛깨어남이 **사람이 연 창을 닫지 않는다**",
       "deactivate()" not in close_fn,
       "창을 여는 길은 더블클릭 하나다 — 웨이크 신호는 창과 무관하다")
-check("대신 접힌 표시만 되돌린다", "setIdleBusy('')" in close_fn)
+# 🔑 표시는 **손으로 끄지 않는다** — 진짜 상태(`isRec`·`busy`)에서 다시 읽는다.
+#   손으로 끄던 때는 `sendVoice()` 의 조기 return 에서 「생각하는 중…」이 영영 남았다.
+check("대신 접힌 표시를 **상태에서 다시 읽는다**", "refreshIdle()" in close_fn)
 
 # 헛깨어남이면 오버레이가 떠 있는 시간을 줄인다
 check("자동 녹음은 더 빨리 접는다",
