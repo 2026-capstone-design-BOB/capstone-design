@@ -210,6 +210,63 @@ function startWakeword() {
   wakeProc.on('error', err => console.error('[wake] error:', err));
 }
 
+// ── 말 거는 단축키 (2026-10-02) ───────────────────────────────────
+//
+// 🔑 **호출어를 끄지 않고 둘 다 쓴다.** 전시장처럼 「남의 말소리」가 많은 자리는
+//   호출어의 헛깨어남을 임계로 못 죽이는 조건이고, 단축키는 그게 **구조적으로 0** 이다.
+//
+// 🚨 **등록은 실패할 수 있다.** 다른 프로그램이 이미 그 키를 잡고 있으면
+//   `globalShortcut.register()` 가 **false 를 돌려준다.** 그걸 안 보면
+//   «설정에 저장은 됐는데 눌러도 아무 일이 없는» 상태가 된다 —
+//   [BL-13](../docs/BACKLOG.md)이 막으려던 바로 그 모양이다. 그래서 **말한다.**
+//
+// ⚠️ 기본값은 `config/settings.py` 가 주인이다. 여기 적힌 값은 **서버가 뜨기 전
+//   첫 순간용**이고, 렌더러가 설정을 읽으면 곧바로 덮어쓴다.
+const DEFAULT_HOTKEY = 'Alt+Space';
+let currentHotkey = null;
+
+/** 단축키를 실제로 잡는다. `{ ok, hotkey, previous }` 를 돌려준다. */
+function applyHotkey(key) {
+  const want = (key || '').trim() || DEFAULT_HOTKEY;
+  if (want === currentHotkey) return { ok: true, hotkey: want, previous: currentHotkey };
+
+  const previous = currentHotkey;
+  if (previous) globalShortcut.unregister(previous);
+
+  let ok = false;
+  try {
+    ok = globalShortcut.register(want, () => {
+      mainWindow?.show();
+      mainWindow?.focus();
+      mainWindow?.webContents.send('toggle-active');
+    });
+  } catch (e) {
+    // 문법이 틀린 accelerator 는 예외를 던진다 ('Ctrl+' 같은 것)
+    console.error('[hotkey] 등록 예외:', e.message);
+    ok = false;
+  }
+
+  if (ok) {
+    currentHotkey = want;
+    console.log('[hotkey] 등록:', want);
+    return { ok: true, hotkey: want, previous };
+  }
+
+  // 🔑 **실패했으면 쓰던 키로 되돌린다.** 안 그러면 «새 키는 안 되고 옛 키도 없는»
+  //   상태가 되어, 사용자가 말 걸 길을 하나 잃는다.
+  console.error('[hotkey] 등록 실패:', want);
+  if (previous && globalShortcut.register(previous, () => {
+    mainWindow?.show();
+    mainWindow?.focus();
+    mainWindow?.webContents.send('toggle-active');
+  })) {
+    currentHotkey = previous;
+  } else {
+    currentHotkey = null;
+  }
+  return { ok: false, hotkey: currentHotkey, previous };
+}
+
 app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => {
     cb(permission === 'media' || permission === 'audioCapture');
@@ -220,11 +277,7 @@ app.whenReady().then(() => {
 
   createWindow();
 
-  globalShortcut.register('Alt+Space', () => {
-    mainWindow?.show();
-    mainWindow?.focus();
-    mainWindow?.webContents.send('toggle-active');
-  });
+  applyHotkey(DEFAULT_HOTKEY);
 
   startWakeword();
 });
@@ -348,4 +401,8 @@ ipcMain.on('show-window',   () => { mainWindow?.show(); mainWindow?.focus(); });
 
 ipcMain.on('resize-idle',   () => resizeTo('idle'));
 ipcMain.on('resize-active', () => resizeTo('active'));
+// 렌더러가 설정을 읽거나 저장하면 이걸로 **실제 적용**을 시킨다.
+// 🚨 돌려주는 값을 UI 가 그대로 말한다 — «저장됨»과 «잡혔음»은 다른 일이다.
+ipcMain.handle('set-hotkey', (_e, key) => applyHotkey(key));
+
 ipcMain.on('quit-app',      () => { forceQuit = true; hidePointer(); wakeProc?.kill(); app.quit(); });

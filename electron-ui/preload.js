@@ -10,6 +10,10 @@ contextBridge.exposeInMainWorld('pluiz', {
   resizeActive: ()   => ipcRenderer.send('resize-active'),
   pointShow:    (p)  => ipcRenderer.send('point-show', p),
   pointHide:    ()   => ipcRenderer.send('point-hide'),
+  // 말 거는 단축키를 **실제로 잡게** 한다 (2026-10-02).
+  // 🚨 `{ ok, hotkey }` 를 돌려받아 UI 가 말한다 — 다른 프로그램이 그 키를 쓰고 있으면
+  //   등록이 실패하는데, 그걸 안 보면 «저장은 됐는데 눌러도 아무 일 없는» BL-13 이 된다.
+  setHotkey:    (k)  => ipcRenderer.invoke('set-hotkey', k),
   onToggleActive:   (cb) => ipcRenderer.on('toggle-active',    () => cb()),
   onWakeDetected:   (cb) => ipcRenderer.on('wake-detected',    () => cb()),
   onWakewordStatus: (cb) => ipcRenderer.on('wakeword-status',  (_e, s) => cb(s)),

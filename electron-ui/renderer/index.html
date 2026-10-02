@@ -1286,6 +1286,29 @@
           <div class="s-status" id="wake-status"></div>
         </div>
 
+        <!-- ── 버튼·단축키로 말 걸기 (2026-10-02) ────────────────
+             🔑 **호출어를 끄지 않는다. 둘 다 쓴다.**
+               전시장처럼 「남의 말소리」가 많은 자리는 호출어의 헛깨어남을 임계로
+               못 죽이는 조건이고, 버튼·단축키는 그게 **구조적으로 0** 이다.
+             🚨 **이 셋은 원래 다 동작하고 있었다 — 적힌 데가 없었을 뿐이다.**
+               단축키는 `main.js` 에만 박혀 있어서 사용자가 알 길이 없었다. -->
+        <div class="s-divider"></div>
+
+        <div>
+          <div class="s-label" style="margin:0">말 거는 방법</div>
+          <div class="s-desc" style="margin:4px 0 6px">
+            호출어 말고도 <b>🎙️ 버튼</b>, <b>창 더블클릭</b>, <b>단축키</b>로 부를 수 있어요.
+            시끄러운 곳에서는 이쪽이 확실해요.
+          </div>
+          <div class="s-row">
+            <input class="s-input" type="text" id="hotkey-input"
+              placeholder="Alt+Space" autocomplete="off" spellcheck="false"
+              readonly title="여기를 누른 뒤 쓰고 싶은 키를 눌러 보세요">
+            <button class="s-mini-btn" id="hotkey-save-btn" onclick="saveHotkey()">저장</button>
+          </div>
+          <div class="s-status" id="hotkey-status"></div>
+        </div>
+
         <!-- ── 목소리 (계획 2-5) ────────────────────────────────
              🔑 **로컬 목록은 PC 마다 다르다.** 그래서 서버에서 받아 채운다 —
              부스 PC 와 개발 PC 가 같다고 가정하지 않는다. -->
@@ -2023,6 +2046,118 @@
         input.placeholder = wakeWordsDefault;   // 비워 두면 이게 쓰인다
       }
       if (toggle) toggle.checked = data.wake_word_enabled !== false;
+
+      // 🔑 기본값의 주인은 `config/settings.py` 다 — 여기서 들고 있지 않는다.
+      hotkeyDefault = data.hotkey_default || hotkeyDefault;
+      const hk = data.hotkey || hotkeyDefault;
+      const hkInput = document.getElementById('hotkey-input');
+      if (hkInput) {
+        hkInput.value = hk;
+        hkInput.placeholder = hotkeyDefault;
+      }
+      setIdleHint(hk);
+      // 🚨 **읽기만 하고 끝내지 않는다.** `main.js` 는 서버를 모르므로, 저장해 둔
+      //   키를 실제로 잡는 것은 이 순간뿐이다. 실패하면 그것도 말한다.
+      window.pluiz.setHotkey(hk).then(r => {
+        if (r && !r.ok) {
+          setHotkeyStatus(`⚠️ ${hk} 를 다른 프로그램이 쓰고 있어요` +
+            (r.hotkey ? ` — ${r.hotkey} 로 부를 수 있어요` : ''), 'err');
+          if (r.hotkey) setIdleHint(r.hotkey);
+        }
+      }).catch(() => {});
+    }
+
+    // ── 말 거는 단축키 (2026-10-02) ──────────────────────────────
+    //
+    // 🚨 **«저장»과 «실제로 잡힘»은 다른 일이다.** 서버는 .env 에 적을 뿐이고,
+    //   그 키를 실제로 잡는 것은 Electron 이다. 다른 프로그램이 이미 쓰고 있으면
+    //   등록이 실패하는데, 그걸 안 보여 주면 «저장은 됐는데 눌러도 아무 일이
+    //   없는» 상태가 된다 — BL-13 이 막으려던 바로 그 모양이다.
+    //   그래서 저장할 때마다 **Electron 에게 물어서 그 답을 말한다.**
+    let hotkeyDefault = 'Alt+Space';
+
+    function setHotkeyStatus(msg, cls) {
+      const el = document.getElementById('hotkey-status');
+      if (!el) return;
+      el.textContent = msg;
+      el.className = 's-status' + (cls ? ' ' + cls : '');
+    }
+
+    /** 대기 화면 안내에 «어떻게 부르는지»를 적는다. 여기 말고는 적힌 데가 없다. */
+    function setIdleHint(hotkey) {
+      const el = document.getElementById('idle-hint');
+      if (el && !el.textContent.includes('로딩')) {
+        el.textContent = `더블클릭 · 🎙️ · ${hotkey || hotkeyDefault}`;
+      }
+    }
+
+    /** 누른 키 조합을 Electron accelerator 문자열로. ('Ctrl+Shift+P') */
+    function accelFrom(e) {
+      const mods = [];
+      if (e.ctrlKey)  mods.push('Ctrl');
+      if (e.altKey)   mods.push('Alt');
+      if (e.shiftKey) mods.push('Shift');
+      if (e.metaKey)  mods.push('Super');
+      let k = e.key;
+      if (['Control', 'Alt', 'Shift', 'Meta'].includes(k)) return null;  // 조합키만 → 아직
+      if (k === ' ') k = 'Space';
+      else if (k.length === 1) k = k.toUpperCase();
+      // 🔑 **조합키 없는 한 글자는 안 받는다.** 전역 단축키라 다른 프로그램에서
+      //   타자를 칠 때마다 창이 뜬다 — 되돌리기 어려운 종류의 성가심이다.
+      if (!mods.length && k.length <= 1) return null;
+      return [...mods, k].join('+');
+    }
+
+    function bindHotkeyCapture() {
+      const input = document.getElementById('hotkey-input');
+      if (!input) return;
+      input.addEventListener('keydown', e => {
+        e.preventDefault();                       // 설정창에서 타자가 새어 나가지 않게
+        const accel = accelFrom(e);
+        if (!accel) return;
+        input.value = accel;
+        setHotkeyStatus('저장을 눌러야 바뀌어요', '');
+      });
+    }
+
+    /** 서버에 저장하고 **Electron 이 실제로 잡았는지**까지 확인해서 말한다. */
+    async function saveHotkey() {
+      const btn = document.getElementById('hotkey-save-btn');
+      const want = document.getElementById('hotkey-input').value.trim();
+      btn.disabled = true;
+      btn.textContent = '저장 중';
+      setHotkeyStatus('', '');
+      try {
+        const res = await fetch(`${API}/api/hotkey`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hotkey: want }),
+        });
+        const data = await res.json();
+        if (data.status !== 'ok') {
+          setHotkeyStatus('저장 실패: ' + JSON.stringify(data), 'err');
+          return;
+        }
+        document.getElementById('hotkey-input').value = data.hotkey || '';
+        // 🚨 여기가 요점이다 — 저장됐다고 «된다»고 말하지 않는다.
+        const applied = await window.pluiz.setHotkey(data.hotkey);
+        if (applied && applied.ok) {
+          setHotkeyStatus(`✓ 이제 ${data.hotkey} 로 부를 수 있어요`, 'ok');
+          setIdleHint(data.hotkey);
+        } else {
+          const kept = applied && applied.hotkey;
+          setHotkeyStatus(
+            `⚠️ ${data.hotkey} 는 다른 프로그램이 쓰고 있어요` +
+            (kept ? ` — 그대로 ${kept} 로 부를 수 있어요` : ' — 다른 키로 해 보세요'),
+            'err');
+          if (kept) setIdleHint(kept);
+        }
+      } catch (e) {
+        setHotkeyStatus('오류: ' + e.message, 'err');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '저장';
+      }
     }
 
     async function loadWakeConfig() {
@@ -2054,7 +2189,10 @@
           // 서버가 정리한 값(공백 제거 등)을 그대로 되돌려 받아 다시 채운다.
           document.getElementById('wake-words-input').value = data.wake_words || '';
           if (!enabled) {
-            setWakeStatus('✓ 껐어요. Alt+Space로 부를 수 있어요', 'ok');
+            // 🔑 하드코딩된 'Alt+Space' 였다 — 키를 바꿀 수 있게 된 순간
+            //    **거짓말이 된다.** 지금 실제로 잡혀 있는 키를 말한다.
+            const hk = document.getElementById('hotkey-input')?.value || hotkeyDefault;
+            setWakeStatus(`✓ 껐어요. ${hk} · 🎙️ 버튼으로 부를 수 있어요`, 'ok');
           } else {
             const shown = data.wake_words || wakeWordsDefault;
             setWakeStatus(`✓ "${shown}" 저장 — 10초 안에 반영돼요`, 'ok');
@@ -2621,8 +2759,13 @@
 
     // BUG-08: ready/loading 상태를 UI에 실제로 반영
     window.pluiz.onWakewordStatus(s => {
-      document.getElementById('idle-hint').textContent =
-        s === 'ready' ? '더블클릭 · 🎙️' : '웨이크워드 로딩 중...';
+      const el = document.getElementById('idle-hint');
+      // 🔑 «부르는 법»을 한 문장에 다 적는다 — 호출어가 로딩 중이어도
+      //   버튼과 단축키는 **이미 쓸 수 있다.**
+      el.textContent = s === 'ready'
+        ? `더블클릭 · 🎙️ · ${hotkeyDefault}`
+        : `웨이크워드 로딩 중... (🎙️ · ${hotkeyDefault} 는 지금도 돼요)`;
+      if (s === 'ready') setIdleHint(document.getElementById('hotkey-input')?.value);
     });
 
     window.pluiz.onToggleActive(() => {
@@ -2635,5 +2778,6 @@
       if (e.key === 'Escape' && isActive) deactivate();
     });
 
+    bindHotkeyCapture();
     connect();
   </script>
