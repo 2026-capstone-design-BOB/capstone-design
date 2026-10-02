@@ -2,9 +2,9 @@
 
     conda activate pluiz
     python scripts/inspect_wakeword.py                  # 전원 · 라벨별 RMS 표
-    python scripts/inspect_wakeword.py --play 녹음자10     # 그 사람 «플루이즈»만 모아 듣기
-    python scripts/inspect_wakeword.py --play 녹음자10 --label negative
-    python scripts/inspect_wakeword.py --play 녹음자10 --gain 6   # 6배 키워서 (원본은 안 건드린다)
+    python scripts/inspect_wakeword.py --play <화자>     # 그 화자의 «플루이즈»만 모아 듣기
+    python scripts/inspect_wakeword.py --play <화자> --label negative
+    python scripts/inspect_wakeword.py --play <화자> --gain 6   # 6배 키워서 (원본은 안 건드린다)
 
 ## 왜 필요한가
 
