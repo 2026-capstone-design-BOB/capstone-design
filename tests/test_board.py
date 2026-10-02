@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-"""**작업 진행판이 낡을 수 없게** 한다 — 생성물 ↔ 원본 대조
+"""**생성 문서가 낡을 수 없게** 한다 — 생성물 ↔ 원본 대조
+
+(작업 진행판 · 시스템 전체 설명 · `docs/meetings/` 스냅샷 배너)
 
 실행: python tests/test_board.py
 
@@ -36,9 +38,22 @@ import sys
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_ROOT, "scripts"))
 
+import glob  # noqa: E402
 import build_board as B  # noqa: E402
+import build_overview as O  # noqa: E402
 
 passed = total = 0
+
+
+def _dies(fn, arg):
+    """표시가 없으면 **죽는가.** 조용히 비우면 «할 일이 없다»로 읽힌다."""
+    try:
+        fn(arg)
+    except B.Missing:
+        return True
+    except Exception:
+        return False
+    return False
 
 
 def check(name, cond, detail=""):
@@ -66,14 +81,8 @@ def run():
     print("")
     print("=== ② 🚨 표시를 못 찾으면 **조용히 비우지 않고 죽는다** ===")
     # 빈 칸이 난 보드는 «할 일이 없다»로 읽힌다 — 낡은 것보다 나쁘다.
-    def dies(fn, text, label):
-        try:
-            fn(text)
-        except B.Missing:
-            return True
-        except Exception:
-            return False
-        return False
+    def dies(fn, text, label=""):
+        return _dies(fn, text)
 
     check("TASKS 의 「지금 하는 중」이 없으면 죽는다",
           dies(B.now_block, "# 아무것도 없다", "tasks"))
@@ -121,6 +130,39 @@ def run():
           "Git Bash" in html)
     # 🔑 생성이 결정적이어야 ①이 성립한다 — 시각이 들어가면 매번 달라진다.
     check("🔑 생성이 **결정적이다** (두 번 만들면 같다)", B.build() == built)
+
+    print("")
+    print("=== ⑥ 🚨 **시스템 전체 설명**도 낡을 수 없는가 ===")
+    # 🔑 `docs/meetings/` 가 낡은 이유가 «숫자를 손으로 적어서» 였다.
+    #   새 설명 문서는 같은 길을 안 가게 **생성물**로 뒀다.
+    ov = O.build()
+    check("설명 문서가 있다", os.path.exists(O.OUT), O.OUT)
+    if os.path.exists(O.OUT):
+        check("🚨 설명 문서가 낡지 않았다 (`python scripts/build_overview.py`)",
+              io.open(O.OUT, encoding="utf-8").read() == ov)
+    check("🔑 생성이 **결정적이다**", O.build() == ov)
+    check("teamwork §1 이 사라지면 **죽는다**", _dies(O.team_rows, "# 아무것도 없다"))
+    check("§1 의 이름이 바뀌면 **죽는다** (조용히 빈칸이 안 된다)",
+          _dies(lambda t: O.pick(t, "없는이름"), {"무엇": "값"}))
+    check("🚨 숫자를 **소스에 안 적었다**",
+          "3317" not in io.open(os.path.join(_ROOT, "scripts", "build_overview.py"),
+                                encoding="utf-8").read())
+    check("옛 기록을 **현재 값으로 쓰지 말라**고 적혀 있다",
+          "그날의 기록" in ov and "현재 값으로 쓰지 마세요" in ov)
+
+    print("")
+    print("=== ⑦ 🚨 `docs/meetings/` 의 **모든** 문서에 스냅샷 배너가 있는가 ===")
+    # 🚨 그 문서들은 **날짜가 박힌 기록**이다(제목부터가 그날의 주장이다).
+    #   고치면 위조고, 그냥 두면 낡은 숫자를 지금 값으로 읽는다. 그래서 **배너**다.
+    #   🔑 새 미팅 문서를 넣고 배너를 안 붙이면 **이 줄이 깨진다.**
+    metas = sorted(glob.glob(os.path.join(_ROOT, "docs", "meetings", "*.html")))
+    check("미팅 문서가 있다", len(metas) >= 1, f"→ {len(metas)}개")
+    missing = [os.path.basename(f) for f in metas
+               if "<!-- snapshot-banner -->" not in io.open(f, encoding="utf-8").read()]
+    check("🚨 전부 배너가 있다", not missing, f"→ 없는 것: {missing}")
+    one = io.open(metas[0], encoding="utf-8").read() if metas else ""
+    check("배너가 **지금 문서로 보낸다**",
+          "시스템_전체_설명.html" in one and "작업_진행판.html" in one)
 
     print("")
     print(f"결과: {passed}/{total} 통과")

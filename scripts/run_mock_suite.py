@@ -52,6 +52,16 @@ def _run(fname: str, env: dict) -> subprocess.CompletedProcess:
     )
 
 
+def _team_text() -> str:
+    """팀원 현황 문서. 못 읽으면 빈 문자열."""
+    try:
+        with open(os.path.join(_ROOT, "docs", "teamwork", "10_개발_현황.md"),
+                  encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
 def _readme_text() -> str:
     """README 상태표. 못 읽으면 빈 문자열 — **대조 때문에 스위트가 죽지 않는다.**"""
     try:
@@ -123,6 +133,13 @@ def main() -> int:
               f"{_m.group(1)}파일 {_m.group(2)}개")
         print("   합계의 유일한 출처는 docs/README.md 상태표입니다. 거기를 고치세요.")
         print("   (고친 뒤 `python scripts/build_board.py` 도 다시 돌리세요)")
+    # 📌 **팀원 문서에도 같은 합계가 적혀 있다**(발표·서류에 쓰는 값이라 거기도 필요하다).
+    #   한 곳으로 줄일 수 없는 자리라면, **어긋났을 때 말하게라도 해 둔다.**
+    _t = re.search(r"\| 자동 테스트 \| \*\*(\d+)개 파일 · ([\d,]+)건",
+                   _team_text())
+    if _t and (int(_t.group(1)), int(_t.group(2).replace(",", ""))) != (len(rows), n_all):
+        print(f"{chr(10)}🚨 teamwork/10_개발_현황.md §1 과 어긋납니다 — 거기 적힌 값: "
+              f"{_t.group(1)}개 파일 {_t.group(2)}건")
 
     if failed:
         print(f"\n★ 실패 {len(failed)}파일")
