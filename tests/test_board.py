@@ -155,14 +155,21 @@ def run():
     # 🚨 그 문서들은 **날짜가 박힌 기록**이다(제목부터가 그날의 주장이다).
     #   고치면 위조고, 그냥 두면 낡은 숫자를 지금 값으로 읽는다. 그래서 **배너**다.
     #   🔑 새 미팅 문서를 넣고 배너를 안 붙이면 **이 줄이 깨진다.**
+    # 🚨 **`docs/meetings/` 는 저장소에 안 올라간다** — public 이라 2026-09-08 에
+    #   그렇게 정했다(`.gitignore`). 그래서 **체크아웃·CI 에는 이 폴더가 없다.**
+    # ⚠️ 그러니 «몇 개 있나»로 세면 **건수가 환경에 따라 달라진다** — 이 저장소가
+    #   세 번 데인 «합계가 어긋나는» 자리를 테스트가 직접 만드는 꼴이다.
+    #   그래서 **있을 때만 세고, 없으면 «없음»으로 통과**한다. 검사 개수는 늘 같다.
+    check("🔑 로컬 전용 폴더다 (public 이라 안 올린다)",
+          "docs/meetings/" in B.read(".gitignore"))
     metas = sorted(glob.glob(os.path.join(_ROOT, "docs", "meetings", "*.html")))
-    check("미팅 문서가 있다", len(metas) >= 1, f"→ {len(metas)}개")
     missing = [os.path.basename(f) for f in metas
                if "<!-- snapshot-banner -->" not in io.open(f, encoding="utf-8").read()]
-    check("🚨 전부 배너가 있다", not missing, f"→ 없는 것: {missing}")
+    check(f"🚨 있는 것은 전부 배너가 있다 (지금 {len(metas)}개)",
+          not missing, f"→ 없는 것: {missing}")
     one = io.open(metas[0], encoding="utf-8").read() if metas else ""
     check("배너가 **지금 문서로 보낸다**",
-          "시스템_전체_설명.html" in one and "작업_진행판.html" in one)
+          not metas or ("시스템_전체_설명.html" in one and "작업_진행판.html" in one))
 
     print("")
     print(f"결과: {passed}/{total} 통과")
