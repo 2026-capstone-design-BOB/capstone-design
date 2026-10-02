@@ -189,6 +189,7 @@ def build() -> str:
 <footer>
   다시 만들기 — <code>python scripts/build_overview.py</code> ·
   낡았는지만 보기 — <code>python scripts/build_overview.py --check</code><br>
+  기능을 전부 보려면 <a href="전체_기능_설명.html">전체 기능 설명</a> ·
   개발용 한 장은 <a href="작업_진행판.html">작업 진행판</a> 입니다.
 </footer>
 
