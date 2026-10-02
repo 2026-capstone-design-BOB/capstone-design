@@ -315,6 +315,12 @@
     }
 
     /* ── IDLE ────────────────────────────────────────────────── */
+    /* 🚨 **클릭이 아예 안 갔다** (2026-10-02 실기 2차 — 한 번도 두 번도 무반응).
+       `.card` 에 `-webkit-app-region: drag` 가 걸려 있는데, Electron 의 드래그
+       영역은 **클릭·더블클릭 이벤트를 삼킨다.** 버튼만 `.idle-actions` 로
+       `no-drag` 라 버튼은 되고 창은 안 됐다 — 그래서 «더블클릭이 안 먹힌다»가
+       JS 를 아무리 고쳐도 안 고쳐졌던 것이다.
+       🔑 **JS 가 아니라 CSS 문제였다.** */
     .idle-view {
       flex: 1;
       display: flex;
@@ -322,9 +328,15 @@
       gap: 8px;
       padding: 0 10px 0 12px;
       cursor: pointer;
+      -webkit-app-region: no-drag;
     }
 
+    /* 🔑 **창을 옮기는 손잡이.** 위에서 대기 화면 전체를 `no-drag` 로 돌렸으니
+       창을 끌 자리가 하나는 있어야 한다. 아이콘이라 잡는 자리로 자연스럽고,
+       여기만 드래그라 **나머지는 전부 더블클릭이 닿는다.** */
     .logo-ring {
+      -webkit-app-region: drag;
+      cursor: move;
       width: 36px;
       height: 36px;
       border-radius: 50%;
@@ -1403,7 +1415,7 @@
     <!-- ── IDLE ─────────────────────────────────────────────── -->
     <div class="idle-view" id="idle-view" ondblclick="activate(false)"
          title="더블클릭하면 창이 열려요">
-      <div class="logo-ring" id="logo-ring">🎙️</div>
+      <div class="logo-ring" id="logo-ring" title="끌어서 옮길 수 있어요">🎙️</div>
       <div class="idle-info">
         <div class="idle-name">Pluiz <span class="sdot spin" id="sdot"></span></div>
         <div class="idle-hint" id="idle-hint">연결 중…</div>
@@ -1420,7 +1432,9 @@
     <!-- ── ACTIVE ────────────────────────────────────────────── -->
     <div class="active-view">
 
-      <div class="a-header" ondblclick="deactivate()">
+      <!-- ⚠️ 헤더는 드래그 영역이라 `ondblclick` 이 **불리지 않는다**(창을 옮기는
+           자리다). 창을 접는 일은 눈에 보이는 「−」 버튼이 한다. -->
+      <div class="a-header">
         <div class="a-title">
           <div class="a-logo">🎙️</div>
           Pluiz
@@ -2376,8 +2390,19 @@
       if (isRec) { stopMic(true); return; }   // 다시 누르면 지금까지 말한 것을 보낸다
       micAuto = auto;
       wakeOpened = false;                     // 🔑 창을 안 열었으니 닫을 것도 없다
-      setIdleBusy('listening');
-      startMic();
+      startMic();                 // 표시는 `startMic()` 안에서 상태를 보고 켜진다
+    }
+
+    // 🚨 **표시를 손으로 켜고 끄지 않는다** (2026-10-02 실기 2차).
+    //   `sendVoice()` 는 **녹음이 너무 짧으면 try 에 들어가기 전에 return** 한다.
+    //   그 길에는 `finally` 가 없어서, 손으로 켠 「생각하는 중…」이 **영영 남았다** —
+    //   사용자는 아무것도 안 했는데 대기 화면이 그렇게 보였다.
+    //
+    // 🔑 그래서 **진짜 상태(`isRec`·`busy`)에서 끌어온다.** 길이 몇 개든,
+    //   새 길이 생기든, 표시는 어긋날 수 없다. (`setBusy()` 가 이걸 부른다)
+    function refreshIdle() {
+      if (isActive) return;        // 펼쳐져 있으면 접힌 표시는 쓰이지 않는다
+      setIdleBusy(isRec ? 'listening' : (busy ? 'processing' : ''));
     }
 
     /** 접힌 상태의 «지금 무슨 일이 일어나는지». 펼친 창에는 따로 UI 가 있다. */
@@ -2418,7 +2443,11 @@
       el.className = 'state-lbl' + ({ recording: ' rec', processing: ' proc' }[s] || '');
     }
     function setWf(m) { document.getElementById('wf').className = 'waveform' + (m ? ' wf-' + m : ''); }
-    function setBusy(v) { busy = v; document.getElementById('send-btn').disabled = v; }
+    function setBusy(v) {
+      busy = v;
+      document.getElementById('send-btn').disabled = v;
+      refreshIdle();          // 🔑 아래 주석 참조 — 표시는 **상태를 따라간다**
+    }
     function showTyping(v) { document.getElementById('typing').className = 'typing' + (v ? ' show' : ''); }
     function scrollChat() { const c = document.getElementById('chat'); c.scrollTop = c.scrollHeight; }
 
@@ -2567,7 +2596,7 @@
       // ⚠️ busy면 손대지 않는다 — 서버가 답하는 중이면 그건 진짜 턴이다.
       if (!recAuto || busy) return;
       recAuto = false; wakeOpened = false;
-      if (!isActive) setIdleBusy('');
+      refreshIdle();
     }
 
     function stopVad() {
@@ -2666,12 +2695,14 @@
         document.getElementById('mic-btn').classList.add('rec');
         document.getElementById('mic-btn').textContent = '⏹️';
         showLevel();
+        refreshIdle();        // 접힌 채였으면 「듣는 중…」이 여기서 켜진다
         startVad(stream);
       } catch (err) {
         if (stream) stream.getTracks().forEach(t => t.stop());
         addMsg('a', '⚠️ 마이크 접근 실패: ' + err.message);
       } finally {
         micStarting = false;
+        refreshIdle();        // 🚨 실패해도 표시가 상태를 따라간다(남지 않는다)
       }
     }
 
@@ -2689,7 +2720,7 @@
       document.getElementById('mic-btn').classList.remove('rec');
       document.getElementById('mic-btn').textContent = '🎙️';
       setWf('');
-      if (!isActive) setIdleBusy(send ? 'processing' : '');
+      refreshIdle();
       flushPendingAudio();   // 녹음 때문에 미뤄 둔 TTS가 있으면 지금 내보낸다
     }
 
@@ -2716,8 +2747,7 @@
       } catch (err) {
         addMsg('a', '⚠️ ' + err.message);
       } finally {
-        setBusy(false); setState('ready'); setWf('');
-        if (!isActive) setIdleBusy('');   // 접힌 채였으면 안내문으로 되돌린다
+        setBusy(false); setState('ready'); setWf('');   // setBusy 가 표시를 되돌린다
       }
     }
 
