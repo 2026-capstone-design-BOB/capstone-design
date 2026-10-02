@@ -114,8 +114,15 @@ cache/vision_baseline_fixture.txt
 # 🔑 이름이 «calendar»인 것은 캘린더가 먼저 생겼기 때문이고, 메일도 같은 파일을 쓴다.
 #    → docs/구글_연결.md
 calendar_credentials.json
-calendar_token.json
-gmail_token.json
+# 🚨 **`*` 가 붙은 이유** (2026-10-02). 실기 시연을 하려고 토큰을 잠깐
+#   `calendar_token.json.로그아웃시연_백업` 으로 옮겼는데, **그 이름은 여기 안 걸렸다.**
+#   `git status` 에 **추적 안 된 토큰 파일**로 떴다 — `git add -A` 한 번이면
+#   **공개 저장소에 비밀이 올라간다.**
+# 🔑 이 저장소가 실명으로 두 번 데인 것과 **같은 모양**이다(9/18 · 10/02). 그때 배운 것이
+#   *«나중에 빼면 된다»가 안 통한다* 였고, 여기서도 답은 **처음부터 안 올라가게** 하는 것이다.
+calendar_token.json*
+calendar_credentials.json*
+gmail_token.json*
 
 # 화면 조작 성공률 측정 출력 — 화면에서 읽은 **컨트롤 이름**이 들어간다.
 # 사용자가 열어 둔 창의 내용이 섞일 수 있으므로 공개 저장소에 올리지 않는다.
