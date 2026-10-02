@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field
-from typing import Literal
+from typing import ClassVar, Literal
 from functools import lru_cache
 
 
@@ -135,7 +135,32 @@ class Settings(BaseSettings):
     # ⚠️ 기본값을 여기 **한 곳에만** 둔다. `main.js` 와 UI 가 각자 기본값을 들고 있으면
     #   «설정은 바뀌었는데 실제로 듣는 키는 그대로»가 된다(BL-13 이 데인 모양).
     # 📌 Electron accelerator 문법이다 — `Alt+Space` · `Ctrl+Shift+P` 처럼 쓴다.
-    hotkey: str = "Alt+Space"
+    # 🚨 **고를 수 있는 것을 목록으로 묶는다** (2026-10-02 실기).
+    #
+    #   자유 입력으로 두니 `Ctrl+C` 가 그대로 등록됐다. 그러면 앱이 떠 있는 동안
+    #   **온 시스템에서 복사가 가로채인다.**
+    #
+    # 🔑 **«이미 쓰이는 키인가»는 알아낼 수 없다.** `Ctrl+C` 는 전역 단축키가 아니라
+    #   앱 내부 단축키라 `globalShortcut.register()` 가 **성공한다.** Electron 이
+    #   «남이 쓰는 중»을 알려 줄 길이 없다 — **탐지로 푸는 문제가 아니다.**
+    #   그래서 안전한 것만 고르게 한다. 🔒 서버가 목록 밖을 **거부**하므로 UI 를
+    #   우회해도 못 들어온다 — UI 만 막으면 또 샌다(BL-27·BL-50 이 세 번 치른 값).
+    #
+    # ⚠️ 목록의 주인도 여기다. UI 가 자기 목록을 들고 있으면 둘이 어긋난다.
+    hotkey_choices: ClassVar[list[str]] = [
+        "Ctrl+Alt+Space",
+        "Ctrl+Alt+P",
+        "Ctrl+Alt+V",
+        "Ctrl+Shift+Space",
+        "Alt+Shift+P",
+        "Ctrl+Alt+Enter",
+        # ⚠️ Windows 의 **창 시스템 메뉴**가 이 키다. 쓸 수는 있지만 겹친다 —
+        #    UI 가 그렇게 표시하고, 그래서 **기본값에서 뺐다**(실기에서 걸렸다).
+        "Alt+Space",
+    ]
+
+    # 📌 Electron accelerator 문법. 🔒 기본값은 반드시 위 목록 안의 것이어야 한다.
+    hotkey: str = "Ctrl+Alt+Space"
     # 인식 튜닝 — 마이크/환경마다 달라서 코드 수정 없이 조절할 수 있게 뺐다
     wakeword_model: str = "base"          # tiny / base. ⚠️ base가 오히려 **5배 빠르다** —
                                           # tiny는 환각으로 수백 토큰을 뱉느라 시간을 다 쓴다

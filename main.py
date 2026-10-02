@@ -234,6 +234,9 @@ async def get_config():
         #   박혀 있어서 **사용자가 알 길이 없었다**).
         "hotkey": s.hotkey,
         "hotkey_default": Settings.model_fields["hotkey"].default,
+        # 🔒 **고를 수 있는 것만 내려보낸다.** UI 가 자기 목록을 들고 있으면
+        #   서버가 거부하는 값을 화면에 띄우게 된다.
+        "hotkey_choices": list(Settings.hotkey_choices),
     }
 
 
@@ -352,11 +355,23 @@ async def save_hotkey(req: HotkeyRequest):
     """
     key = "".join(ch for ch in req.hotkey if ch not in (chr(10), chr(13))).strip()
     default = Settings.model_fields["hotkey"].default
-    _write_env({"HOTKEY": key or default})
-    print(f"[config] 단축키 저장: {key or default}")
+    key = key or default
+    # 🚨 **목록 밖은 거부한다.** 2026-10-02 실기에서 `Ctrl+C` 가 그대로 등록돼
+    #   **온 시스템의 복사를 가로챘다.** UI 가 고르게만 하는 것으로는 부족하다 —
+    #   여기가 **마지막 문**이고, 막는 자리는 **저장하는 곳**이어야 한다.
+    if key not in Settings.hotkey_choices:
+        print(f"[config] 단축키 거부(목록 밖): {key}")
+        return {
+            "status": "rejected",
+            "reason": "고를 수 있는 단축키가 아니에요",
+            "hotkey": get_settings().hotkey,
+            "choices": list(Settings.hotkey_choices),
+        }
+    _write_env({"HOTKEY": key})
+    print(f"[config] 단축키 저장: {key}")
     return {
         "status": "ok",
-        "hotkey": key or default,
+        "hotkey": key,
         "note": "실제로 잡혔는지는 UI 가 Electron 에게 물어 확인합니다.",
     }
 
