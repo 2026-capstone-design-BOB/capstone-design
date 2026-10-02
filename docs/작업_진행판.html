@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pluiz 작업 진행판</title>
+<style>
+:root{--bg:#fbfaf8;--fg:#1d1c1a;--muted:#6b6862;--line:#e3ded6;--card:#fff;
+--accent:#8a5a2b;--red:#a93226;--amber:#9a6b12;--blue:#2a5c8a;--chip:#f2ede5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+--bg:#171614;--fg:#eceae6;--muted:#a29d94;--line:#333029;--card:#201e1b;
+--accent:#d9a86a;--red:#e08b80;--amber:#d9b263;--blue:#8fbdeb;--chip:#2a2723}}
+:root[data-theme="dark"]{--bg:#171614;--fg:#eceae6;--muted:#a29d94;--line:#333029;
+--card:#201e1b;--accent:#d9a86a;--red:#e08b80;--amber:#d9b263;--blue:#8fbdeb;--chip:#2a2723}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);line-height:1.65;font-size:16px;
+font-family:"Pretendard","Malgun Gothic",system-ui,-apple-system,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:36px 20px 80px}
+header{border-bottom:2px solid var(--line);padding-bottom:18px;margin-bottom:28px}
+h1{font-size:1.75rem;margin:0 0 6px;letter-spacing:-.02em}
+.sub{color:var(--muted);font-size:.9rem;margin:0}
+h2{font-size:1.15rem;margin:38px 0 10px;letter-spacing:-.01em}
+h2 .n{color:var(--accent);margin-right:.5em;font-variant-numeric:tabular-nums}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+padding:16px 18px;margin:12px 0}
+.card h1,.card h2,.card h3{font-size:1.05rem;margin:14px 0 6px}
+.card h1:first-child,.card h2:first-child{margin-top:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:12px 0}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.stat .k{font-size:.78rem;color:var(--muted);display:block;margin-bottom:4px}
+.stat .v{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}
+.stat .note{display:block;font-size:.78rem;color:var(--muted);margin-top:4px}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:.93rem}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--chip);font-weight:600}
+code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:.88em}
+pre{background:var(--chip);padding:14px 16px;border-radius:10px;overflow-x:auto;font-size:.85rem}
+pre code{background:none;padding:0}
+.scroll{overflow-x:auto}
+ul{padding-left:1.2em}
+li{margin:3px 0}
+.bl{display:flex;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--line)}
+.bl:last-child{border-bottom:none}
+.bl .num{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.bl .t{color:var(--muted);font-size:.9rem}
+.r{color:var(--red)}.a{color:var(--amber)}.b{color:var(--blue)}
+.warn{background:var(--chip);border-left:3px solid var(--accent);
+padding:12px 14px;border-radius:0 8px 8px 0;margin:14px 0;font-size:.92rem}
+footer{margin-top:50px;padding-top:16px;border-top:1px solid var(--line);
+color:var(--muted);font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>작업 진행판</h1>
+  <p class="sub">개발하면서 옆에 띄워 두는 한 장 ·
+     <b>이 파일은 손으로 고치지 마세요</b> — <code>python scripts/build_board.py</code> 가 만듭니다</p>
+</header>
+
+<div class="warn">
+  <b>🔑 이 보드는 베껴 쓴 것이 아니라 <b>원본에서 만들어진 것</b>입니다.</b><br>
+  지금 하는 중 → <code>docs/TASKS.md</code> · 숫자 → <code>docs/README.md</code> 상태표 ·
+  남은 결함 → <code>docs/BACKLOG.md</code> · 규칙 → <code>CLAUDE.md</code>.<br>
+  🚨 원본을 고치고 <b>보드를 다시 안 만들면 테스트가 깨집니다</b>
+  (<code>tests/test_board.py</code>) — 낡을 수가 없습니다.
+</div>
+
+<h2><span class="n">1</span>지금 하는 중</h2>
+<div class="card scroll">
+<h1>🚩 다음 세션은 <strong>여기부터</strong> — 2026-10-02 (7) · ② 끝, 남은 🔴 없음 → ③ 호출어</h1>
+<h2>▶️ 바로 할 것 — 🎙 <strong>호출어 개선</strong>(③) · 10월 내내</h2>
+<p>🙋 <strong>필요한 것은 딱 하나</strong> — 변소윤 목소리로 <strong>소크 녹음 20~30분</strong>.
+혼잣말·통화·영상 보며 하는 말, <strong>«플루이즈»만 안 부르면</strong> 됩니다.</p>
+<pre><code>python scripts/eval_wakeword.py --compare services/wakeword_model.npz &gt;        --soak 새녹음.wav --holdout-only
+</code></pre>
+<table>
+<thead>
+<tr>
+<th></th>
+<th style="text-align:right">지금</th>
+<th style="text-align:right">목표 (10월 말)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>헛깨어남</td>
+<td style="text-align:right"><strong>15회/시간</strong></td>
+<td style="text-align:right">1회/시간</td>
+</tr>
+<tr>
+<td>놓침</td>
+<td style="text-align:right"><strong>15.2%</strong></td>
+<td style="text-align:right">10%</td>
+</tr>
+</tbody>
+</table>
+<p>🔑 <strong>지금까지 가장 효과가 컸던 것은 «소크를 더 모으는 것»</strong> 이다 — 새 모델보다
+<strong>판정 방법</strong>(연속 2창)과 <strong>측정 자료</strong>가 더 크게 움직였다(10/01 기록).</p>
+<h2>📋 개발하면서 볼 것 — <a href="%EC%9E%91%EC%97%85_%EC%A7%84%ED%96%89%ED%8C%90.html"><code>docs/작업_진행판.html</code></a></h2>
+<p>지금 하는 중(이 블록) · 숫자 · 남은 결함 · 절대 규칙 · 돌리는 법이 <strong>한 장</strong>에 있습니다.
+🚨 <strong>손으로 고치지 마세요</strong> — <code>python scripts/build_board.py</code> 가 <strong>원본에서 만듭니다.</strong>
+🔑 보드는 «요약을 한 장에 모은 것»이라 이 저장소가 <strong>네 번 데인 «복사본이 낡는»</strong>
+모양입니다(9/12·9/17·9/18·10/02). 그래서 생성물로 두고, <strong>낡으면 스위트가 깨집니다.</strong></p>
+<h2>✅ ② 버튼·단축키 — <strong>실기까지 끝났다</strong></h2>
+<table>
+<thead>
+<tr>
+<th>입력</th>
+<th>뜻</th>
+<th>실기</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>더블클릭</strong></td>
+<td>창 활성화 (채팅·설정·즐겨찾기)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>단축키 · 🎙️</strong></td>
+<td>웨이크 신호 — 창과 무관, <strong>접힌 채 듣는다</strong></td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong><code>−</code> 버튼</strong></td>
+<td>창 접기</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>고리(🎙️) 끌기</td>
+<td>창 옮기기</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<p>🙋 <em>&quot;생각하는 중 해결된 것 확인 했고 더블클릭도 확인 했어. 잘 돼.&quot;</em>
+🔑 기본 단축키는 <strong><code>Ctrl+Alt+Space</code></strong>. 설정 → 「말 거는 방법」에서 <strong>목록으로</strong> 고른다.</p>
+<h2>🚨 이번 ② 에서 내가 세 번 틀렸다 — 셋 다 «그럴듯한 원인»이었다</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>말한 원인</th>
+<th>실제</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(3)</td>
+<td><em>&quot;다른 앱이 쓰면 등록이 실패한다&quot;</em></td>
+<td><code>Ctrl+C</code> 는 <strong>등록이 성공한다</strong></td>
+</tr>
+<tr>
+<td>(4)</td>
+<td><em>&quot;단일 클릭이 먼저 열어서 dblclick 이 샌다&quot;</em></td>
+<td><strong>애초에 클릭이 안 왔다</strong>(CSS)</td>
+</tr>
+<tr>
+<td>(5)</td>
+<td><em>&quot;표시만 안 돌아온 것&quot;</em></td>
+<td>✅ 맞았다</td>
+</tr>
+</tbody>
+</table>
+<p>🔑 셋 다 <strong>mock 3,000건이 초록인 채로</strong> 살아 있었고 <strong>실기가 세 번 다 잡았다.</strong>
+📌 그래서 테스트 범위를 두 번 넓혔다 — <strong>CSS 를 센다</strong> · <strong>«글자로 판단하지 않는다»를 센다.</strong>
+🆕 <strong><a href="BACKLOG.md">BL-83</a></strong> 신설 — «UI 자동 검사가 «코드가 아닌 것»을 못 본다». ⏸️ 급하지 않다.</p>
+<h2>📋 팀원 문서를 걷었다 (마무리 3-A)</h2>
+<p><code>현황판.html</code>(9/25 자) · <code>11_어필_재료.md</code> §1·§7 · <code>10_개발_현황.md</code> 숫자.
+🚨 어필 재료에 «놓침 약 80%» 가 남아 있었다 — 그대로 쓰면 <strong>실제보다 다섯 배 나쁘게</strong>
+말하게 된다. 🎤 <strong>「버튼이나 목소리로 말을 겁니다」는 이제 단정적으로 써도 된다.</strong></p>
+<p>✅ <strong>mock 83파일 3295/3295 · 실패 0</strong> · ⏸️ <strong>푸시는 사용자 결정</strong></p>
+<h2>🙋 사용자 몫</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>무엇</th>
+<th>걸리는 시간</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🔴</td>
+<td>🎙 <strong>소크 녹음 20~30분</strong> — ③ 에 쓸 자료. <strong>이것만 있으면 됩니다</strong></td>
+<td>25분</td>
+</tr>
+<tr>
+<td></td>
+<td>구글 토큰이 7일마다 끊깁니다 — <code>python scripts/connect_google.py --check</code></td>
+<td>수시</td>
+</tr>
+<tr>
+<td></td>
+<td>팀원에게 <code>teamwork/현황판.html</code> 갱신됐다고 알려 주기</td>
+<td>1분</td>
+</tr>
+</tbody>
+</table>
+<h2>⏸️ 정할 것</h2>
+<table>
+<thead>
+<tr>
+<th>무엇</th>
+<th>언제</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>부스에서 호출어를 쓸 것인가 (버튼이 확보됐으니 <strong>숫자를 보고</strong>)</td>
+<td>10월 말</td>
+</tr>
+<tr>
+<td>부스에서 쓸 단축키 — 기본값 <code>Ctrl+Alt+Space</code> 로 써 보고</td>
+<td>10월 말</td>
+</tr>
+<tr>
+<td>놓침 쪽으로 되돌릴 것인가 (9/28 모델 + 연속 2 + 0.62)</td>
+<td>10월 중</td>
+</tr>
+<tr>
+<td>BL-75 — <code>find_ui_element</code> 를 뺄 것인가</td>
+<td>동결 전</td>
+</tr>
+<tr>
+<td>구글 동의 화면을 «프로덕션»으로</td>
+<td>11/24 전</td>
+</tr>
+<tr>
+<td>알림을 Windows 토스트로</td>
+<td>11/24 전</td>
+</tr>
+<tr>
+<td>의존성 (<code>anthropic</code> MAJOR)</td>
+<td>10/31 전</td>
+</tr>
+<tr>
+<td>발표 서사 한 문장</td>
+<td>10/28 전</td>
+</tr>
+<tr>
+<td>W5(10/21~25) 3.5일</td>
+<td>10월 중</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h2><span class="n">2</span>숫자</h2>
+<p class="sub">합계의 <b>유일한 출처</b>는 <code>docs/README.md</code> 상태표입니다.
+   여기 없는 숫자는 지어내지 말고 거기서 가져오세요.</p>
+<div class="grid"><div class="stat"><span class="k">자동 테스트</span><span class="v">83파일 · 3295건</span><span class="note">실패 0 · mock(가짜 환경)</span></div><div class="stat"><span class="k">조작 가능한 도구</span><span class="v">67개</span><span class="note">앱·파일·시스템·화면·일정·메일</span></div></div>
+
+<h2><span class="n">3</span>남은 결함</h2>
+<p class="sub">🔴 즉시 · 🟡 TODO · 🔵 결정 대기 — 상세는 <code>docs/BACKLOG.md</code></p>
+<div class="card"><div class="bl"><span class="num b">🔵 BL-82</span><span class="t">2026-10-01 신설 · 🎤 답이 나온 직후 빈 녹음이 한 번 더 열린다</span></div><div class="bl"><span class="num a">🟡 BL-83</span><span class="t">2026-10-02 신설 · 🧱 UI 자동 검사가 «코드가 아닌 것»을 못 본다</span></div><div class="bl"><span class="num a">🟡 BL-80</span><span class="t">2026-09-29 신설 · 📅 «오늘은 일정이 없어요». 🔻 2026-09-30 강등 — 재현 안 됨</span></div><div class="bl"><span class="num a">🟡 BL-75</span><span class="t">2026-09-28 신설 · 🖱 «어디 있어?» 한 마디로 `find_ui_element` 와</span></div><div class="bl"><span class="num a">🟡 BL-74</span><span class="t">2026-09-25 신설 · 🔑 구글 토큰이 만료됐을 때 할 일을 안 알려준다</span></div><div class="bl"><span class="num a">🟡 BL-72</span><span class="t">2026-09-25 신설 · ⏳ 약속이 서버 수명을 못 넘는다</span></div><div class="bl"><span class="num a">🟡 BL-73</span><span class="t">2026-09-25 신설 · 🔔 알림이 Windows 토스트가 아니다</span></div><div class="bl"><span class="num a">🟡 BL-71</span><span class="t">2026-09-24 신설 · 📏 도구를 더 늘리기 전에</span></div><div class="bl"><span class="num a">🟡 BL-70</span><span class="t">2026-09-24 신설 · ⏭️ 접근성이 못 보는 자리에 남아 있다</span></div><div class="bl"><span class="num a">🟡 BL-68</span><span class="t">2026-09-23 실기 신설 · ⏭️ 2-2(응답 품질)에서 같이 본다</span></div><div class="bl"><span class="num b">🔵 BL-65</span><span class="t">2026-09-21 신설 · ⏸️ 9/23 이후 결정. 🚨 동적 학습의 기여가 2.6%인데 사고는 3건이다</span></div><div class="bl"><span class="num b">🔵 BL-66</span><span class="t">2026-09-21 신설 · ⏸️ 10/31 실사용. 🚨 오매칭률을 세는 자리가 없다</span></div><div class="bl"><span class="num a">🟡 BL-62</span><span class="t">(2026-09-19) — 미해결. 학습은 코어를 다 쓰는데 평가는 아직 하나만 쓴다</span></div><div class="bl"><span class="num a">🟡 BL-55</span><span class="t">(2026-09-14 2차 리허설) — 미해결. `get_running_apps`가 프로세스를 센다</span></div><div class="bl"><span class="num a">🟡 BL-56</span><span class="t">(2026-09-14 2차 리허설) — 미해결. *"지금까지 한 거 뭐 했는지 정리해 줄래"* →</span></div><div class="bl"><span class="num a">🟡 BL-40</span><span class="t">(2026-09-11 사용자 지적 · A안 적용) — 파일 N개를 지우려면 승인을 N번 해야 한다</span></div></div>
+
+<h2><span class="n">4</span>코드를 고치기 전 — 절대 규칙</h2>
+<p class="sub">어기면 바로 깨지는 것들입니다. 배경은 <code>CLAUDE.md</code> 의 각 링크에.</p>
+<div class="card"><ul><li>그래프 노드를 async로 바꾸지 말 것</li><li>`fast_path` 히트를 조기 return으로 "최적화"하지 말 것</li><li>히스토리를 슬라이스로 자르지 말 것</li><li>`.env` 변경 후 `get_settings.cache_clear()`</li><li>`services/`·`electron-ui/`를 `src/` 같은 폴더로 감싸지 말 것</li><li>"이번 턴"을 판단할 땐 `current_turn_messages()`를 쓸 것</li><li>테스트에서 소스를 열 땐 `encoding="utf-8"`를 붙일 것</li><li>`/voice`의 `thread_id`·`use_tts`에서 `Form(...)`을 빼지 말 것</li><li>클릭 도구에 좌표 인자(`x`, `y`)를 추가하지 말 것</li><li>`main.py`의 `allow_origins=["null"]`과 OPTIONS 면제를 "정리"하지 말 것</li><li>계획 상태(`plan`/`plan_cursor`)를 턴 너머로 새게 하지 말 것</li></ul></div>
+
+<h2><span class="n">5</span>돌리는 법</h2>
+<div class="warn">
+  🚨 <b>스위트는 cmd / Anaconda Prompt 에서 돌립니다.</b>
+  Git Bash 에서 돌리면 <b>프로젝트와 무관한 거짓 실패</b>가 납니다.
+</div>
+<pre><code>conda activate pluiz
+export PYTHONIOENCODING=utf-8
+
+launch.bat                  # 서버 + Electron UI
+python main.py              # 서버만
+
+python tests/test_graph_agent.py  # 32/32
+python tests/test_cache_learn.py  # 88/88
+python tests/test_hitl_agent.py   # 8/8
+python tests/test_hitl_graph.py   # 140/140  ← 승인 경로 전체(BL-20·24·38·40)
+python tests/test_offline_skip.py # 11/11   ← 오프라인이면 LLM을 안 부른다(BL-46)
+python tests/test_plan_node.py    # 82/82   ← 계획 전체(M3·M3-1·M3-2·BL-51)
+python tests/test_find_file.py    # 61/61   ← 파일 찾기(BL-07·BL-31·D-01a)
+python tests/test_bl53_stt_echo.py # 31/31  ← 승인이 STT 반추에 안 깨진다(BL-53)
+python tests/test_llm_config.py   # 6/6     ← 모델 thinking을 끈 채로 둔다(BL-57)
+python tests/test_bl63_target_gate.py # 54/54 ← 대상이 빈 말이 특정 앱으로 안 굳는다(BL-63)
+python tests/test_tool_eval_cases.py # 30/30 ← 📏 **도구를 늘리면 평가 문장도 늘게 강제**(BL-71)
+
+python scripts/run_mock_suite.py  # 합계는 항상 이걸로 센다 (숫자는 여기 안 적는다)</code></pre>
+
+<footer>
+  보드를 다시 만들기 — <code>python scripts/build_board.py</code><br>
+  낡았는지만 보기 — <code>python scripts/build_board.py --check</code>
+</footer>
+
+</div>
+</body>
+</html>
