@@ -25,47 +25,137 @@
 
 ## 처음 올리는 법 (약 10분)
 
+> 🚨 **한 줄씩 복사하세요.** 주석을 같이 붙여넣으면 다음 줄이 딸려 들어가
+> `upstashpython ...` 처럼 명령이 뭉개집니다.
+
+### 1. 로그인 (이미 했으면 건너뜀)
+
 ```bash
 cd feedback-web
-npx vercel login          # 이미 했으면 건너뜁니다
-npx vercel link           # 새 프로젝트로 만듭니다
-npx vercel integration add upstash    # Redis 환경변수가 자동으로 꽂힙니다
+npx vercel login
 ```
 
-비밀 두 개를 넣습니다. **아무도 못 맞출 긴 문자열**로 만드세요.
+### 2. 프로젝트 만들기
 
 ```bash
-# 값 만들기 (둘을 서로 다르게)
-python -c "import secrets; print(secrets.token_urlsafe(32))"
+npx vercel link
+```
 
+물어보는 것과 답:
+
+| 물어보는 것 | 답 |
+|---|---|
+| `Set up "…/feedback-web"?` | **Y** |
+| `Which scope…?` | 본인 계정 (엔터) |
+| `Link to existing project?` | **N** — 새로 만듭니다 |
+| `What's your project's name?` | **`pluiz-feedback`** |
+| `In which directory is your code located?` | **`./`** (엔터) |
+
+📌 이름이 주소가 됩니다 → `https://pluiz-feedback.vercel.app`.
+이미 쓰이는 이름이면 Vercel 이 뒤에 무언가를 붙여 줍니다. 그대로 쓰면 됩니다.
+🔑 **주소를 몰라야 안전한 구조가 아닙니다** — 두 입구 모두 비밀을 요구합니다.
+
+### 3. 저장소(Upstash Redis) 붙이기
+
+```bash
+npx vercel integration add upstash
+```
+
+브라우저가 열립니다. 무료(Free) 플랜으로 데이터베이스를 하나 만들고 이 프로젝트에
+연결하면, `UPSTASH_REDIS_REST_URL` · `UPSTASH_REDIS_REST_TOKEN` 이 **자동으로** 꽂힙니다.
+
+> 💡 CLI 가 막히면 대시보드에서 해도 됩니다 — 프로젝트 → **Storage** → Upstash Redis.
+
+### 4. 비밀 두 개 만들기
+
+**서로 다른 값**이어야 합니다. 값을 두 번 뽑아 메모장에 적어 두세요.
+
+```bash
+node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+```
+
+```bash
 npx vercel env add INGEST_KEY production
+```
+
+```bash
 npx vercel env add VIEW_PASSWORD production
+```
+
+각각 값을 물어봅니다(화면에 안 보입니다). 뽑아 둔 값을 하나씩 붙여넣으세요.
+
+🚨 **`INGEST_KEY` 는 팀원에게 줄 것**, **`VIEW_PASSWORD` 는 혼자만 아는 것**입니다.
+같은 값을 넣으면 팀원 PC 의 키로 **남의 보고를 전부 읽을 수 있게** 됩니다.
+
+### 5. 올리기
+
+```bash
 npx vercel deploy --prod
 ```
 
-배포가 끝나면 나오는 주소를 팀원 `.env` 에 넣습니다.
+> ⚠️ **순서가 중요합니다.** 환경변수를 넣고 **나서** 올려야 반영됩니다.
+> 나중에 값을 바꿨다면 이 명령을 **다시** 돌리세요.
+
+### 6. 팀원 `.env` 에 주소 넣기
 
 ```
-PLUIZ_FEEDBACK_ENDPOINT=https://<프로젝트>.vercel.app/api/report
+PLUIZ_FEEDBACK_ENDPOINT=https://pluiz-feedback.vercel.app/api/report
 PLUIZ_FEEDBACK_KEY=<INGEST_KEY 와 같은 값>
 ```
 
-> ⚠️ `.env` 는 저장소에 안 올라갑니다. **키는 저장소가 아니라 직접 전달**하세요.
-> 저장소에 올리면 공개됩니다 — 이 저장소가 세 번 데인 자리입니다.
+🚨 **키는 저장소가 아니라 직접 전달**하세요(카톡·대면). `.env` 는 커밋되지 않지만,
+실수로 올리면 공개됩니다 — 이 저장소가 세 번 데인 자리입니다.
 
-## 잘 되는지 확인
+## 잘 되는지 확인 — **막히는 것까지** 봅니다
+
+### ① 올바른 키로 넣어 본다 → `200`
 
 ```bash
-curl -X POST https://<프로젝트>.vercel.app/api/report \
-  -H "x-pluiz-key: <INGEST_KEY>" -H "Content-Type: application/json" \
-  -d '{"markdown":"### 테스트","kind":"good","who":"개발자"}'
-# → {"status":"ok","count":1}
+curl -X POST https://pluiz-feedback.vercel.app/api/report -H "x-pluiz-key: <INGEST_KEY>" -H "Content-Type: application/json" -d "{\"markdown\":\"### 테스트\",\"kind\":\"good\",\"who\":\"개발자\"}"
 ```
 
-그 다음 브라우저로 `https://<프로젝트>.vercel.app` 을 열고 보기 비밀번호를 넣습니다.
+`{"status":"ok","count":1}` 이면 성공입니다.
 
-🔑 키를 **틀리게** 한 번 넣어 401 이 나는 것도 같이 보세요. 막히는 걸 확인 안 하면
-막혔다고 믿을 수 없습니다.
+### ② 🔑 **틀린 키로도 해 본다** → `401`
+
+```bash
+curl -X POST https://pluiz-feedback.vercel.app/api/report -H "x-pluiz-key: 틀린키" -H "Content-Type: application/json" -d "{\"markdown\":\"### 테스트\"}"
+```
+
+`{"error":"unauthorized"}` 가 나와야 합니다.
+🚨 **막히는 걸 확인 안 하면 막혔다고 믿을 수 없습니다.** ①만 보고 넘어가지 마세요.
+
+### ③ 브라우저로 본다
+
+`https://pluiz-feedback.vercel.app` 을 열고 **보기 비밀번호**를 넣습니다.
+①에서 넣은 「테스트」가 보이면 끝입니다.
+
+🔑 **보내기 키(`INGEST_KEY`)를 넣어 보세요. 안 열려야 맞습니다.**
+
+---
+
+## 안 될 때
+
+| 증상 | 원인 · 할 것 |
+|---|---|
+| curl 에 **HTML 로그인 페이지**가 돌아온다 | Vercel 의 **Deployment Protection** 이 켜져 있습니다. 프로젝트 → Settings → Deployment Protection → **Vercel Authentication 을 Production 에서 끕니다.** (두 입구 모두 비밀을 요구하므로 이걸 꺼도 안전합니다) |
+| `{"error":"store_failed"}` | Upstash 연결이 안 된 것입니다. 3번을 하고 **`vercel deploy --prod` 를 다시** 돌리세요 |
+| 올바른 키인데 `401` | 환경변수를 넣고 **재배포를 안 한** 경우입니다. 5번을 다시 |
+| Pluiz 가 *"수신기에 닿지 못했어요"* | `.env` 의 `PLUIZ_FEEDBACK_ENDPOINT` 주소 끝이 **`/api/report`** 인지 보세요 |
+| Pluiz 가 *"보내기 키가 맞지 않아요"* | `.env` 의 `PLUIZ_FEEDBACK_KEY` 와 Vercel 의 `INGEST_KEY` 가 다릅니다 |
+
+📌 **어느 경우든 보고는 안 사라집니다.** 로컬 `logs/사용_피드백_보고.md` 에 이미
+쌓여 있고, 화면이 그렇게 말해 줍니다. 전송은 덤입니다.
+
+---
+
+## 선택 — GitHub 에 연결해 자동 배포
+
+안 해도 됩니다(`vercel deploy --prod` 로 충분). 하려면 프로젝트 →
+Settings → Git 에서 저장소를 연결하고, 🚨 **Root Directory 를 `feedback-web` 으로**
+지정하세요. 안 하면 저장소 루트(파이썬 프로젝트)를 빌드하려다 실패합니다.
+
+---
 
 ## 켜고 끄기
 
