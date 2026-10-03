@@ -69,92 +69,73 @@ color:var(--muted);font-size:.85rem}
 
 <h2><span class="n">1</span>지금 하는 중</h2>
 <div class="card scroll">
-<h1>🚩 다음 세션은 <strong>여기부터</strong> — 2026-10-02 (14) · 🔴 <strong>BL-92 부터 바로 고치면 된다</strong></h1>
-<h2>▶️ 바로 할 것 — 📅 <strong>BL-92: «그 일정 하나»를 집을 수 있게</strong></h2>
-<p>🔑 <strong>원인 셋 다 확인했고 고치는 법까지 <a href="BACKLOG.md">BACKLOG</a> 에 적어 뒀다.</strong>
-조사부터 다시 할 필요 없다. 전부 <code>tools/calendar.py</code> 안에서 끝난다.</p>
+<h1>🚩 다음 세션은 <strong>여기부터</strong> — 2026-10-03 (1) · 🙋 <strong>4차 실기부터 하면 된다</strong></h1>
+<h2>▶️ 바로 할 것 — 🙋 <strong>4차 실기: 일정 «수정»이 한 번에 되나</strong></h2>
+<p>고칠 것이 없다. <strong>말해 보는 것</strong>이 다음 할 일이다.</p>
 <table>
 <thead>
 <tr>
 <th></th>
-<th>무엇</th>
-<th>왜</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>①</td>
-<td><code>date</code> 가 있으면 <strong>그 날만</strong> 본다 (<code>lo</code> 를 하루 당기지 않는다)</td>
-<td>🚨 지금은 날짜를 줘도 <strong>하루 앞이 같이 걸린다</strong> — 내가 넣은 버그</td>
-</tr>
-<tr>
-<td>②</td>
-<td><strong>정확히 같은 제목</strong>이 있으면 그것만 후보로</td>
-<td>«미팅» 이 «캡스톤 미팅» 을 끌고 온다</td>
-</tr>
-<tr>
-<td>③</td>
-<td>🚨 <strong><code>time</code> 인자 신설</strong></td>
-<td><em>&quot;9시 거&quot;</em> 를 넘길 자리가 <strong>아예 없다. 이게 핵심이다</strong></td>
-</tr>
-<tr>
-<td>④</td>
-<td>후보를 줄 때 <strong>무엇을 더 말해야 집히는지</strong> 알려준다</td>
-<td>지금은 «어느 것인지»만 묻는다</td>
-</tr>
-</tbody>
-</table>
-<h2>✅ 3차 실기 — <strong>넷 통과, 하나 남음</strong></h2>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>무엇</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>✅</td>
-<td>창을 옮긴 뒤 더블클릭(BL-85) · 접힌 배지(BL-86) · 알림이 창을 안 폄(BL-87)</td>
-</tr>
-<tr>
-<td>✅</td>
-<td>🚨 <strong>브라우저 로그인이 저절로 뜬다</strong>(BL-90) — 🙋 <em>&quot;그 부분은 잘 됐어&quot;</em></td>
-</tr>
-<tr>
-<td>🔴</td>
-<td><strong>BL-92</strong> — 일정 수정에서 «그 하나»를 못 집는다</td>
-</tr>
-</tbody>
-</table>
-<h2>🚨 오늘 내가 세 번 같은 실수를 했다</h2>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>무엇</th>
-<th>교훈</th>
+<th>무엇이라고 말해 보나</th>
+<th>무엇을 보나</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>1</td>
-<td>BL-84 를 «해결»로 적었는데 <strong>실기에서 도구가 한 번도 안 불렸다</strong></td>
-<td><em>«도구가 있다»와 «불린다»는 다르다</em></td>
+<td><em>&quot;10월 4일 9시 미팅 세 시간으로 바꿔 줘&quot;</em></td>
+<td><strong>한 번에</strong> 고쳐지나 (되묻지 않나)</td>
 </tr>
 <tr>
 <td>2</td>
-<td>BL-88 을 고치며 <strong>좁히는 쪽을 안 쟀다</strong> → BL-92</td>
-<td><em>고치면서 같은 모양을 한 칸 옮겨 만들 수 있다</em></td>
+<td><em>&quot;아까 만든 일정 3시간으로 바꿔 줘&quot;</em> → 여럿이면 되물음</td>
+<td>되물을 때 <strong>«무엇을 더 말하면 되는지»</strong> 를 알려주나</td>
 </tr>
 <tr>
 <td>3</td>
-<td>토큰 백업이 <strong><code>.gitignore</code> 에 안 걸렸다</strong></td>
-<td><em>내가 만든 임시 파일이 비밀을 공개 저장소 한 걸음 앞에 뒀다</em></td>
+<td>그 되물음에 <em>&quot;4일 9시 거&quot;</em> 라고 답한다</td>
+<td>🚨 <strong>그 말이 <code>date</code>·<code>time</code> 으로 실려 가나</strong> — 여기가 핵심이다</td>
 </tr>
 </tbody>
 </table>
-<p>✅ <strong>mock 88파일 3468/3468 · 실패 0</strong> · 🔧 도구 <strong>69개</strong> · ⏸️ <strong>푸시는 사용자 결정</strong></p>
+<p>⚠️ <strong>3번이 진짜 시험이다.</strong> 도구에 자리는 만들었지만 <em>«도구가 있다»와 «불린다»는
+다르다</em> — BL-84 에서 바로 어제 데인 자리다.</p>
+<h2>✅ BL-92 — 고쳤다 (가짜 캘린더로만 검증)</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>무엇</th>
+<th>상태</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①</td>
+<td><code>date</code> 를 주면 <strong>그 날만</strong> 본다</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>②</td>
+<td><strong>정확히 같은 제목</strong>이 있으면 그쪽이 먼저</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>③</td>
+<td>🚨 <strong><code>time</code> 인자 신설</strong> (<em>&quot;9시 거&quot;</em> 를 넘길 자리)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>④</td>
+<td>후보와 함께 <strong>좁히는 법</strong>을 도구가 말한다</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<p>🚨 <strong>진짜 구멍은 테스트에 있었다</strong> — 가짜 캘린더가 <code>timeMin</code>/<code>timeMax</code> 를 <strong>무시해서</strong>
+«날짜를 주면 좁혀진다»를 <strong>잴 수가 없었다.</strong> 가짜가 이제 창을 지키고, <strong>지키는지
+자체를 세는 줄</strong>도 박았다. → <a href="BACKLOG.md">BACKLOG BL-92</a></p>
+<p>✅ <strong>mock 88파일 3487/3487 · 실패 0</strong> · 🔧 도구 <strong>69개</strong>(안 늘었다) · ⏸️ <strong>푸시는 사용자 결정</strong></p>
 <h2>🙋 사용자 몫</h2>
 <table>
 <thead>
@@ -167,12 +148,17 @@ color:var(--muted);font-size:.85rem}
 <tbody>
 <tr>
 <td>🔴</td>
-<td>📅 <strong>캘린더에서 «캡스톤 미팅» 하나 지우기</strong> — 10-02 사고의 흔적이 <strong>둘</strong> 남아 있다</td>
+<td>📅 <strong>캘린더에서 «캡스톤 미팅» 하나 지우기</strong> — 10-02 사고의 흔적이 <strong>둘</strong> 남아 있다 (지우는 도구는 일부러 없다)</td>
 <td>1분</td>
 </tr>
 <tr>
+<td>🔴</td>
+<td>🙋 <strong>4차 실기</strong> — 위 세 마디</td>
+<td>5분</td>
+</tr>
+<tr>
 <td></td>
-<td>🎙 <strong>카페 미팅 소크 녹음</strong> — ③ 에 쓸 자료</td>
+<td>🎙 <strong>카페 미팅 소크 녹음</strong> — 호출어(③)에 쓸 자료</td>
 <td>미팅 중</td>
 </tr>
 <tr>
@@ -194,8 +180,8 @@ color:var(--muted);font-size:.85rem}
 <tbody>
 <tr>
 <td><strong>1</strong></td>
-<td>🔴 <strong>BL-92</strong></td>
-<td>고치는 법이 적혀 있다</td>
+<td>🙋 <strong>4차 실기</strong></td>
+<td>BL-92 는 <strong>실기로만 닫힌다</strong></td>
 </tr>
 <tr>
 <td>2</td>
@@ -228,7 +214,7 @@ color:var(--muted);font-size:.85rem}
 <td><strong>지금</strong></td>
 </tr>
 <tr>
-<td>🆕 <strong>일정 «지우기» 도구를 만들 것인가</strong> — BL-92 를 고치면 필요가 줄지만, 사고로 생긴 중복은 사용자가 지워야 한다</td>
+<td><strong>일정 «지우기» 도구를 만들 것인가</strong> — BL-92 를 고쳐 필요가 줄었지만, 사고로 생긴 중복은 여전히 사용자가 지워야 한다</td>
 <td>11/24 전</td>
 </tr>
 <tr>
@@ -262,11 +248,11 @@ color:var(--muted);font-size:.85rem}
 <h2><span class="n">2</span>숫자</h2>
 <p class="sub">합계의 <b>유일한 출처</b>는 <code>docs/README.md</code> 상태표입니다.
    여기 없는 숫자는 지어내지 말고 거기서 가져오세요.</p>
-<div class="grid"><div class="stat"><span class="k">자동 테스트</span><span class="v">88파일 · 3468건</span><span class="note">실패 0 · mock(가짜 환경)</span></div><div class="stat"><span class="k">조작 가능한 도구</span><span class="v">69개</span><span class="note">앱·파일·시스템·화면·일정·메일</span></div></div>
+<div class="grid"><div class="stat"><span class="k">자동 테스트</span><span class="v">88파일 · 3487건</span><span class="note">실패 0 · mock(가짜 환경)</span></div><div class="stat"><span class="k">조작 가능한 도구</span><span class="v">69개</span><span class="note">앱·파일·시스템·화면·일정·메일</span></div></div>
 
 <h2><span class="n">3</span>남은 결함</h2>
 <p class="sub">🔴 즉시 · 🟡 TODO · 🔵 결정 대기 — 상세는 <code>docs/BACKLOG.md</code></p>
-<div class="card"><div class="bl"><span class="num r">🔴 BL-92</span><span class="t">2026-10-02 3차 실기 · 📅 «그 일정 하나»를 집을 수가 없다. 미해결</span></div><div class="bl"><span class="num a">🟡 BL-89</span><span class="t">2026-10-02 실기 · 🎤 음성 입력 중 창을 옮기면 입력이 취소된 것처럼 보인다</span></div><div class="bl"><span class="num a">🟡 BL-82</span><span class="t">2026-10-01 신설 · 🎤 답이 나온 직후 빈 녹음이 한 번 더 열린다</span></div><div class="bl"><span class="num a">🟡 BL-83</span><span class="t">2026-10-02 신설 · 🧱 UI 자동 검사가 «코드가 아닌 것»을 못 본다</span></div><div class="bl"><span class="num a">🟡 BL-80</span><span class="t">2026-09-29 신설 · 📅 «오늘은 일정이 없어요». 🔻 2026-09-30 강등 — 재현 안 됨</span></div><div class="bl"><span class="num a">🟡 BL-75</span><span class="t">2026-09-28 신설 · 🖱 «어디 있어?» 한 마디로 `find_ui_element` 와</span></div><div class="bl"><span class="num a">🟡 BL-72</span><span class="t">2026-09-25 신설 · ⏳ 약속이 서버 수명을 못 넘는다</span></div><div class="bl"><span class="num a">🟡 BL-73</span><span class="t">2026-09-25 신설 · 🔔 알림이 Windows 토스트가 아니다</span></div><div class="bl"><span class="num a">🟡 BL-71</span><span class="t">2026-09-24 신설 · 📏 도구를 더 늘리기 전에</span></div><div class="bl"><span class="num a">🟡 BL-70</span><span class="t">2026-09-24 신설 · ⏭️ 접근성이 못 보는 자리에 남아 있다</span></div><div class="bl"><span class="num a">🟡 BL-68</span><span class="t">2026-09-23 실기 신설 · ⏭️ 2-2(응답 품질)에서 같이 본다</span></div><div class="bl"><span class="num b">🔵 BL-65</span><span class="t">2026-09-21 신설 · ⏸️ 9/23 이후 결정. 🚨 동적 학습의 기여가 2.6%인데 사고는 3건이다</span></div><div class="bl"><span class="num b">🔵 BL-66</span><span class="t">2026-09-21 신설 · ⏸️ 10/31 실사용. 🚨 오매칭률을 세는 자리가 없다</span></div><div class="bl"><span class="num a">🟡 BL-62</span><span class="t">(2026-09-19) — 미해결. 학습은 코어를 다 쓰는데 평가는 아직 하나만 쓴다</span></div><div class="bl"><span class="num a">🟡 BL-55</span><span class="t">(2026-09-14 2차 리허설) — 미해결. `get_running_apps`가 프로세스를 센다</span></div><div class="bl"><span class="num a">🟡 BL-40</span><span class="t">(2026-09-11 사용자 지적 · A안 적용) — 파일 N개를 지우려면 승인을 N번 해야 한다</span></div></div>
+<div class="card"><div class="bl"><span class="num a">🟡 BL-89</span><span class="t">2026-10-02 실기 · 🎤 음성 입력 중 창을 옮기면 입력이 취소된 것처럼 보인다</span></div><div class="bl"><span class="num a">🟡 BL-82</span><span class="t">2026-10-01 신설 · 🎤 답이 나온 직후 빈 녹음이 한 번 더 열린다</span></div><div class="bl"><span class="num a">🟡 BL-83</span><span class="t">2026-10-02 신설 · 🧱 UI 자동 검사가 «코드가 아닌 것»을 못 본다</span></div><div class="bl"><span class="num a">🟡 BL-80</span><span class="t">2026-09-29 신설 · 📅 «오늘은 일정이 없어요». 🔻 2026-09-30 강등 — 재현 안 됨</span></div><div class="bl"><span class="num a">🟡 BL-75</span><span class="t">2026-09-28 신설 · 🖱 «어디 있어?» 한 마디로 `find_ui_element` 와</span></div><div class="bl"><span class="num a">🟡 BL-72</span><span class="t">2026-09-25 신설 · ⏳ 약속이 서버 수명을 못 넘는다</span></div><div class="bl"><span class="num a">🟡 BL-73</span><span class="t">2026-09-25 신설 · 🔔 알림이 Windows 토스트가 아니다</span></div><div class="bl"><span class="num a">🟡 BL-71</span><span class="t">2026-09-24 신설 · 📏 도구를 더 늘리기 전에</span></div><div class="bl"><span class="num a">🟡 BL-70</span><span class="t">2026-09-24 신설 · ⏭️ 접근성이 못 보는 자리에 남아 있다</span></div><div class="bl"><span class="num a">🟡 BL-68</span><span class="t">2026-09-23 실기 신설 · ⏭️ 2-2(응답 품질)에서 같이 본다</span></div><div class="bl"><span class="num b">🔵 BL-65</span><span class="t">2026-09-21 신설 · ⏸️ 9/23 이후 결정. 🚨 동적 학습의 기여가 2.6%인데 사고는 3건이다</span></div><div class="bl"><span class="num b">🔵 BL-66</span><span class="t">2026-09-21 신설 · ⏸️ 10/31 실사용. 🚨 오매칭률을 세는 자리가 없다</span></div><div class="bl"><span class="num a">🟡 BL-62</span><span class="t">(2026-09-19) — 미해결. 학습은 코어를 다 쓰는데 평가는 아직 하나만 쓴다</span></div><div class="bl"><span class="num a">🟡 BL-55</span><span class="t">(2026-09-14 2차 리허설) — 미해결. `get_running_apps`가 프로세스를 센다</span></div><div class="bl"><span class="num a">🟡 BL-40</span><span class="t">(2026-09-11 사용자 지적 · A안 적용) — 파일 N개를 지우려면 승인을 N번 해야 한다</span></div></div>
 
 <h2><span class="n">4</span>코드를 고치기 전 — 절대 규칙</h2>
 <p class="sub">어기면 바로 깨지는 것들입니다. 배경은 <code>CLAUDE.md</code> 의 각 링크에.</p>
