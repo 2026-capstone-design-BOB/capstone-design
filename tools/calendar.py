@@ -297,30 +297,131 @@ def _ev_span(ev: dict) -> str:
         return s0.get("dateTime", "")[:16].replace("T", " ")
 
 
-def _find_events(service, title: str, date: str) -> list:
-    """제목으로 찾는다. 🚨 **고를 범위를 넓히지 않는다** — 앞뒤 한 달만 본다."""
+def _ev_hhmm(ev: dict) -> str:
+    """그 일정이 **몇 시에** 시작하나. 하루 종일이면 빈 문자열."""
+    raw = (ev.get("start") or {}).get("dateTime") or ""
+    try:
+        return datetime.fromisoformat(raw).strftime("%H:%M")
+    except Exception:
+        return ""
+
+
+def _ev_ymd(ev: dict) -> str:
+    """그 일정이 **며칠에** 있나 (YYYY-MM-DD)."""
+    s0 = ev.get("start") or {}
+    if s0.get("date"):
+        return str(s0["date"])
+    return str(s0.get("dateTime", ""))[:10]
+
+
+def _norm_time(raw: str) -> str:
+    """«9시» · «9» · «09:00» · «오후 3시» → «09:00». 못 읽으면 빈 문자열.
+
+    🔑 모델에게는 `HH:MM` 을 달라고 적어 두지만 **사람 말이 그대로 실려 올 때가
+      있다.** 읽히는 것만 받고, **못 읽으면 좁히지 않는다** — 잘못 읽어서 엉뚱한
+      하나로 좁히는 것이 «여럿이라 못 고른다»보다 나쁘다.
+    """
+    s = (raw or "").strip()
+    if not s:
+        return ""
+    pm = ("오후" in s) or ("저녁" in s) or ("밤" in s)
+    am = ("오전" in s) or ("아침" in s)
+    nums = "".join(c if c.isdigit() else " " for c in s).split()
+    if not nums:
+        return ""
+    try:
+        h = int(nums[0])
+        m = int(nums[1]) if len(nums) > 1 else 0
+    except ValueError:
+        return ""
+    if pm and h < 12:
+        h += 12
+    if am and h == 12:
+        h = 0
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        return ""
+    return f"{h:02d}:{m:02d}"
+
+
+def _find_events(service, title: str, date: str = "", time: str = "") -> list:
+    """제목·날짜·시각으로 찾는다. 🚨 **고를 범위를 넓히지 않는다** — 앞뒤 한 달만 본다.
+
+    🚨 **날짜를 주면 그 날만 본다.** 예전에는 시간대 여유를 주려고 `lo` 를 하루
+      앞으로 당겼는데, 그러면 `date='2026-10-04'` 가 **10월 3일까지 같이 끌고 와서**
+      날짜 지정을 통째로 무력화했다. 사용자가 *"4일"* 이라고 정확히 답했는데도
+      «여러 개예요»가 돌아온 이유가 이것이다 (BL-92 ①).
+    """
     try:
         base = datetime.strptime(date, "%Y-%m-%d") if date else datetime.now()
     except ValueError:
-        base = datetime.now()
-    lo = (base - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    hi = base + timedelta(days=30 if not date else 1)
+        base, date = datetime.now(), ""
+    if date:
+        lo = base.replace(hour=0, minute=0, second=0, microsecond=0)
+        hi = lo + timedelta(days=1)
+    else:
+        lo = (base - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        hi = base + timedelta(days=30)
     res = service.events().list(
         calendarId="primary",
         timeMin=lo.astimezone().isoformat(), timeMax=hi.astimezone().isoformat(),
         singleEvents=True, orderBy="startTime", maxResults=50,
     ).execute()
+    items = list(res.get("items", []))
+
     key = (title or "").strip().replace(" ", "")
-    if not key:
-        return list(res.get("items", []))
-    return [e for e in res.get("items", [])
-            if key in (e.get("summary") or "").replace(" ", "")]
+    if key:
+        items = [e for e in items
+                 if key in (e.get("summary") or "").replace(" ", "")]
+        # 🔑 부분 일치는 **일부러** 넣은 것이다(«캡스톤»만 말해도 찾으라고).
+        #   하지만 **정확히 같은 제목이 있으면 그쪽이 먼저다** — 안 그러면
+        #   «미팅» 이 «캡스톤 미팅» 을 끌고 온다 (BL-92 ②).
+        exact = [e for e in items
+                 if (e.get("summary") or "").replace(" ", "") == key]
+        if exact:
+            items = exact
+
+    want = _norm_time(time)
+    if want and len(items) > 1:
+        # 🚨 **여럿일 때만 시각으로 좁힌다.** 하나뿐인데 시각이 어긋난다고 0개로
+        #   만들면, 모델이 잘못 읽은 시각 하나 때문에 «못 찾았어요»가 된다.
+        narrowed = [e for e in items if _ev_hhmm(e) == want]
+        if narrowed:
+            items = narrowed
+    return items
+
+
+def _narrow_hint(found: list) -> str:
+    """후보가 여럿일 때 **무엇을 더 말해야 하나로 집히는지** 알려 준다.
+
+    🚨 «어느 것인지 알려 주세요»만으로는 대화가 같은 자리에서 돈다 — 사용자는
+      *"4일"* 이라고 답했고 *"9시 한 개밖에 없지 않아"* 라고까지 말했는데, 모델은
+      **그걸 넘길 자리를 몰라서** 같은 호출을 반복했다 (BL-92).
+      그래서 **도구가 자기 손잡이를 직접 알려 준다.**
+    """
+    dates = {_ev_ymd(e) for e in found}
+    times = {_ev_hhmm(e) for e in found if _ev_hhmm(e)}
+    titles = {(e.get("summary") or "").strip() for e in found}
+    args, says = [], []
+    if len(dates) > 1:
+        args.append(f"date='{sorted(dates)[0]}'")
+        says.append("날짜")
+    if len(times) > 1:
+        args.append(f"time='{sorted(times)[0]}'")
+        says.append("시각")
+    if len(titles) > 1:
+        args.append("title='" + sorted(titles)[0] + "'")
+        says.append("정확한 제목")
+    if not args:
+        return "(날짜·시각·제목이 모두 같아요. 캘린더에서 직접 확인해 보시겠어요?)"
+    return (f"→ {' · '.join(says)} 중 하나만 더 알려 주시면 하나로 좁혀져요. "
+            f"(그 값을 {', '.join(args)} 처럼 넣어 이 도구를 다시 부르세요)")
 
 
 @tool
 def update_calendar_event(
     title: str,
     date: str = "",
+    time: str = "",
     new_title: str = "",
     new_date: str = "",
     new_time: str = "",
@@ -333,6 +434,9 @@ def update_calendar_event(
     🚨 고치는 요청이면 새 일정을 만들지 말고 반드시 이 도구를 쓰세요.
     title: 고칠 일정의 제목 (일부만 맞아도 됩니다. 예: 캡스톤)
     date: 그 일정의 날짜 (YYYY-MM-DD). 비우면 앞뒤 한 달에서 찾습니다.
+    time: 그 일정이 **시작하는 시각** (HH:MM). 같은 날 같은 제목이 여럿일 때
+          "9시 거"처럼 사용자가 말한 시각을 여기에 넣어 하나로 좁히세요.
+          🚨 바꿀 시각이 아니라 **찾을 시각**입니다. 바꿀 시각은 new_time 입니다.
     new_title / new_date / new_time: 바꿀 값. 안 바꿀 것은 비워 두세요.
     duration_minutes: 새 길이(분). 0이면 안 바꿉니다.
     location / description: 바꿀 값 (선택).
@@ -348,7 +452,7 @@ def update_calendar_event(
         return f"✗ 캘린더에 연결하지 못했어요 ({type(e).__name__})."
 
     try:
-        found = _find_events(service, title, date)
+        found = _find_events(service, title, date, time)
     except Exception as e:                                    # noqa: BLE001
         return f"✗ 캘린더를 읽지 못했어요 ({type(e).__name__}). 직접 확인해 보시겠어요?"
 
@@ -359,10 +463,15 @@ def update_calendar_event(
     if len(found) > 1:
         # 🚨 **여럿이면 고르지 않는다.** 엉뚱한 일정을 고치면 되돌릴 수 없고,
         #   사용자는 고쳐진 줄 안다. (`read_email` 이 같은 규칙을 쓴다)
+        #
+        # 🔑 다만 **목록만 주고 «어느 것인지»만 물으면 대화가 같은 자리에서 돈다**
+        #   — 모델이 더 좁힐 손잡이가 있다는 걸 모르기 때문이다(BL-92 ④).
+        #   그래서 **무엇을 더 주면 하나가 되는지**를 도구가 직접 말한다.
+        #   프롬프트로 부탁하는 대신 **옮길 수밖에 없는 문장**을 쥐여 주는 자리다.
         lines = [f"  • {_ev_span(e)} {e.get('summary') or '(제목 없음)'}"
                  for e in found[:5]]
         return (f"✗ '{title}' 로 찾은 일정이 {len(found)}개예요. 어느 것인지 알려 주세요:"
-                + NL + NL.join(lines))
+                + NL + NL.join(lines) + NL + _narrow_hint(found))
 
     ev = found[0]
     before = _ev_span(ev)
