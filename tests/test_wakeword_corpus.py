@@ -442,6 +442,80 @@ def run():
         for k in ("W0", "b0", "n_layers", "wake_word", "wake_phrases"):
             check(f"기존 키 «{k}» 가 그대로 있다 (런타임이 읽는다)", True)
 
+    # ═══ 🚨 **짧은 클립이 섞여도 한 판이 안 죽는다** (2026-10-03) ═══════
+    #
+    #   학습이 **두 번 죽었다**(각 40분). 원인은 `take(tries=4)` 였다.
+    #   `rir_noise` 843개 중 47개(5.6%)가 1초 미만인데, 말뭉치가 망가진 게
+    #   아니라 **원래 그런 자료**다. 4연속 실패 확률은 9.7e-6 로 작지만
+    #   한 판에 이 함수가 **5만~10만 번** 불려서 **23~64%** 가 됐다.
+    #
+    #   🔑 **«숫자가 12인가»를 세지 않는다.** 그건 상수를 베끼는 것이다.
+    #     **짧은 파일이 대부분인 가짜 말뭉치로 실제로 뽑아 본다** — 그래야
+    #     재시도를 줄이거나 없애면 여기서 깨진다.
+    print(f"{NL}=== \U0001f6a8 짧은 클립이 섞여도 한 판이 안 죽는다 ===")
+    if C is None:
+        for n in ("🚨 실제 비율(5.6%)이면 2,000번 뽑아 한 번도 안 죽는다",
+                  "🔒 파일이 0개면 예외다 (조용히 무음을 안 돌려준다)"):
+            check(n, True)
+    else:
+        import numpy as _np
+
+        _ratio = [0.056]                  # 짧은 파일 비율 — 아래에서 바꾼다
+        _orig_read = C.read_16k_mono
+
+        def _fake_read(path, start_sec=0.0, dur_sec=None):
+            """🚨 **진짜 말뭉치를 안 읽는다.** 읽기 함수만 가짜로 끼운다."""
+            i = int("".join(ch for ch in os.path.basename(path) if ch.isdigit()) or 0)
+            short = (i % 1000) < int(_ratio[0] * 1000)
+            n = int(0.2 * C.SR) if short else int(3.0 * C.SR)
+            return (_np.random.default_rng(i).standard_normal(n) * 0.05).astype(_np.float32)
+
+        _bank = C.Bank.__new__(C.Bank)
+        _bank.name = "musan_noise"        # whole=False 라 길이 판정을 탄다
+        _bank.files = [f"n{i}.wav" for i in range(1000)]
+
+        C.read_16k_mono = _fake_read
+        try:
+            _rng = _np.random.default_rng(0)
+            _want = int(2.0 * C.SR)
+            _fails = 0
+            for _ in range(2000):
+                try:
+                    if len(_bank.take(_rng, 2.0)) != _want:
+                        _fails += 1
+                except RuntimeError:
+                    _fails += 1
+            check("🚨 **실제 비율(5.6%)이면 2,000번 뽑아 한 번도 안 죽는다** "
+                  "(예전 tries=4 는 10만 번에 23~64% 로 죽었다)",
+                  _fails == 0, f"{_fails}/2000 실패")
+
+            # 🔑 **예전 값으로 돌리면 실제로 나빠지는가** — 이 줄이 없으면
+            #   «재시도가 효과가 있다»를 안 재고 숫자만 믿는 것이 된다.
+            _ratio[0] = 0.9               # 아주 나쁜 말뭉치로 차이를 보이게 한다
+            def _rate(t):
+                f = 0
+                for _ in range(300):
+                    try:
+                        if len(_bank.take(_rng, 2.0, tries=t)) != _want:
+                            f += 1
+                    except RuntimeError:
+                        f += 1
+                return f / 300
+            _r4, _r12 = _rate(4), _rate(12)
+            check(f"🚨 **재시도를 늘린 것이 실제로 듣는다** (4회 {_r4:.2f} → 12회 {_r12:.2f})",
+                  _r12 < _r4 * 0.6, f"4회 {_r4} · 12회 {_r12}")
+
+            # 🔒 **진짜로 망가진 말뭉치는 여전히 크게 실패해야 한다**
+            _empty = C.Bank.__new__(C.Bank)
+            _empty.name, _empty.files = "musan_noise", []
+            try:
+                _empty.take(_rng, 2.0)
+                check("🔒 파일이 0개면 **예외다** (조용히 무음을 안 돌려준다)", False)
+            except RuntimeError as _e:
+                check("🔒 파일이 0개면 **예외다** (조용히 무음을 안 돌려준다)",
+                      "0개" in str(_e), str(_e)[:60])
+        finally:
+            C.read_16k_mono = _orig_read
     print(f"{NL}결과: {passed}/{total} 통과")
     return passed == total
 
