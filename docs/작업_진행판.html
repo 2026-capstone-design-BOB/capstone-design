@@ -110,20 +110,59 @@ color:var(--muted);font-size:.85rem}
 </table>
 <p>🙋 <strong>A 를 추천한다.</strong> 쪼개는 건 명령 한 줄이고, B 는 이번 수집의 목적(«남의 말소리를
 배우게 한다»)을 못 쓴다.</p>
-<h2>▶️ 정하면 이 순서로 (약 20분 + 학습 17분)</h2>
+<h2>▶️ 정하면 이 순서로 (준비 10분 + 학습 약 17분)</h2>
+<p>🚨 <strong>순서가 중요하다.</strong> <code>add_soak_to_negatives.py</code> 는 기준 풀을
+<strong><code>data/wakeword/negative.npy</code> 로 고정해서</strong> 읽는다(인자로 못 바꾼다).
+그래서 <strong>ingest 가 먼저</strong>다 — 지금 <code>negative.npy</code> 는 <strong>9/28 것</strong>이라
+<strong>녹음자6·변소윤 두 세션이 안 들어 있다.</strong></p>
 <pre><code class="language-bash">conda activate pluiz
-# ① 카페를 쪼갠다 (A 를 고른 경우)
-# ② 음성 풀에 더한다 — 원본은 안 덮어쓴다 (negative_plus.npy 로 나온다)
-python scripts/add_soak_to_negatives.py &lt;학습용 wav&gt; --apply
-# ③ 화자 단위로 4명 뗀다
+
+# ① 녹음을 다시 재운다 — 🚨 이게 먼저다. negative.npy 를 새로 쓴다
 python scripts/ingest_wakeword.py --holdout 4 --seed 2
+
+# ② 학습에 넣을 소크를 **한 파일로** 만든다
+#    🔑 add_soak 은 기준이 negative.npy 로 고정이라 **이어 돌릴 수 없다.**
+#    여러 소크를 넣으려면 wav 를 먼저 이어 붙인다.
+
+# ③ 음성 풀에 더한다 — ⚠️ --out 을 준다
+#    (기본 이름 negative_plus.npy 는 **10/01 것이 이미 있다** — 덮어쓰지 않는다)
+python scripts/add_soak_to_negatives.py &lt;학습용 wav&gt; --apply --out data/wakeword/negative_1003.npy
+
 # ④ 학습 (약 17분)
-python scripts/train_wakeword.py --jobs 0 --user-neg data/wakeword/negative_plus.npy
+python scripts/train_wakeword.py --jobs 0 --user-neg data/wakeword/negative_1003.npy
+
 # ⑤ 판정 — 🚨 sim_consecutive 로 한다
 python scripts/sim_consecutive.py &lt;평가용 wav&gt; --model services/wakeword_model_candidate.npz
 </code></pre>
 <p>🚨 <strong>⑤ 를 <code>eval_wakeword.py</code> 로 하지 말 것</strong> — 런타임의 «연속 2창»이 거기 없다
 (<a href="BACKLOG.md">BL-93</a>). 같은 오디오에서 <strong>FA 가 5.3배로 나온다.</strong></p>
+<h3>📦 지금 풀에 무엇이 들어 있나 (2026-10-03 확인)</h3>
+<table>
+<thead>
+<tr>
+<th>파일</th>
+<th>만든 때</th>
+<th>내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>negative.npy</code></td>
+<td><strong>9/28</strong></td>
+<td>녹음 페이지 음성 30.0분 · 창 3,874. 🚨 <strong>녹음자6·변소윤이 빠져 있다</strong></td>
+</tr>
+<tr>
+<td><code>negative_plus.npy</code></td>
+<td>10/01</td>
+<td>위 + <code>soak_voice_20261001_1246.wav</code>(25분). <strong>학습에 쓴 적은 없다</strong></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>10/01 의 <code>_1021.wav</code>(20분) 과 카페 30분은 <strong>아직 어디에도 안 들어갔다</strong></td>
+</tr>
+</tbody>
+</table>
 <h2>✅ 2026-10-03 (2) 에 거둔 것 — 🙋 카페 미팅</h2>
 <table>
 <thead>
