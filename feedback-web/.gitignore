@@ -1,4 +1,7 @@
 node_modules/
-.vercel/
-.env
-.env.*
+
+# Vercel CLI 가 만드는 것 — 🚨 `.env.local` 에 **VERCEL_OIDC_TOKEN** 이 들어 있다.
+#   `.env*` 는 `.env.local`·`.env.production` 까지 한 번에 막는다(CLI 가 덧붙인 줄을
+#   그대로 살렸다 — 더 넓은 쪽이 맞다).
+.vercel
+.env*
