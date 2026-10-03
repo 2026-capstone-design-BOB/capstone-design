@@ -242,5 +242,98 @@ _quiet = F.build_report("bug", said="", answered="물 마실 시간이에요",
 check("말 없이 일어난 일도 보고서가 된다",
       "말 없이 일어났어요" in _quiet and "물 마실 시간이에요" in _quiet, _quiet)
 
+# ═══ ⑬ 🚨 **못 보낸 것과 못 적은 것은 다른 일이다** (수신기 · 2026-10-03) ══
+#
+#   «보냈다»고 거짓말하면 팀원이 파일을 안 보낸다 — 그러면 보고가 그 PC 에서
+#   끝난다. 이 저장소가 «안 한 걸 했다고 말하기»로 반복해 데인 자리다
+#   (BL-12 · BL-19 · BL-26 · BL-35).
+print(f"{NL}=== ⑬ \U0001f6a8 보내기가 실패해도 보고는 남는다 ===")
+_WEB = os.path.join(_ROOT, "feedback-web")
+
+check("🚨 **기본이 «안 보냄»이다** (설정 안 하면 밖으로 안 나간다)",
+      F.send_report("### 아무거나")[0] is False)
+check("   왜 못 보냈는지 말한다", "설정" in F.send_report("### 아무거나")[1],
+      F.send_report("### 아무거나")[1])
+
+_keep = os.environ.get("PLUIZ_FEEDBACK_ENDPOINT")
+os.environ["PLUIZ_FEEDBACK_ENDPOINT"] = "http://127.0.0.1:9/없는주소"
+os.environ["PLUIZ_FEEDBACK_KEY"] = "x"
+try:
+    _ok, _why = F.send_report("### 아무거나")
+    check("🚨 **닿지 못해도 예외를 올리지 않는다**", _ok is False and bool(_why), _why)
+finally:
+    os.environ.pop("PLUIZ_FEEDBACK_KEY", None)
+    if _keep is None:
+        os.environ.pop("PLUIZ_FEEDBACK_ENDPOINT", None)
+    else:
+        os.environ["PLUIZ_FEEDBACK_ENDPOINT"] = _keep
+
+# 🚨 순서가 계약이다 — 파일에 **먼저** 쓰고 그 다음에 보낸다.
+_save_body = _MAIN.split('@app.post("/api/feedback")')[1].split("@app.")[0]
+check("🚨 **파일에 먼저 쓰고 나서 보낸다** (순서가 뒤집히면 보고를 잃는다)",
+      _save_body.index("append_report") < _save_body.index("send_report"), "")
+check("   보냈는지를 **따로** 돌려준다",
+      '"sent": sent' in _save_body and '"sent_error": why' in _save_body)
+check("🚨 화면이 **«적었다»와 «보냈다»를 가른다**",
+      "data.sent" in _UI and "전달은 안 됐어요" in _UI)
+check("   못 보냈으면 **파일을 보내라고** 안내한다",
+      "이 파일을 변소윤에게 보내거나" in _UI)
+
+
+# ═══ ⑭ 🔒 **수신기의 비밀이 둘이다** ════════════════════════════════
+#
+#   하나로 합치면 팀원 PC 에 깔린 키로 **남의 보고를 전부 읽을 수 있다.**
+print(f"{NL}=== ⑭ \U0001f512 보내는 키로는 볼 수 없다 ===")
+
+
+def _web(*parts):
+    return io.open(os.path.join(_WEB, *parts), encoding="utf-8").read()
+
+
+check("수신기가 저장소에 있다", os.path.isdir(_WEB))
+_report_js, _list_js = _web("api", "report.js"), _web("api", "list.js")
+check("🚨 **보내기는 `INGEST_KEY`**", "process.env.INGEST_KEY" in _report_js)
+check("🚨 **보기는 `VIEW_PASSWORD`** (다른 비밀이다)",
+      "process.env.VIEW_PASSWORD" in _list_js)
+# 🔑 **`process.env.` 까지 보고 센다.** 그냥 이름만 찾으면 «왜 둘로 갈랐는지»
+#   적어 둔 주석에 걸려 깨진다 — 설명을 지우게 만드는 테스트는 나쁜 테스트다.
+check("   보기 쪽이 `INGEST_KEY` 를 **안 읽는다**",
+      "process.env.INGEST_KEY" not in _list_js)
+check("   보내기 쪽이 `VIEW_PASSWORD` 를 **안 읽는다**",
+      "process.env.VIEW_PASSWORD" not in _report_js)
+check("🔒 비밀 비교가 **상수시간**이다 (한 글자씩 맞춰 보지 못하게)",
+      "timingSafeEqual" in _web("api", "_guard.js"))
+check("🚨 서버에 비밀이 없으면 **전부 거부**한다 (fail-closed)",
+      "if (!expected) return false" in _web("api", "_guard.js"))
+check("🔒 검색엔진에 안 걸리게 해 뒀다", "noindex" in _web("vercel.json"))
+check("🔒 보기 비밀번호를 **주소줄에 안 싣는다** (URL 은 기록에 남는다)",
+      "'x-view-key': pw" in _web("public", "index.html"))
+check("보고 크기에 상한이 있다 (한 건으로 저장소를 채우지 못하게)",
+      "MAX_BYTES" in _report_js and "413" in _report_js)
+check("쌓이는 개수에도 상한이 있다", "ltrim" in _report_js)
+
+check("🚨 비밀이 **저장소에 안 올라간다**",
+      "INGEST_KEY=" not in io.open(os.path.join(_ROOT, ".env.example"),
+                                   encoding="utf-8").read())
+_gi_web = io.open(os.path.join(_WEB, ".gitignore"), encoding="utf-8").read()
+check("   수신기 쪽도 `.env` 를 막아 뒀다", ".env" in _gi_web)
+check("올리는 법이 적혀 있다 (다음 사람이 처음부터 알아내지 않게)",
+      "vercel env add INGEST_KEY" in _web("README.md"))
+check("🚨 **여기가 원본이 아니라는 것**을 README 가 못 박는다",
+      "원본이 아닙니다" in _web("README.md"))
+
+# 🔑 **소스 대조로 끝내지 않는다**(BL-83). 수신기를 실제로 불러 돌리는 검사가
+#   따로 있다 — `cd feedback-web && npm test`. 파이썬 스위트가 node 를 부르지
+#   않는 이유는 CI(ubuntu·python만)와 설치 환경을 묶지 않기 위해서다.
+check("수신기에 **실제로 돌려 보는 검사**가 있다",
+      os.path.exists(os.path.join(_WEB, "test.mjs")))
+check("   그 검사가 **비밀 둘이 서로 못 넘나든다**를 센다",
+      "보내기 키로 보기 거부" in _web("test.mjs")
+      and "보기 비번으로 넣기 거부" in _web("test.mjs"))
+check("   `npm test` 로 돌아간다",
+      '"test": "node test.mjs"' in _web("package.json"))
+check("🔒 그 검사가 **진짜 Redis 를 안 쓴다** (사람이 보낸 보고를 건드리면 안 된다)",
+      "Redis.fromEnv = () =>" in _web("test.mjs"))
+
 print(f"{NL}결과: {passed}/{total} 통과")
 sys.exit(0 if passed == total else 1)

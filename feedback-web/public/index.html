@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Pluiz 사용 피드백</title>
+<style>
+  :root {
+    --bg:#0e0e16; --surf:#171722; --border:#2a2a3a;
+    --text:#e8e8f0; --muted:#8a8a9e; --accent:#6c5ce7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; padding:24px 16px; background:var(--bg); color:var(--text);
+    font:14px/1.6 -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+  }
+  .wrap { max-width:860px; margin:0 auto; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:12px; margin-bottom:20px; }
+  .gate { display:flex; gap:8px; margin-bottom:16px; }
+  input, button {
+    font:inherit; border-radius:8px; border:1px solid var(--border);
+    background:var(--surf); color:var(--text); padding:8px 12px;
+  }
+  input { flex:1; }
+  button { cursor:pointer; background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.ghost { background:none; border-color:var(--border); color:var(--muted); }
+  .msg { color:var(--muted); font-size:12px; margin-bottom:12px; min-height:18px; }
+  .card {
+    background:var(--surf); border:1px solid var(--border);
+    border-radius:12px; padding:14px 16px; margin-bottom:12px;
+  }
+  .card h2 { font-size:14px; margin:0 0 8px; font-weight:600; }
+  .meta { color:var(--muted); font-size:11px; margin-bottom:10px; }
+  pre {
+    margin:0; white-space:pre-wrap; word-break:break-word;
+    font:11px/1.6 Consolas, monospace; color:var(--text);
+    background:rgba(0,0,0,.35); border-radius:8px; padding:10px 12px;
+    max-height:420px; overflow:auto;
+  }
+  .row { display:flex; gap:8px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🚩 Pluiz 사용 피드백</h1>
+  <div class="sub">
+    팀원이 앱에서 보낸 신고입니다. 최신이 위. ·
+    <b>원본은 각자 PC의 <code>logs/사용_피드백_보고.md</code></b> 입니다 — 여기는 바로 보려고 두는 사본입니다.
+  </div>
+
+  <div class="gate" id="gate">
+    <input id="pw" type="password" placeholder="보기 비밀번호" autocomplete="current-password" />
+    <button onclick="load()">열기</button>
+  </div>
+
+  <div class="row" id="tools" hidden>
+    <button class="ghost" onclick="load()">새로고침</button>
+    <button class="ghost" onclick="copyAll()">전부 복사</button>
+    <span class="msg" id="count"></span>
+  </div>
+
+  <div class="msg" id="msg"></div>
+  <div id="list"></div>
+</div>
+
+<script>
+let items = [];
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function load() {
+  const pw = document.getElementById('pw').value;
+  const msg = document.getElementById('msg');
+  if (!pw) { msg.textContent = '비밀번호를 넣어 주세요.'; return; }
+  msg.textContent = '불러오는 중…';
+  try {
+    // 🔒 비밀번호를 **주소줄에 안 싣는다** — URL 은 기록에 남는다.
+    const res = await fetch('/api/list', { headers: { 'x-view-key': pw } });
+    if (res.status === 401) { msg.textContent = '비밀번호가 맞지 않아요.'; return; }
+    const data = await res.json();
+    if (!res.ok) { msg.textContent = '못 읽었어요: ' + (data.error || res.status); return; }
+    items = data.items || [];
+    sessionStorage.setItem('pluiz_view_key', pw);
+    document.getElementById('gate').hidden = true;
+    document.getElementById('tools').hidden = false;
+    document.getElementById('count').textContent = `${items.length}건`;
+    msg.textContent = items.length ? '' : '아직 들어온 신고가 없습니다.';
+    render();
+  } catch (e) {
+    msg.textContent = '못 읽었어요: ' + e.message;
+  }
+}
+
+function render() {
+  document.getElementById('list').innerHTML = items.map((it, i) => {
+    const head = (it.markdown.split('\n')[0] || '').replace(/^###\s*/, '');
+    return `<div class="card">
+      <h2>${esc(head)}</h2>
+      <div class="meta">${esc(it.who || '-')} · ${esc(it.place || '-')} · 받은 때 ${esc((it.received_at || '').slice(0, 19).replace('T', ' '))}</div>
+      <pre>${esc(it.markdown)}</pre>
+    </div>`;
+  }).join('');
+}
+
+async function copyAll() {
+  await navigator.clipboard.writeText(items.map(i => i.markdown).join('\n\n'));
+  document.getElementById('msg').textContent = `${items.length}건을 복사했어요.`;
+}
+
+// 새로고침해도 다시 안 치게 — 탭을 닫으면 사라진다(sessionStorage).
+const saved = sessionStorage.getItem('pluiz_view_key');
+if (saved) { document.getElementById('pw').value = saved; load(); }
+</script>
+</body>
+</html>

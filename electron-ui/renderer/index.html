@@ -3129,9 +3129,16 @@
         // 🔑 **어디에 쌓였는지 말한다.** 보낸 뒤 «어디로 갔지»가 남으면
         //    팀원이 전달을 못 한다.
         if (repBtn) { repBtn.textContent = '✅'; repBtn.classList.add('done'); repBtn.onclick = null; }
-        st.innerHTML = `적었어요 (지금까지 ${data.count}개). `
-          + `<b>${esc(data.path)}</b><br>`
-          + `이 파일을 변소윤에게 보내거나, 위 «전부 복사»로 붙여넣으세요.`;
+        // 🚨 **«보냈다»와 «적었다»를 섞지 않는다.** 수신기에 못 닿았는데
+        //    「전달됐어요」라고 하면 팀원이 파일을 안 보낸다 — 그러면 보고가
+        //    그 PC 안에서 끝난다. 이 저장소가 «안 한 걸 했다고 말하기»로
+        //    반복해서 데인 자리와 같은 모양이다(BL-12·19·26·35).
+        st.innerHTML = data.sent
+          ? `보냈어요 ✓ 변소윤에게 전달됐습니다 (지금까지 ${data.count}개).`
+          : `적었어요 (지금까지 ${data.count}개). `
+            + `⚠️ <b>전달은 안 됐어요</b> — ${esc(data.sent_error || '')}<br>`
+            + `<b>${esc(data.path)}</b><br>`
+            + `이 파일을 변소윤에게 보내거나, 위 «전부 복사»로 붙여넣으세요.`;
         btn.textContent = '보냈어요 ✓';
         setTimeout(() => { if (repOpen) closeReport(); }, 2600);
       } catch (e) {

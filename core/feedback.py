@@ -212,3 +212,53 @@ def read_all() -> str:
 def count() -> int:
     """보고가 몇 개 쌓였나. 머리말에는 `###` 가 없으므로 그대로 세면 된다."""
     return sum(1 for ln in read_all().split(NL) if ln.startswith("### "))
+
+
+# ── 🆕 보낸 것을 **변소윤에게도** 흘려보낸다 (2026-10-03) ───────────
+#
+# 🚨 **이건 덤이다. 원본은 위의 파일이다.**
+#   `append_report` 가 **먼저** 끝나고 나서 이 함수가 불린다. 그래서
+#   인터넷이 없든 서버가 죽었든 **보고가 사라지지 않는다** — 팀원은 여전히
+#   파일을 보내거나 「전부 복사」로 붙여넣을 수 있다.
+#
+# 🔑 ROADMAP 이 «클라우드 동기화는 안 한다»고 적어 둔 것과 어긋나지 않는다.
+#   그건 **제품 기능**(사용자 데이터 동기화) 얘기고 이건 **개발 도구**다.
+#   제품은 여전히 인터넷 없이 돈다 — 여기가 막혀도 Pluiz 는 멀쩡하다.
+
+#: 비어 있으면 **아무것도 안 보낸다.** 기본이 «안 보냄»인 것이 중요하다 —
+#: 팀원이 설정하지 않았는데 말한 내용이 밖으로 나가면 안 된다.
+ENDPOINT_ENV = "PLUIZ_FEEDBACK_ENDPOINT"
+KEY_ENV = "PLUIZ_FEEDBACK_KEY"
+
+
+def send_report(markdown: str, kind: str = "", when: str = "",
+                who: str = "", place: str = "") -> tuple[bool, str]:
+    """수신기로 보낸다. `(보냈나, 왜 못 보냈나)`.
+
+    🚨 **절대 예외를 올리지 않는다.** 여기서 터지면 «보고가 실패했다»로 보이는데,
+      보고는 이미 파일에 쌓였다. 못 보낸 것과 못 적은 것은 **다른 일**이다.
+    """
+    url = (os.environ.get(ENDPOINT_ENV) or "").strip()
+    key = (os.environ.get(KEY_ENV) or "").strip()
+    if not url:
+        return False, "안 보냄 (수신기 주소가 설정돼 있지 않아요)"
+    if not key:
+        return False, "안 보냄 (보내기 키가 설정돼 있지 않아요)"
+    try:
+        import httpx
+        r = httpx.post(
+            url,
+            headers={"x-pluiz-key": key, "Content-Type": "application/json"},
+            json={"markdown": markdown, "kind": kind, "when": when,
+                  "who": who, "place": place},
+            timeout=6.0,                      # 🔑 짧게. 보내다 UI 가 멈추면 안 된다
+        )
+        if r.status_code == 200:
+            return True, ""
+        if r.status_code == 401:
+            return False, "보내기 키가 맞지 않아요"
+        return False, f"수신기가 거절했어요 (HTTP {r.status_code})"
+    except Exception as e:                                    # noqa: BLE001
+        # 🔑 **왜 못 보냈는지는 말하되 자세히는 말하지 않는다** — 그 자리에서
+        #   할 일은 «파일을 보내 주세요» 하나뿐이다.
+        return False, f"수신기에 닿지 못했어요 ({type(e).__name__})"

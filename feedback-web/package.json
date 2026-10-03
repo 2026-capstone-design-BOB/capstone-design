@@ -1,0 +1,13 @@
+{
+  "name": "pluiz-feedback",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pluiz 사용 피드백 수신기 — 팀원이 앱에서 보낸 신고를 모은다",
+  "dependencies": {
+    "@upstash/redis": "^1.34.0"
+  },
+  "scripts": {
+    "test": "node test.mjs"
+  }
+}

@@ -673,14 +673,22 @@ async def feedback_draft(req: FeedbackRequest):
 
 @app.post("/api/feedback")
 async def feedback_save(req: FeedbackRequest):
-    """보고를 파일에 **쌓는다**(맨 위에). 경로와 누적 개수를 돌려준다."""
+    """보고를 파일에 **쌓고**(맨 위에), 수신기가 설정돼 있으면 거기에도 보낸다.
+
+    🚨 **순서가 계약이다.** 파일에 먼저 쓰고 그 다음에 보낸다.
+      보내기가 실패해도 보고는 남아 있어야 한다 — 못 보낸 것과 못 적은 것은
+      **다른 일**이고, 섞으면 팀원이 «실패했구나» 하고 그냥 닫는다.
+    """
     from core import feedback
     md = feedback.build_report(
         req.kind, req.said, req.answered, req.when,
         req.expected, req.who, req.place, _fb_lines(req))
-    path = feedback.append_report(md)
+    path = feedback.append_report(md)                 # ① 원본 — 이게 먼저다
+    sent, why = feedback.send_report(                 # ② 덤 — 실패해도 ①은 남는다
+        md, req.kind, req.when, req.who, req.place)
     return {"status": "ok", "path": path,
-            "count": feedback.count(), "markdown": md}
+            "count": feedback.count(), "markdown": md,
+            "sent": sent, "sent_error": why}
 
 
 @app.get("/api/feedback")
