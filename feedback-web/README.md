@@ -99,8 +99,8 @@ npx vercel deploy --prod
 ### 6. 팀원 `.env` 에 주소 넣기
 
 ```
-PLUIZ_FEEDBACK_ENDPOINT=https://pluiz-feedback.vercel.app/api/report
-PLUIZ_FEEDBACK_KEY=<INGEST_KEY 와 같은 값>
+FEEDBACK_ENDPOINT=https://pluiz-feedback.vercel.app/api/report
+FEEDBACK_KEY=<INGEST_KEY 와 같은 값>
 ```
 
 🚨 **키는 저장소가 아니라 직접 전달**하세요(카톡·대면). `.env` 는 커밋되지 않지만,
@@ -141,8 +141,8 @@ curl -X POST https://pluiz-feedback.vercel.app/api/report -H "x-pluiz-key: 틀�
 | curl 에 **HTML 로그인 페이지**가 돌아온다 | Vercel 의 **Deployment Protection** 이 켜져 있습니다. 프로젝트 → Settings → Deployment Protection → **Vercel Authentication 을 Production 에서 끕니다.** (두 입구 모두 비밀을 요구하므로 이걸 꺼도 안전합니다) |
 | `{"error":"store_failed"}` | Upstash 연결이 안 된 것입니다. 3번을 하고 **`vercel deploy --prod` 를 다시** 돌리세요 |
 | 올바른 키인데 `401` | 환경변수를 넣고 **재배포를 안 한** 경우입니다. 5번을 다시 |
-| Pluiz 가 *"수신기에 닿지 못했어요"* | `.env` 의 `PLUIZ_FEEDBACK_ENDPOINT` 주소 끝이 **`/api/report`** 인지 보세요 |
-| Pluiz 가 *"보내기 키가 맞지 않아요"* | `.env` 의 `PLUIZ_FEEDBACK_KEY` 와 Vercel 의 `INGEST_KEY` 가 다릅니다 |
+| Pluiz 가 *"수신기에 닿지 못했어요"* | `.env` 의 `FEEDBACK_ENDPOINT` 주소 끝이 **`/api/report`** 인지 보세요 |
+| Pluiz 가 *"보내기 키가 맞지 않아요"* | `.env` 의 `FEEDBACK_KEY` 와 Vercel 의 `INGEST_KEY` 가 다릅니다 |
 
 📌 **어느 경우든 보고는 안 사라집니다.** 로컬 `logs/사용_피드백_보고.md` 에 이미
 쌓여 있고, 화면이 그렇게 말해 줍니다. 전송은 덤입니다.
@@ -159,7 +159,7 @@ Settings → Git 에서 저장소를 연결하고, 🚨 **Root Directory 를 `fe
 
 ## 켜고 끄기
 
-`.env` 의 `PLUIZ_FEEDBACK_ENDPOINT` 를 **지우면 즉시 안 나갑니다.** 신고는 그대로
+`.env` 의 `FEEDBACK_ENDPOINT` 를 **지우면 즉시 안 나갑니다.** 신고는 그대로
 되고 파일에만 쌓입니다. 기본값이 «안 보냄» 이라, 설정하지 않은 PC 에서는
 아무것도 밖으로 나가지 않습니다.
 

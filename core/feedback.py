@@ -227,8 +227,38 @@ def count() -> int:
 
 #: 비어 있으면 **아무것도 안 보낸다.** 기본이 «안 보냄»인 것이 중요하다 —
 #: 팀원이 설정하지 않았는데 말한 내용이 밖으로 나가면 안 된다.
-ENDPOINT_ENV = "PLUIZ_FEEDBACK_ENDPOINT"
-KEY_ENV = "PLUIZ_FEEDBACK_KEY"
+#: 🚨 **이름이 둘인 이유.** `.env` 에 적는 이름은 `FEEDBACK_ENDPOINT` 다 —
+#:   이 프로젝트의 `.env` 는 `GEMINI_API_KEY` 처럼 **접두사 없이** 쓰고,
+#:   pydantic 이 필드 이름(`feedback_endpoint`)을 그대로 대문자로 찾는다.
+#:   `PLUIZ_` 가 붙은 쪽은 **`os.environ` 으로 덮어쓰는 길**이다 —
+#:   `PLUIZ_LOG_DIR`·`PLUIZ_CACHE_FILE` 과 같은 성격(테스트·임시 전환).
+#: 🔑 2026-10-03 에 이 둘을 섞어 적어 **`.env` 에 넣어도 안 보내고 있었다.**
+ENDPOINT_ENV = "PLUIZ_FEEDBACK_ENDPOINT"   # os.environ 덮어쓰기용
+KEY_ENV = "PLUIZ_FEEDBACK_KEY"             # os.environ 덮어쓰기용
+
+
+def _destination() -> tuple[str, str]:
+    """어디로 보낼까. `(주소, 키)` — 둘 다 없으면 안 보낸다.
+
+    🚨 **`.env` 는 `os.environ` 에 안 들어온다.** 이 프로젝트의 설정은 pydantic 이
+      `.env` 를 읽어 **설정 객체로만** 들고 있다(2026-10-03 실측). 그래서 여기를
+      `os.environ` 만 보게 두면 팀원이 `.env` 에 적어도 **조용히 안 보낸다** —
+      «설정했는데 안 되고, 왜 안 되는지도 안 보이는» 가장 나쁜 모양이다.
+
+    🔑 환경변수를 **먼저** 본다. 테스트가 그 길로 끼어들고, 임시로 끄고 켜기도 쉽다.
+    """
+    url = (os.environ.get(ENDPOINT_ENV) or "").strip()
+    key = (os.environ.get(KEY_ENV) or "").strip()
+    if url and key:
+        return url, key
+    try:
+        from config.settings import get_settings
+        st = get_settings()
+        return (url or (st.feedback_endpoint or "").strip(),
+                key or (st.feedback_key or "").strip())
+    except Exception:                                         # noqa: BLE001
+        # 설정을 못 읽어도 **신고 자체는 돌아야 한다.** 못 보낼 뿐이다.
+        return url, key
 
 
 def send_report(markdown: str, kind: str = "", when: str = "",
@@ -238,8 +268,7 @@ def send_report(markdown: str, kind: str = "", when: str = "",
     🚨 **절대 예외를 올리지 않는다.** 여기서 터지면 «보고가 실패했다»로 보이는데,
       보고는 이미 파일에 쌓였다. 못 보낸 것과 못 적은 것은 **다른 일**이다.
     """
-    url = (os.environ.get(ENDPOINT_ENV) or "").strip()
-    key = (os.environ.get(KEY_ENV) or "").strip()
+    url, key = _destination()
     if not url:
         return False, "안 보냄 (수신기 주소가 설정돼 있지 않아요)"
     if not key:

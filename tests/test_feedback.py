@@ -335,5 +335,60 @@ check("   `npm test` 로 돌아간다",
 check("🔒 그 검사가 **진짜 Redis 를 안 쓴다** (사람이 보낸 보고를 건드리면 안 된다)",
       "Redis.fromEnv = () =>" in _web("test.mjs"))
 
+# ═══ ⑮ 🚨 **`.env` 에 적은 것이 실제로 닿는다** (2026-10-03 같은 날 잡음) ══
+#
+#   처음엔 `os.environ` 만 봤다. 그런데 이 프로젝트의 `.env` 는 pydantic 이
+#   **설정 객체로만** 읽고 `os.environ` 에는 **안 넣는다.** 그래서 팀원이
+#   `.env` 에 적어도 **조용히 안 보냈다** — «설정했는데 안 되고, 왜 안 되는지도
+#   안 보이는» 가장 나쁜 모양이다.
+#
+#   🔑 그리고 이름도 틀렸었다. pydantic 은 필드 `feedback_endpoint` 를
+#     **`FEEDBACK_ENDPOINT`** 로 찾는데 `PLUIZ_FEEDBACK_ENDPOINT` 라고 적어 뒀다.
+#     `GEMINI_API_KEY` 처럼 **접두사가 없는 것**이 이 프로젝트의 규약이다.
+print(f"{NL}=== ⑮ \U0001f6a8 .env 에 적은 것이 send_report 까지 닿는다 ===")
+import shutil, tempfile  # noqa: E402
+
+_work = os.path.join(tempfile.gettempdir(), "pluiz_fb_envtest")
+shutil.rmtree(_work, ignore_errors=True)
+os.makedirs(_work)
+io.open(os.path.join(_work, ".env"), "w", encoding="utf-8").write(
+    "FEEDBACK_ENDPOINT=https://example.invalid/api/report" + NL
+    + "FEEDBACK_KEY=from-dotenv" + NL)
+
+_cwd = os.getcwd()
+_saved = {v: os.environ.pop(v, None) for v in (F.ENDPOINT_ENV, F.KEY_ENV)}
+try:
+    os.chdir(_work)                      # pydantic 은 **현재 폴더**의 .env 를 읽는다
+    from config.settings import get_settings  # noqa: E402
+    get_settings.cache_clear()           # 절대규칙 4 — 안 하면 옛 값이 그대로다
+    _u, _k = F._destination()
+    check("🚨 **`.env` 에서 주소를 읽는다** (`os.environ` 만 보면 안 된다)",
+          _u == "https://example.invalid/api/report", _u)
+    check("🚨 `.env` 에서 키도 읽는다", _k == "from-dotenv", _k)
+    check("   그래서 **실제로 보내기를 시도한다**",
+          F.send_report("### x")[1].startswith("수신기에"), F.send_report("### x")[1])
+finally:
+    os.chdir(_cwd)
+    for v, old in _saved.items():
+        if old is not None:
+            os.environ[v] = old
+    get_settings.cache_clear()
+    shutil.rmtree(_work, ignore_errors=True)
+
+_cfg = io.open(os.path.join(_ROOT, "config", "settings.py"), encoding="utf-8").read()
+check("설정에 **필드가 있다** (없으면 `.env` 를 아예 안 읽는다)",
+      "feedback_endpoint: str" in _cfg and "feedback_key: str" in _cfg)
+check("🚨 `.env.example` 이 **접두사 없는 이름**으로 안내한다",
+      "# FEEDBACK_ENDPOINT=" in io.open(os.path.join(_ROOT, ".env.example"),
+                                        encoding="utf-8").read())
+check("   `PLUIZ_` 가 붙은 이름으로 **잘못 안내하지 않는다**",
+      "PLUIZ_FEEDBACK_ENDPOINT=" not in io.open(
+          os.path.join(_ROOT, ".env.example"), encoding="utf-8").read())
+check("   수신기 README 도 같은 이름을 쓴다",
+      "FEEDBACK_ENDPOINT=" in _web("README.md")
+      and "PLUIZ_FEEDBACK_ENDPOINT" not in _web("README.md"))
+check("🔑 `os.environ` 쪽 이름은 **덮어쓰기용**이라고 적어 뒀다",
+      "덮어쓰기용" in _SRC)
+
 print(f"{NL}결과: {passed}/{total} 통과")
 sys.exit(0 if passed == total else 1)

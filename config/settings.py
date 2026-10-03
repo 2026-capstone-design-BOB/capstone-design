@@ -220,6 +220,18 @@ class Settings(BaseSettings):
     #   「끝낼 수 있는 길」을 하나 더 놓는 것뿐이다(OR). → design/M10_발화종료_말판정.md
     vad_speech_enabled: bool = True
 
+    # ── 🚩 신고 수신기 (2026-10-03) ──────────────────────────────────
+    #
+    # 🚨 **여기에 있어야 `.env` 가 읽힌다.** `os.environ` 만 보면 안 된다 —
+    #   이 프로젝트의 `.env` 는 pydantic 이 **설정 객체로만** 읽고
+    #   `os.environ` 에는 **안 넣는다**(2026-10-03 실측으로 확인). 그래서
+    #   처음엔 팀원이 `.env` 에 적어도 **조용히 안 보내고 있었다.**
+    #
+    # 🔒 비어 있으면 아무것도 밖으로 안 나간다. 기본이 «안 보냄» 인 것이 핵심이다.
+    # → feedback-web/README.md
+    feedback_endpoint: str = ""
+    feedback_key: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
