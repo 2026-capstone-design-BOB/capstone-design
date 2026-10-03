@@ -107,12 +107,17 @@ START → input_guard ─(차단)────→ output_guard → END
 ```bash
 git clone https://github.com/2026-capstone-design-BOB/capstone-design.git
 cd capstone-design
+git checkout dev/post-demo   # ← main 은 1학기 데모 시점이다. 작업은 여기 있다
 
 setup.bat          # conda 환경 + 패키지 설치 + .env 생성
                    # → .env 를 열어 GEMINI_API_KEY 입력
 
 launch.bat         # 서버(:8765) + Electron UI 실행
 ```
+
+> **처음 받는 PC라면** [docs/팀원_환경_세팅.md](docs/팀원_환경_세팅.md) 를 보세요.
+> `setup.bat` 은 일반 `cmd` 에서 `conda activate` 가 실패해도 그냥 진행해
+> **엉뚱한 python 에 패키지를 깝니다.** 그 문서에 안전한 순서가 있습니다.
 
 UI가 뜨면 pill을 더블클릭해 바로 녹음하거나, 확장 후 텍스트로 명령하세요.
 API 키는 UI의 ⚙️ 설정에서도 바꿀 수 있습니다.

@@ -92,6 +92,7 @@
 | **«남은 게 전부 뭔가»** | `docs/planning/다루고자_하는_내용.md` — 항목별 **지금 상태 판정** (🔒 로컬 전용) |
 | **미팅·보고 자료 준비** | `docs/meetings/` — 날짜별 동결 스냅샷. 가장 최근 것을 골라 새로 쓴다 (🔒 로컬 전용) |
 | **테스트 작성·실행** | [WORKFLOW.md § 테스트](WORKFLOW.md#테스트) · 수동 항목은 [testing/](testing/) |
+| 🆕 **다른 PC에 환경을 세팅할 때 (팀원 컴퓨터)** | [팀원_환경_세팅.md](팀원_환경_세팅.md) — 🚨 `git checkout dev/post-demo` 를 빠뜨리면 100커밋 옛날 코드다 · `setup.bat` 의 구멍 셋 |
 | **환경이 이상할 때 (도구가 조용히 안 됨)** | `python tests/test_dependencies.py` → [WORKFLOW.md § 의존성](WORKFLOW.md#️-의존성이-없으면-도구가-조용히-죽는다) |
 | **커밋·브랜치·PR** | [WORKFLOW.md § 커밋 컨벤션](WORKFLOW.md#커밋-컨벤션) · [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **지금 뭘 하는 중인지 / 다음 작업 고르기** | [TASKS.md](TASKS.md) |
@@ -116,6 +117,7 @@
 | [ROADMAP.md](ROADMAP.md) | **어디로 가는가.** 최종 시스템 목표·학기 계획·계획 대비 실제 | 학기 단위 |
 | [BACKLOG.md](BACKLOG.md) | 미해결 항목. [즉시/위험] vs [TODO/품질] | 발견·해결 시 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 팀 협업 규칙 (브랜치 구조·작업 루틴·충돌 해결) | 거의 없음 |
+| 🆕 [팀원_환경_세팅.md](팀원_환경_세팅.md) | **처음 받는 PC에서 돌리기까지.** 사람이 할 것 ↔ Claude Code에게 맡길 것을 가른다 | 설치 절차 변경 시 |
 
 ### 학과 산출물 — [documentations/](documentations/)
 
