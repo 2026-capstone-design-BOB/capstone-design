@@ -1292,6 +1292,91 @@
 
     .hbtn.fav-active { color: var(--warn); }
 
+    /* ── 🆕 신고하기 (2026-10-03) ────────────────────────────────
+       🚨 `-webkit-app-region: no-drag` 를 빼지 말 것. `.card` 가 drag 라
+          여기를 안 적으면 **클릭이 통째로 삼켜진다** — 2026-10-02 에
+          더블클릭이 아예 안 가던 것이 정확히 이 CSS 였다. */
+    .rep-btn {
+      -webkit-app-region: no-drag;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1;
+      padding: 2px;
+      align-self: flex-start;
+      opacity: 0;
+      transition: opacity .15s;
+    }
+    .msg:hover .rep-btn { opacity: .6; }
+    .rep-btn:hover { opacity: 1; }
+    .rep-btn.done { opacity: 1; cursor: default; }
+
+    .rep-view {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 8px 10px;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      -webkit-app-region: no-drag;
+    }
+    .rep-view.show { display: flex; }
+    .rep-view::-webkit-scrollbar { width: 3px; }
+    .rep-view::-webkit-scrollbar-thumb { background: var(--surf); border-radius: 3px; }
+
+    .rep-quote {
+      background: var(--surf);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 9px;
+      font-size: 11px;
+      line-height: 1.5;
+      flex-shrink: 0;
+    }
+    .rep-quote b { color: var(--muted); font-weight: 600; }
+
+    .rep-kinds { display: flex; gap: 5px; flex-wrap: wrap; flex-shrink: 0; }
+    .rep-kind {
+      -webkit-app-region: no-drag;
+      flex: 1 1 46%;
+      padding: 6px 7px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: inherit;
+      cursor: pointer;
+      text-align: left;
+    }
+    .rep-kind.on { border-color: var(--accent); color: var(--text); background: var(--surf); }
+
+    .rep-row { display: flex; gap: 5px; }
+    .rep-row .fav-input { flex: 1; }
+
+    .rep-note { font-size: 10px; color: var(--muted); line-height: 1.5; }
+    .rep-note input { vertical-align: -1px; margin-right: 4px; }
+
+    .rep-log {
+      margin: 0;
+      max-height: 120px;
+      overflow: auto;
+      background: rgba(14, 14, 22, .9);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 6px 8px;
+      font-family: Consolas, monospace;
+      font-size: 9px;
+      line-height: 1.45;
+      color: var(--muted);
+      white-space: pre-wrap;
+      word-break: break-all;
+      flex-shrink: 0;
+    }
+
   </style>
 </head>
 
@@ -1542,6 +1627,48 @@
           </div>
         </div>
         <div id="fav-list"></div>
+      </div>
+
+      <!-- ── 🆕 REPORT VIEW (신고하기) ───────────────────────────
+           🚨 **«왜 그런 것 같나»를 적는 칸이 없다.** 일부러 없앴다 —
+              `docs/teamwork/사용_피드백.md` 가 *"원인은 적지 마세요"* 라고
+              부탁하던 것을, **칸을 없애서** 보장한다. 추측이 적혀 있으면
+              개발자가 그걸 먼저 믿고 엉뚱한 데를 판다(2026-10-02 에 실제로 겪었다).
+           🔑 말한 내용·시각은 **앱이 채운다.** 사람이 옮겨 적지 않는다. -->
+      <div class="rep-view" id="rep-view">
+        <div class="fav-hdr">
+          <span>🚩 이 답변 신고하기</span>
+          <button class="fav-add-btn" id="rep-copy-btn" onclick="copyAllReports()">전부 복사</button>
+        </div>
+
+        <div class="rep-quote" id="rep-quote"></div>
+
+        <div class="rep-kinds" id="rep-kinds"></div>
+
+        <input class="fav-input" id="rep-expected"
+          placeholder="뭘 기대했나요? (예: 메모장이 열릴 줄 알았어요)" />
+
+        <div class="rep-row">
+          <select class="fav-input" id="rep-who"></select>
+          <select class="fav-input" id="rep-place">
+            <option>조용한 방</option>
+            <option>카페</option>
+            <option>강의실</option>
+            <option>그 외</option>
+          </select>
+        </div>
+
+        <label class="rep-note">
+          <input type="checkbox" id="rep-with-log" checked onchange="refreshDraft()" />
+          그때 로그도 같이 보내기 — <b>아래가 보낼 내용 그대로입니다</b>
+        </label>
+        <pre class="rep-log" id="rep-log"></pre>
+
+        <div class="fav-form-row">
+          <button class="fav-save-btn" id="rep-send-btn" onclick="sendReport()">보내기</button>
+          <button class="fav-cancel-btn" onclick="closeReport()">취소</button>
+        </div>
+        <div class="rep-note" id="rep-status"></div>
       </div>
 
       <div class="input-row">
@@ -2815,18 +2942,201 @@
     function resizeTxt(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 60) + 'px'; }
 
     // ── 채팅 ──────────────────────────────────────────────────────
+    //
+    // 🆕 2026-10-03 — Pluiz 가 한 말에는 **🚩 가 붙는다.** 누르면 그 턴
+    //    (내가 한 말 · 답 · 시각)이 신고서에 **자동으로** 들어간다.
+    //    🔑 사람이 옮겨 적지 않으므로 말이 다듬어지거나 시각이 비지 않는다.
+    let lastUserText = '';
+
     function addMsg(role, text) {
       const chat = document.getElementById('chat');
       const typing = document.getElementById('typing');
       const el = document.createElement('div');
       el.className = 'msg ' + role;
       el.innerHTML = `<div class="av ${role}">${role === 'u' ? '👤' : '🤖'}</div><div class="bbl">${esc(text)}</div>`;
+      if (role === 'u') {
+        lastUserText = text;
+      } else {
+        // 🔒 **지금 값을 가둬 둔다.** 나중에 읽으면 그 사이에 오간 말이
+        //    섞여서 «다른 사건»을 신고하게 된다.
+        const said = lastUserText, answered = text, when = repStamp();
+        const flag = document.createElement('button');
+        flag.className = 'rep-btn';
+        flag.title = '이 답변 신고하기';
+        flag.textContent = '🚩';
+        flag.onclick = (e) => { e.stopPropagation(); openReport(said, answered, when, flag); };
+        flag.ondblclick = (e) => e.stopPropagation();
+        el.appendChild(flag);
+      }
       chat.insertBefore(el, typing);
       scrollChat();
       return el;
     }
     function esc(s) {
       return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+    }
+
+    // ── 🆕 신고하기 (2026-10-03) ──────────────────────────────────
+    //
+    // 🚨 **사람이 옮겨 적지 않는다.** 「뭐라고 했나」와 「언제」를 앱이 채운다.
+    //    `docs/teamwork/사용_피드백.md` 가 부탁하던 규칙 ②(말한 그대로)·
+    //    ③(시각)이 **지켜지는 게 아니라 못 어기게** 된다.
+    // 🔑 그리고 **«원인»을 적을 칸을 두지 않는다** — 규칙 ①이 그 방식이다.
+    let repTurn = null;        // { said, answered, when }
+    let repBtn = null;         // 지금 신고 중인 답변의 🚩 (보내면 ✅ 로 바뀐다)
+    let repKind = 'bug';
+    let repOpen = false;
+    let REP_KINDS = {
+      bug: ['⬜', '안 되거나 이상해요'],
+      slow: ['😕', '되긴 되는데 답답해요'],
+      idea: ['💡', '이런 것도 되면 좋겠어요'],
+      good: ['👍', '잘 됐어요'],
+    };
+    const REP_WHO = ['팀원 A', '팀원 B', '개발자'];
+
+    // 🔒 **시각은 보는 그 순간에 찍는다.** 나중에 찍으면 로그에서 엉뚱한
+    //    자리를 보게 된다 — 시각이 틀리면 적어 준 것이 버려지는 것과 같다.
+    function repStamp() {
+      const d = new Date(), p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} `
+        + `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    }
+
+    function openReport(said, answered, when, btn) {
+      if (historyOpen) hideHistory();
+      if (favOpen) hideFavorites();
+      repTurn = { said, answered, when };
+      repBtn = btn || null;
+      repOpen = true;
+      repKind = 'bug';
+
+      document.getElementById('rep-quote').innerHTML =
+        `<b>${when}</b><br><b>나:</b> ${esc(said || '(말 없이 일어났어요)')}`
+        + `<br><b>Pluiz:</b> ${esc((answered || '').slice(0, 220))}`;
+
+      const kindsEl = document.getElementById('rep-kinds');
+      kindsEl.innerHTML = '';
+      Object.keys(REP_KINDS).forEach(k => {
+        const b = document.createElement('button');
+        b.className = 'rep-kind' + (k === repKind ? ' on' : '');
+        b.dataset.kind = k;
+        b.textContent = `${REP_KINDS[k][0]} ${REP_KINDS[k][1]}`;
+        b.onclick = (e) => { e.stopPropagation(); pickRepKind(k); };
+        kindsEl.appendChild(b);
+      });
+
+      const whoEl = document.getElementById('rep-who');
+      if (!whoEl.options.length) {
+        REP_WHO.forEach(w => whoEl.add(new Option(w, w)));
+      }
+      document.getElementById('rep-expected').value = '';
+      document.getElementById('rep-status').textContent = '';
+      const sendBtn = document.getElementById('rep-send-btn');
+      sendBtn.disabled = false;
+      sendBtn.textContent = '보내기';
+
+      document.getElementById('rep-view').classList.add('show');
+      document.getElementById('chat').style.display = 'none';
+      document.getElementById('typing').style.display = 'none';
+      document.querySelector('.input-row').style.display = 'none';
+      refreshDraft();
+    }
+
+    function pickRepKind(k) {
+      repKind = k;
+      document.querySelectorAll('.rep-kind').forEach(b =>
+        b.classList.toggle('on', b.dataset.kind === k));
+    }
+
+    function closeReport() {
+      repOpen = false;
+      repTurn = null;
+      repBtn = null;
+      document.getElementById('rep-view').classList.remove('show');
+      document.getElementById('chat').style.display = '';
+      document.getElementById('typing').style.display = '';
+      document.querySelector('.input-row').style.display = '';
+    }
+
+    function repPayload() {
+      return {
+        kind: repKind,
+        said: repTurn ? repTurn.said : '',
+        answered: repTurn ? repTurn.answered : '',
+        when: repTurn ? repTurn.when : repStamp(),
+        expected: document.getElementById('rep-expected').value,
+        who: document.getElementById('rep-who').value,
+        place: document.getElementById('rep-place').value,
+        with_log: document.getElementById('rep-with-log').checked,
+      };
+    }
+
+    // 🚨 **보낼 내용을 먼저 보여준다.** 로그에는 화면에서 읽은 창 제목 같은 것이
+    //    섞일 수 있다. 체크를 끄면 로그 없이 나간다. (🙋 2026-10-03 결정)
+    async function refreshDraft() {
+      if (!repOpen) return;
+      const box = document.getElementById('rep-log');
+      if (!document.getElementById('rep-with-log').checked) {
+        box.textContent = '(로그는 안 보냅니다)';
+        return;
+      }
+      box.textContent = '불러오는 중…';
+      try {
+        const res = await fetch(`${API}/api/feedback/draft`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(repPayload()),
+        });
+        const data = await res.json();
+        const lines = data.log_lines || [];
+        box.textContent = lines.length
+          ? lines.join('\n')
+          : '(그 시각 로그를 못 찾았어요 — 로그 없이 보내도 됩니다)';
+      } catch (e) {
+        box.textContent = '(로그를 못 읽었어요 — 로그 없이 보내도 됩니다)';
+      }
+    }
+
+    async function sendReport() {
+      const btn = document.getElementById('rep-send-btn');
+      const st = document.getElementById('rep-status');
+      btn.disabled = true;
+      btn.textContent = '보내는 중…';
+      try {
+        const res = await fetch(`${API}/api/feedback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(repPayload()),
+        });
+        const data = await res.json();
+        if (data.status !== 'ok') throw new Error(JSON.stringify(data));
+        // 🔑 **어디에 쌓였는지 말한다.** 보낸 뒤 «어디로 갔지»가 남으면
+        //    팀원이 전달을 못 한다.
+        if (repBtn) { repBtn.textContent = '✅'; repBtn.classList.add('done'); repBtn.onclick = null; }
+        st.innerHTML = `적었어요 (지금까지 ${data.count}개). `
+          + `<b>${esc(data.path)}</b><br>`
+          + `이 파일을 변소윤에게 보내거나, 위 «전부 복사»로 붙여넣으세요.`;
+        btn.textContent = '보냈어요 ✓';
+        setTimeout(() => { if (repOpen) closeReport(); }, 2600);
+      } catch (e) {
+        st.textContent = '보내지 못했어요: ' + e.message;
+        btn.disabled = false;
+        btn.textContent = '다시 보내기';
+      }
+    }
+
+    // 🔑 파일을 찾아 보내는 것보다 **붙여넣는 쪽이 쉽다.** 둘 다 되게 둔다.
+    async function copyAllReports() {
+      const st = document.getElementById('rep-status');
+      try {
+        const res = await fetch(`${API}/api/feedback`);
+        const data = await res.json();
+        if (!data.markdown) { st.textContent = '아직 보낸 게 없어요.'; return; }
+        await navigator.clipboard.writeText(data.markdown);
+        st.textContent = `${data.count}개를 복사했어요. 카톡에 그대로 붙여넣으세요.`;
+      } catch (e) {
+        st.textContent = '복사하지 못했어요: ' + e.message;
+      }
     }
 
     // ── TTS 재생 ──────────────────────────────────────────────────

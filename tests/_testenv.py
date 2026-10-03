@@ -64,3 +64,11 @@ os.environ.setdefault(
     "PLUIZ_SESSION_DB",
     os.path.join(tempfile.gettempdir(), "pluiz_test_cache", "session.db"),
 )
+# 🆕 2026-10-03 — 앱에서 보낸 신고가 쌓이는 파일.
+#   🚨 여기를 안 돌리면 테스트가 **사람이 실제로 보낸 보고를 고친다.**
+#   (바로 위 주석이 *"상태 파일을 새로 만들면 여기에도 추가할 것"* 이라고
+#    적어 둔 그 자리다 — 이번엔 지켰다)
+os.environ.setdefault(
+    "PLUIZ_FEEDBACK_FILE",
+    os.path.join(tempfile.gettempdir(), "pluiz_test_cache", "피드백_보고.md"),
+)

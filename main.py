@@ -625,6 +625,75 @@ async def delete_favorite(index: int):
     return {"status": "not_found"}
 
 
+# ── 🆕 신고하기 (2026-10-03) ───────────────────────────────────────
+#
+# 🚨 **«원인»을 받는 칸이 없다.** `docs/teamwork/사용_피드백.md` 가 *"증상만 적고
+#    원인은 적지 마세요"* 라고 **부탁**하던 것을, 칸을 없애서 **보장**한다.
+#    말한 내용과 시각도 받지 않고 **앱이 채운다** — 옮겨 적을 기회가 없으면
+#    다듬어지지도, 비지도 않는다. → core/feedback.py
+#
+# ⚠️ **도구로 만들지 않았다.** 음성으로 «신고해줘»를 부를 수 있게 하면 LLM이
+#    사용자의 말을 **요약해서** 넣는다. 그러면 ②(말한 그대로)가 그 자리에서 깨진다.
+#    `/export`·`/import` 를 도구로 안 만든 것과 같은 이유다.
+
+class FeedbackRequest(BaseModel):
+    kind: str = "bug"          # bug | slow | idea | good
+    said: str = ""             # 사용자가 한 말 — UI가 채운다
+    answered: str = ""         # Pluiz 가 한 답 — UI가 채운다
+    when: str = ""             # YYYY-MM-DD HH:MM:SS — UI가 채운다
+    expected: str = ""         # 사람만 아는 것
+    who: str = ""              # 팀원 A / 팀원 B / 개발자 (고르기만)
+    place: str = ""            # 조용한 방 / 카페 …
+    with_log: bool = True      # 로그를 담을까 — UI가 **보여준 뒤** 끌 수 있다
+
+
+def _fb_lines(req: "FeedbackRequest") -> list:
+    from core import feedback
+    return feedback.log_excerpt(req.when) if req.with_log else []
+
+
+@app.post("/api/feedback/draft")
+async def feedback_draft(req: FeedbackRequest):
+    """보낼 내용을 **미리 만들어** 돌려준다. 🚨 파일에는 아직 안 쓴다.
+
+    로그에는 화면에서 읽은 창 제목 같은 것이 섞일 수 있어서, **보내기 전에
+    사람이 눈으로 보고 끌 수 있어야 한다**(🙋 2026-10-03 결정).
+    """
+    from core import feedback
+    lines = _fb_lines(req)
+    return {
+        "markdown": feedback.build_report(
+            req.kind, req.said, req.answered, req.when,
+            req.expected, req.who, req.place, lines),
+        "log_lines": lines,
+        "kinds": {k: list(v) for k, v in feedback.KINDS.items()},
+        "who": list(feedback.WHO),
+    }
+
+
+@app.post("/api/feedback")
+async def feedback_save(req: FeedbackRequest):
+    """보고를 파일에 **쌓는다**(맨 위에). 경로와 누적 개수를 돌려준다."""
+    from core import feedback
+    md = feedback.build_report(
+        req.kind, req.said, req.answered, req.when,
+        req.expected, req.who, req.place, _fb_lines(req))
+    path = feedback.append_report(md)
+    return {"status": "ok", "path": path,
+            "count": feedback.count(), "markdown": md}
+
+
+@app.get("/api/feedback")
+async def feedback_all():
+    """쌓인 보고 전체 — UI 의 «전부 복사»가 쓴다.
+
+    🔑 파일을 찾아 보내는 것보다 **붙여넣는 쪽이 쉽다.** 둘 다 되게 둔다.
+    """
+    from core import feedback
+    return {"path": feedback.REPORT_PATH,
+            "count": feedback.count(), "markdown": feedback.read_all()}
+
+
 # ── 캐시 대시보드 HTML (개발용) ───────────────────────────────────
 _CACHE_DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
