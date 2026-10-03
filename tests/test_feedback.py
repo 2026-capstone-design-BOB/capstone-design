@@ -76,8 +76,8 @@ md = F.build_report("bug", said="볼륨 좀 올려줘", answered="볼륨을 올�
 check("🚨 **군말이 그대로 남는다** («좀» 을 다듬지 않는다)", "볼륨 좀 올려줘" in md, md)
 check("시각이 **분·초까지** 들어간다", "2026-10-03 14:32:10" in md, md)
 check("기대한 것이 들어간다", "소리가 커질 줄 알았어요" in md, md)
-check("🚩 화면이 **그 턴을 가둬 둔다** (나중에 읽으면 다른 사건이 된다)",
-      "const said = lastUserText, answered = text, when = repStamp()" in _UI)
+check("🚩 화면이 **내가 한 말을 그 자리에서 가둔다** (나중에 읽으면 다른 사건이 된다)",
+      "const said = (" in _UI and "const when = repStamp()" in _UI)
 check("   시각을 **보는 그 순간** 찍는다", "function repStamp()" in _UI)
 
 # 시각을 안 주면 **지금**으로 채운다 — 비는 일이 없어야 한다
@@ -196,6 +196,51 @@ check("화면이 그 경로를 **보여준다**", "data.path" in _UI)
 check("🔑 **전부 복사**도 된다 (파일을 찾는 것보다 쉽다)",
       "copyAllReports" in _UI and "clipboard.writeText" in _UI)
 
+
+# ═══ ⑪ 🚨 **답을 «누를 때» 읽는다** (2026-10-03 같은 날 잡음) ════════
+#
+#   처음에 만들 때 가뒀더니 **스트리밍이 빈 답을 신고**했다.
+#   텍스트 명령은 `type:'start'` 에서 `addMsg('a', '')` 로 **빈 칸부터** 만들고
+#   조각을 채운다. 즉 만드는 순간의 `text` 는 **언제나 빈 문자열**이다.
+#
+#   🔑 테스트가 «46/46 통과» 였는데도 못 잡았다. ②가 `build_report` 에
+#     넘긴 값만 봤고, **화면이 무엇을 넘기는지**는 안 봤기 때문이다 —
+#     BL-92 에서 배운 *«안 고르는 쪽만 세고 좁히는 쪽을 안 쟀다»* 와 같은 모양이다.
+print(f"{NL}=== ⑪ \U0001f6a8 스트리밍이 빈 답을 신고하지 않는다 ===")
+_add = _UI.split("function addMsg(")[1].split(f"{NL}    function esc(")[0]
+
+check("🚨 **누를 때 말풍선에서 읽는다**",
+      "const bbl = el.querySelector('.bbl')" in _add
+      and "openReport(said, bbl ? bbl.textContent : text, when, flag)" in _add, _add[:200])
+check("🚨 **만들 때 답을 가두지 않는다** (가두면 빈 문자열이다)",
+      "answered = text" not in _add, _add[:200])
+check("   왜 그런지 적어 뒀다 (다음 사람이 «최적화»로 되돌리지 않게)",
+      "빈 답을 신고" in _add)
+check("스트리밍이 실제로 **빈 칸부터** 만든다 (이 전제가 깨지면 위가 무의미해진다)",
+      "addMsg('a', '')" in _UI)
+
+# 반대로 **내가 한 말과 시각은** 만들 때 가둬야 한다 — 양쪽을 같이 센다.
+check("🔒 반대로 **내가 한 말은 지금** 가둔다", "const said = (" in _add)
+check("🔒 **시각도 지금** 찍는다", "const when = repStamp()" in _add)
+
+
+# ═══ ⑫ 🚨 **꾸민 글자가 «말한 그대로»에 안 섞인다** ══════════════════
+print(f"{NL}=== ⑫ \U0001f6a8 음성·알림이 엉뚱한 말을 싣지 않는다 ===")
+check("🚨 음성은 화면엔 `🎤`, 신고엔 **말 그대로**",
+      "addMsg('u', '🎤 ' + data.text, { raw: data.text })" in _UI, "")
+check("   `raw` 가 실제로 쓰인다", "('raw' in o) ? (o.raw || '') : text" in _add, _add[:300])
+check("🚨 **알림은 «시킨 턴»이 아니다** — 직전 말을 안 싣는다",
+      "addMsg('a', m.text || '', { said: '' })" in _UI)
+check("   마이크 실패도 마찬가지 (말한 적이 없다)",
+      "마이크 접근 실패: ' + err.message, { said: '' }" in _UI)
+check("   `said` 를 비우면 **비운 채로** 간다 (기본값으로 안 떨어진다)",
+      "('said' in o) ? (o.said || '') : lastUserText" in _add, _add[:300])
+
+# 말이 없는 신고도 **보고서가 만들어져야** 한다 — 알림이 그 경우다.
+_quiet = F.build_report("bug", said="", answered="물 마실 시간이에요",
+                        when="2026-10-03 15:00:00")
+check("말 없이 일어난 일도 보고서가 된다",
+      "말 없이 일어났어요" in _quiet and "물 마실 시간이에요" in _quiet, _quiet)
 
 print(f"{NL}결과: {passed}/{total} 통과")
 sys.exit(0 if passed == total else 1)

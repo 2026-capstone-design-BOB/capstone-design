@@ -2866,7 +2866,7 @@
         startVad(stream);
       } catch (err) {
         if (stream) stream.getTracks().forEach(t => t.stop());
-        addMsg('a', '⚠️ 마이크 접근 실패: ' + err.message);
+        addMsg('a', '⚠️ 마이크 접근 실패: ' + err.message, { said: '' });
       } finally {
         micStarting = false;
         refreshIdle();        // 🚨 실패해도 표시가 상태를 따라간다(남지 않는다)
@@ -2916,7 +2916,8 @@
           if (recAuto) { closeIfSpurious(); }
           else { addMsg('a', '⚠️ ' + data.error); }
         } else {
-          if (data.text) addMsg('u', '🎤 ' + data.text);
+          // 🚨 화면엔 `🎤` 를 붙이되 **신고에는 말 그대로** 담는다(raw).
+          if (data.text) addMsg('u', '🎤 ' + data.text, { raw: data.text });
           addMsg('a', data.response);
           if (data.audio_base64) playAudio(data.audio_base64, data.audio_mime);
         }
@@ -2945,26 +2946,41 @@
     //
     // 🆕 2026-10-03 — Pluiz 가 한 말에는 **🚩 가 붙는다.** 누르면 그 턴
     //    (내가 한 말 · 답 · 시각)이 신고서에 **자동으로** 들어간다.
-    //    🔑 사람이 옮겨 적지 않으므로 말이 다듬어지거나 시각이 비지 않는다.
+    //
+    // `opts.said` : 「내가 한 말」을 덮어쓴다. **빈 문자열이면 «시킨 턴이 아님»** —
+    //               알림(notify)처럼 서버가 먼저 거는 말에 쓴다.
+    // `opts.raw`  : 화면에는 꾸며서(`🎤 …`) 보여 주고, 신고에는 **말 그대로** 담는다.
     let lastUserText = '';
 
-    function addMsg(role, text) {
+    function addMsg(role, text, opts) {
+      const o = opts || {};
       const chat = document.getElementById('chat');
       const typing = document.getElementById('typing');
       const el = document.createElement('div');
       el.className = 'msg ' + role;
       el.innerHTML = `<div class="av ${role}">${role === 'u' ? '👤' : '🤖'}</div><div class="bbl">${esc(text)}</div>`;
       if (role === 'u') {
-        lastUserText = text;
+        // 🚨 **꾸밈을 빼고 담는다.** 음성은 화면에 `🎤 메모장 열어줘` 로 뜨는데,
+        //    그 접두사까지 신고에 실리면 «말한 그대로»가 아니다.
+        lastUserText = ('raw' in o) ? (o.raw || '') : text;
       } else {
-        // 🔒 **지금 값을 가둬 둔다.** 나중에 읽으면 그 사이에 오간 말이
-        //    섞여서 «다른 사건»을 신고하게 된다.
-        const said = lastUserText, answered = text, when = repStamp();
+        // 🔒 **내가 한 말과 시각은 지금 가둔다** — 나중에 읽으면 그 사이에
+        //    오간 말이 섞여 «다른 사건»을 신고하게 된다.
+        const said = ('said' in o) ? (o.said || '') : lastUserText;
+        const when = repStamp();
         const flag = document.createElement('button');
         flag.className = 'rep-btn';
         flag.title = '이 답변 신고하기';
         flag.textContent = '🚩';
-        flag.onclick = (e) => { e.stopPropagation(); openReport(said, answered, when, flag); };
+        // 🚨 **답은 «누를 때» 읽는다.** 만들 때 가두면 안 된다 —
+        //    스트리밍은 `addMsg('a', '')` 로 **빈 칸부터** 만들고 조각을 채운다.
+        //    만들 때 가뒀더니 **빈 답을 신고**하고 있었다(2026-10-03에 바로 잡았다).
+        //    🔑 화면에 보이는 그대로를 담는 쪽이 언제나 맞다.
+        flag.onclick = (e) => {
+          e.stopPropagation();
+          const bbl = el.querySelector('.bbl');
+          openReport(said, bbl ? bbl.textContent : text, when, flag);
+        };
         flag.ondblclick = (e) => e.stopPropagation();
         el.appendChild(flag);
       }
@@ -3212,7 +3228,9 @@
         window.pluiz.showWindow();
         activate(false);
       }
-      addMsg('a', m.text || '');
+      // 🚨 **시킨 턴이 아니다.** `said` 를 비우지 않으면 직전에 한 엉뚱한 말이
+      //    이 알림의 «뭐라고 했나»로 실린다.
+      addMsg('a', m.text || '', { said: '' });
       if (m.audio_base64) playAudio(m.audio_base64, m.audio_mime);
     }
 
