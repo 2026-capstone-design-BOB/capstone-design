@@ -5,3 +5,10 @@ node_modules/
 #   그대로 살렸다 — 더 넓은 쪽이 맞다).
 .vercel
 .env*
+
+.env*
+
+# Vercel CLI 62 가 만드는 것 (에이전트 설정·스킬 잠금) — 생성물이다.
+.agents/
+.claude/
+skills-lock.json

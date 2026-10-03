@@ -3,7 +3,11 @@
     conda activate pluiz
     python scripts/ingest_wakeword.py                  # data/wakeword_raw/ 를 읽는다
     python scripts/ingest_wakeword.py --list           # 누가 몇 개 보냈는지만 본다
-    python scripts/ingest_wakeword.py --holdout 4      # 미학습 화자 4명을 떼어 둔다
+    python scripts/ingest_wakeword.py --holdout 4      # 미학습 화자 4명을 «제비뽑기»로
+    python scripts/ingest_wakeword.py --holdout-names "$(cat data/wakeword/holdout_names.txt)"
+                                                      # 🔒 실명은 저장소에 두지 않는다
+                                                      #    (그 파일은 data/ 안 — .gitignore)
+                                                      # 🔑 이름으로 직접 — 녹음이 늘어도 안 바뀐다
 
 입력 — `scripts/플루이즈_녹음.html` 이 만든 파일 쌍을 `data/wakeword_raw/` 에 넣는다.
 
@@ -121,6 +125,17 @@ def _speaker_key(name: str) -> str:
     return re.sub(r"\s*[（(].*?[)）]\s*$", "", name).strip() or name
 
 
+def _split_names(items):
+    """«녹음자1,녹음자3» 도 «녹음자1 녹음자3» 도 같게 읽는다.
+
+    쉼표를 찍을지 띄어쓸지를 사람이 기억하게 만들지 않는다 — 둘 다 받는다.
+    """
+    out = []
+    for it in items:
+        out += [x.strip() for x in str(it).split(",")]
+    return [x for x in out if x]
+
+
 def _pull_note() -> str:
     """🚨 **이 숫자는 로컬 폴더를 센 것이다** — 그 사실을 숫자 옆에 붙인다.
 
@@ -166,6 +181,9 @@ def main():
     ap.add_argument("--holdout", type=int, default=0,
                     help="미학습 화자 N명을 떼어 둔다 (M7 §5-2)")
     ap.add_argument("--seed", type=int, default=0, help="홀드아웃 선택 난수")
+    ap.add_argument("--holdout-names", nargs="+", default=None, metavar="이름",
+                    help="홀드아웃을 이름으로 직접 지정한다 (쉼표·공백 둘 다 됨). "
+                         "주면 --holdout/--seed 는 안 쓴다")
     args = ap.parse_args()
 
     pairs = load_pairs()
@@ -225,16 +243,52 @@ def main():
     if empty:
         print(f"\n⚠️ 구간이 0인 화자 {len(empty)}명 — 홀드아웃 후보에서 뺍니다: {', '.join(empty)}")
 
+    # 🚨 **제비뽑기는 사람이 늘면 다른 사람을 뽑는다** (2026-10-03 에 실제로 났다).
+    #   9/28 에 `--seed 2` 로 뽑은 네 명(녹음자1·녹음자3·녹음자5·녹음자9)이, 그 뒤 녹음이
+    #   둘 늘자 **같은 seed 에서 녹음자3 대신 녹음자4**이 됐다.
+    #
+    #   🔑 녹음자4은 **지금 런타임 모델이 학습한 사람**이다. 홀드아웃에 넣으면
+    #   «전» 모델이 **자기가 배운 사람으로 채점받아** 부당하게 좋아 보이고, 그러면
+    #   후보가 상대적으로 나빠 보인다 — **좋아진 모델을 버릴 수 있다.**
+    #   그리고 이것은 **오류를 내지 않는다.** 그냥 틀린 숫자가 나온다.
+    #
+    #   → 그래서 `--holdout-names` 로 **이름을 직접 적을 수 있게** 한다. 녹음이 더
+    #   들어와도 안 바뀐다. seed 를 매번 다시 찾는 «마법의 숫자»를 만들지 않는다.
     holdout: set[str] = set()
-    if args.holdout > 0:
-        pool = sorted(k for k in groups if n_segs[k] > 0)
+    pool = sorted(k for k in groups if n_segs[k] > 0)
+    keys: list[str] = []
+    by_name = bool(args.holdout_names)
+
+    if by_name:
+        if args.holdout > 0:
+            print("\n⚠️ --holdout-names 를 줬으므로 --holdout 숫자는 쓰지 않습니다.")
+        want = [_speaker_key(x) for x in _split_names(args.holdout_names)]
+        missing = [w for w in want if w not in pool]
+        if missing:
+            # 🚨 **조용히 건너뛰지 않는다.** 이름이 하나 틀렸는데 그냥 넘어가면
+            #   «5명 뗐다»고 적히고 실제로는 4명이다 — 분모가 조용히 줄어든다.
+            #   (구간 0 인 화자를 홀드아웃에서 빼는 것과 같은 이유다.)
+            print(f"\n✗ 홀드아웃으로 지정한 이름 중 쓸 수 없는 것: {', '.join(missing)}")
+            zero = [w for w in missing if w in groups]
+            if zero:
+                print(f"   ㄴ {', '.join(zero)} 는 **구간이 0** 이라 홀드아웃이 될 수 없습니다.")
+            print(f"   쓸 수 있는 이름 {len(pool)}개 — {', '.join(pool)}")
+            return 1
+        keys = sorted(dict.fromkeys(want))
+    elif args.holdout > 0:
         if args.holdout >= len(pool):
             print(f"\n✗ 쓸 수 있는 화자가 {len(pool)}명인데 {args.holdout}명을 떼려 합니다.")
             return 1
         rng = np.random.default_rng(args.seed)
         keys = rng.choice(pool, size=args.holdout, replace=False).tolist()
+
+    if keys:
         holdout = {nm for k in keys for nm in groups[k]}
         print(f"\n🔒 홀드아웃(미학습 화자) {len(keys)}명: {', '.join(sorted(keys))}")
+        if by_name:
+            print("   🔑 이름으로 직접 지정했습니다 — **녹음이 더 들어와도 안 바뀝니다.**")
+        else:
+            print(f"   ⚠️ 제비뽑기입니다(seed={args.seed}) — **녹음이 늘면 다른 사람이 뽑힙니다.**")
         if holdout != set(keys):
             print(f"   ㄴ 실제로 떼는 세션 이름: {', '.join(sorted(holdout))}")
         print("   이 사람들은 학습에 **한 번도** 안 들어갑니다 (M7 §5-2)")
