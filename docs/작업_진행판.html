@@ -69,59 +69,66 @@ color:var(--muted);font-size:.85rem}
 
 <h2><span class="n">1</span>지금 하는 중</h2>
 <div class="card scroll">
-<h1>🚩 다음 세션은 <strong>여기부터</strong> — 2026-10-04 (1) · 🙋 <strong>후보 모델을 올릴지 정한다</strong></h1>
-<h2>▶️ 바로 할 것 — 🎙 <strong>카페 오탐이 20 → 0 이 됐다</strong></h2>
-<p>운용점 <strong>연속 2 · 임계 0.80</strong>, 놓침은 <strong>14.1% 로 전후 같다</strong>(공정한 비교).</p>
+<h1>🚩 다음 세션은 <strong>여기부터</strong> — 2026-10-04 (2) · ⏳ <strong>10/05 팀원 실기를 기다린다</strong></h1>
+<h2>✅ 호출어는 일단락됐다</h2>
+<p>새 모델을 <strong>올렸고 실기도 통과</strong>했다. 🙋 <em>&quot;아까보다 훨 나아진 것 같긴 한데&quot;</em></p>
 <table>
 <thead>
 <tr>
 <th></th>
 <th>전 (10-01)</th>
-<th><strong>후(후보)</strong></th>
+<th><strong>지금</strong></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>🔴 <strong>카페</strong></td>
+<td>카페 혼자 깨어남</td>
 <td>20.0 회/시간</td>
 <td><strong>0.0</strong></td>
 </tr>
 <tr>
-<td>집</td>
+<td>집 혼자 깨어남</td>
 <td>6.7 회/시간</td>
 <td><strong>1.5</strong></td>
 </tr>
+<tr>
+<td>놓침</td>
+<td>14.1%</td>
+<td><strong>14.1%</strong> (같음)</td>
+</tr>
 </tbody>
 </table>
-<p>🔒 <strong>런타임 모델은 아직 10-01 것이다.</strong> 올리려면:</p>
-<pre><code class="language-bash">copy services\wakeword_model_candidate.npz services\wakeword_model.npz
-</code></pre>
-<p>⚠️ 올린 뒤 <strong>실기로 한 번 불러 봐야</strong> 한다 — 숫자는 녹음으로 잰 것이다.</p>
-<p>🚨 <strong>그래도 «목소리로 부릅니다»는 포스터에 못 쓴다</strong> — 목표가 오탐 ≤1 <strong>그리고</strong>
-놓침 ≤10% 인데 임계 0.70 에서 11.1% 다. 그 놓침도 <strong>조용한 방 30cm</strong> 값이다.</p>
-<h2>✅ 2026-10-04 에 끝낸 것</h2>
+<p>🔒 되돌리려면 <code>git checkout services/wakeword_model.npz</code></p>
+<h2>▶️ 바로 할 것 — <strong>없다. 기다리는 상태다</strong></h2>
 <table>
 <thead>
 <tr>
 <th></th>
 <th>무엇</th>
+<th>언제</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>🔒</td>
-<td><strong>실명 10명을 히스토리에서 지웠다</strong> — 모든 브랜치·태그·커밋 메시지. 🙋 팀원·본인은 그대로</td>
+<td>⏳</td>
+<td><strong>10/05 팀원 실기</strong> — 🚩 신고 버튼이 그때 <strong>처음 눌린다</strong></td>
+<td>팀원 일정</td>
 </tr>
 <tr>
-<td>🎙</td>
-<td><strong>재학습 완주</strong> (세 번째). 학습이 죽던 이유는 <strong>경합이 아니라 확률</strong>이었다</td>
+<td>🟡</td>
+<td><strong>BL-94</strong> — «플룻»에 깨어난다. 원인·방법 적어 뒀다</td>
+<td>손이 비면</td>
 </tr>
 <tr>
-<td>🚨</td>
-<td>범위를 <strong>두 번 틀리게</strong> 잡았다 — 보이는 이름만 · dev 만 · 태그를 안 봄 → <a href="DEVLOG.md">DEVLOG</a></td>
+<td>🟡</td>
+<td><strong>BL-89</strong> — 음성 중 창 이동 ⚠️ 재현이 먼저</td>
+<td>손이 비면</td>
 </tr>
 </tbody>
 </table>
+<p>🔑 <strong>BL-94 를 지금 손대지 않는 이유</strong> — 고치면 <strong>놓침이 는다.</strong> 지금 11.1%이고
+목표가 10% 라 여유가 없다. 재학습 40분 + 소크 재측정이 한 세트라 <strong>토막 시간에
+할 일이 아니다.</strong> 지금 상태로 쓸 수 있다.</p>
 <h2>🙋 사용자 몫</h2>
 <table>
 <thead>
@@ -133,45 +140,24 @@ color:var(--muted);font-size:.85rem}
 </thead>
 <tbody>
 <tr>
-<td>🔴</td>
-<td>🎙 <strong>후보 모델을 올릴지 결정</strong> + 올리면 실기로 한 번 불러 보기</td>
-<td>5분</td>
-</tr>
-<tr>
-<td>✅</td>
-<td>🔑 번들 백업 — <code>data/_backup/pre-anonymize-20261003.bundle</code> 로 옮겼다(저장소 밖)</td>
-<td>끝</td>
-</tr>
-<tr>
-<td>🔴</td>
-<td>📅 <strong>캘린더에서 «캡스톤 미팅» 하나 지우기</strong> — 10-02 사고의 흔적</td>
-<td>1분</td>
-</tr>
-<tr>
-<td>✅</td>
-<td>팀원에게 <code>.env</code> 두 줄 전달 — 🙋 끝냈다</td>
-<td>끝</td>
-</tr>
-<tr>
-<td>🔴</td>
-<td>👥 <strong>팀원에게 1회성 복구 절차 전달</strong> — 이미 받아 둔 사람은 <code>git pull</code> 이 깨진다(10-04 기록 재작성). 🔑 <strong>다시 clone 안 해도 된다</strong> → <a href="teamwork/%ED%81%B4%EB%A1%9C%EB%93%9C%EC%BD%94%EB%93%9C_%EB%A3%A8%ED%8B%B4.md">클로드코드_루틴 §0</a></td>
-<td>2분</td>
-</tr>
-<tr>
-<td>🟡</td>
-<td>🎙 <strong>팀원 녹음</strong> — 🔻 <strong>막는 것이 아니다.</strong> 10-04 재학습이 카페 오탐을 20.0 → 0.0 으로 <strong>이미 내렸다</strong>(그 사람 목소리 없이). 되면 좋고, 안 되면 그대로 간다</td>
+<td>⏳</td>
+<td><strong>10/05 팀원 실기</strong> — 신고가 들어오는지만 보면 된다</td>
 <td>—</td>
 </tr>
 <tr>
-<td>⏳</td>
-<td><strong>10/05 — 팀원 실기 시작</strong></td>
+<td>🟡</td>
+<td>🎙 <strong>팀원 녹음</strong> — 🔻 막는 것 아님. 안 되면 그대로 간다</td>
 <td>—</td>
 </tr>
 </tbody>
 </table>
-<p>🚨 <strong>팀원은 이미 받아 뒀다</strong>(🙋 확인). <code>git pull</code> 이 깨진다 — 다시 clone 할 필요는
-없고 복구 절차가 <a href="teamwork/%ED%81%B4%EB%A1%9C%EB%93%9C%EC%BD%94%EB%93%9C_%EB%A3%A8%ED%8B%B4.md">루틴 §0</a> 에 있다.
-🔑 어차피 오늘 것(🚩 신고·수신기·팀원 문서)을 받아야 했으니 겸사겸사다.</p>
+<h3>✅ 10/04 에 끝난 것</h3>
+<p>실명 10명 제거(원격까지) · 재학습 완주 · <strong>새 모델 올림 + 실기 통과</strong> ·
+팀원 복구 절차 전달 · 캘린더 정리 · <code>.env</code> 전달 · 번들 백업</p>
+<h2>📣 포스터·발표에 쓸 때</h2>
+<p>🟢 <strong>«시끄러운 곳에서 혼자 깨어나는 것을 20배 이상 줄였습니다»</strong> — 쓸 수 있다.
+🚨 <strong>«목소리로 부릅니다»는 여전히 못 쓴다</strong> — 놓침 11.1%(목표 10%) · «플룻» 문제.
+안전한 표현: <strong>«버튼 · 단축키 · 호출어 셋 중에 고를 수 있습니다»</strong></p>
 <p>✅ <strong>mock 90파일 3599/3599 · 실패 0</strong> · 🔧 도구 <strong>69개</strong></p>
 </div>
 
@@ -182,7 +168,7 @@ color:var(--muted);font-size:.85rem}
 
 <h2><span class="n">3</span>남은 결함</h2>
 <p class="sub">🔴 즉시 · 🟡 TODO · 🔵 결정 대기 — 상세는 <code>docs/BACKLOG.md</code></p>
-<div class="card"><div class="bl"><span class="num r">🔴 BL-93</span><span class="t">2026-10-03 발견. 📏 평가 하네스가 런타임의 «연속 2창»을 모른다</span></div><div class="bl"><span class="num a">🟡 BL-94</span><span class="t">2026-10-03 발견. 📄 `--check` 가 설명문에만 있다</span></div><div class="bl"><span class="num a">🟡 BL-89</span><span class="t">2026-10-02 실기 · 🎤 음성 입력 중 창을 옮기면 입력이 취소된 것처럼 보인다</span></div><div class="bl"><span class="num a">🟡 BL-82</span><span class="t">2026-10-01 신설 · 🎤 답이 나온 직후 빈 녹음이 한 번 더 열린다</span></div><div class="bl"><span class="num a">🟡 BL-83</span><span class="t">2026-10-02 신설 · 🧱 UI 자동 검사가 «코드가 아닌 것»을 못 본다</span></div><div class="bl"><span class="num a">🟡 BL-80</span><span class="t">2026-09-29 신설 · 📅 «오늘은 일정이 없어요». 🔻 2026-09-30 강등 — 재현 안 됨</span></div><div class="bl"><span class="num a">🟡 BL-75</span><span class="t">2026-09-28 신설 · 🖱 «어디 있어?» 한 마디로 `find_ui_element` 와</span></div><div class="bl"><span class="num a">🟡 BL-72</span><span class="t">2026-09-25 신설 · ⏳ 약속이 서버 수명을 못 넘는다</span></div><div class="bl"><span class="num a">🟡 BL-73</span><span class="t">2026-09-25 신설 · 🔔 알림이 Windows 토스트가 아니다</span></div><div class="bl"><span class="num a">🟡 BL-71</span><span class="t">2026-09-24 신설 · 📏 도구를 더 늘리기 전에</span></div><div class="bl"><span class="num a">🟡 BL-70</span><span class="t">2026-09-24 신설 · ⏭️ 접근성이 못 보는 자리에 남아 있다</span></div><div class="bl"><span class="num a">🟡 BL-68</span><span class="t">2026-09-23 실기 신설 · ⏭️ 2-2(응답 품질)에서 같이 본다</span></div><div class="bl"><span class="num b">🔵 BL-65</span><span class="t">2026-09-21 신설 · ⏸️ 9/23 이후 결정. 🚨 동적 학습의 기여가 2.6%인데 사고는 3건이다</span></div><div class="bl"><span class="num b">🔵 BL-66</span><span class="t">2026-09-21 신설 · ⏸️ 10/31 실사용. 🚨 오매칭률을 세는 자리가 없다</span></div><div class="bl"><span class="num a">🟡 BL-62</span><span class="t">(2026-09-19) — 미해결. 학습은 코어를 다 쓰는데 평가는 아직 하나만 쓴다</span></div><div class="bl"><span class="num a">🟡 BL-55</span><span class="t">(2026-09-14 2차 리허설) — 미해결. `get_running_apps`가 프로세스를 센다</span></div><div class="bl"><span class="num a">🟡 BL-40</span><span class="t">(2026-09-11 사용자 지적 · A안 적용) — 파일 N개를 지우려면 승인을 N번 해야 한다</span></div></div>
+<div class="card"><div class="bl"><span class="num a">🟡 BL-94</span><span class="t">2026-10-04 실기 신설 · 🎙 «플룻»처럼 발음이 닮은 낱말에 깨어난다</span></div><div class="bl"><span class="num r">🔴 BL-93</span><span class="t">2026-10-03 발견. 📏 평가 하네스가 런타임의 «연속 2창»을 모른다</span></div><div class="bl"><span class="num a">🟡 BL-94</span><span class="t">2026-10-03 발견. 📄 `--check` 가 설명문에만 있다</span></div><div class="bl"><span class="num a">🟡 BL-89</span><span class="t">2026-10-02 실기 · 🎤 음성 입력 중 창을 옮기면 입력이 취소된 것처럼 보인다</span></div><div class="bl"><span class="num a">🟡 BL-82</span><span class="t">2026-10-01 신설 · 🎤 답이 나온 직후 빈 녹음이 한 번 더 열린다</span></div><div class="bl"><span class="num a">🟡 BL-83</span><span class="t">2026-10-02 신설 · 🧱 UI 자동 검사가 «코드가 아닌 것»을 못 본다</span></div><div class="bl"><span class="num a">🟡 BL-80</span><span class="t">2026-09-29 신설 · 📅 «오늘은 일정이 없어요». 🔻 2026-09-30 강등 — 재현 안 됨</span></div><div class="bl"><span class="num a">🟡 BL-75</span><span class="t">2026-09-28 신설 · 🖱 «어디 있어?» 한 마디로 `find_ui_element` 와</span></div><div class="bl"><span class="num a">🟡 BL-72</span><span class="t">2026-09-25 신설 · ⏳ 약속이 서버 수명을 못 넘는다</span></div><div class="bl"><span class="num a">🟡 BL-73</span><span class="t">2026-09-25 신설 · 🔔 알림이 Windows 토스트가 아니다</span></div><div class="bl"><span class="num a">🟡 BL-71</span><span class="t">2026-09-24 신설 · 📏 도구를 더 늘리기 전에</span></div><div class="bl"><span class="num a">🟡 BL-70</span><span class="t">2026-09-24 신설 · ⏭️ 접근성이 못 보는 자리에 남아 있다</span></div><div class="bl"><span class="num a">🟡 BL-68</span><span class="t">2026-09-23 실기 신설 · ⏭️ 2-2(응답 품질)에서 같이 본다</span></div><div class="bl"><span class="num b">🔵 BL-65</span><span class="t">2026-09-21 신설 · ⏸️ 9/23 이후 결정. 🚨 동적 학습의 기여가 2.6%인데 사고는 3건이다</span></div><div class="bl"><span class="num b">🔵 BL-66</span><span class="t">2026-09-21 신설 · ⏸️ 10/31 실사용. 🚨 오매칭률을 세는 자리가 없다</span></div><div class="bl"><span class="num a">🟡 BL-62</span><span class="t">(2026-09-19) — 미해결. 학습은 코어를 다 쓰는데 평가는 아직 하나만 쓴다</span></div><div class="bl"><span class="num a">🟡 BL-55</span><span class="t">(2026-09-14 2차 리허설) — 미해결. `get_running_apps`가 프로세스를 센다</span></div><div class="bl"><span class="num a">🟡 BL-40</span><span class="t">(2026-09-11 사용자 지적 · A안 적용) — 파일 N개를 지우려면 승인을 N번 해야 한다</span></div></div>
 
 <h2><span class="n">4</span>코드를 고치기 전 — 절대 규칙</h2>
 <p class="sub">어기면 바로 깨지는 것들입니다. 배경은 <code>CLAUDE.md</code> 의 각 링크에.</p>
